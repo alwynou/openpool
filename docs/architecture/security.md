@@ -7,7 +7,9 @@
 Provider 的适配器内，日志和错误不得包含 credential、签名 URL 或 authorization header。
 
 建议的信封字段：`version`、`algorithm`、`keyId`、`iv`、`ciphertext`。AES-GCM authentication
-tag 随 Web Crypto ciphertext 保存。
+tag 随 Web Crypto ciphertext 保存。V1 vault 使用 32 字节 master key、每次加密生成独立的 96-bit
+IV，并把 `version`、`algorithm` 和 `keyId` 作为 additional authenticated data；未知版本、错误 key、
+字段篡改或非 JSON credential payload 一律 fail closed。
 
 ## API Key 与会话
 

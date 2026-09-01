@@ -10,7 +10,7 @@
 ## Phase 1：V1
 
 1. 单管理员初始化、登录与 session（完成）；
-2. AES-GCM credential vault；
+2. AES-GCM credential vault（完成）；
 3. R2 Provider 验证与签名上传/下载；
 4. logical bucket、对象 reserve/complete/delete；
 5. Storage Account、容量、健康检查和简单 Placement；
