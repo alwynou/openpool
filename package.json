@@ -1,0 +1,51 @@
+{
+  "name": "openpool",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A self-hosted, Cloudflare-native object storage control plane.",
+  "type": "module",
+  "packageManager": "npm@11.17.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker",
+    "cf:typegen": "npm run cf:typegen --workspace=@openpool/worker",
+    "db:migrate:local": "npm run db:migrate:local --workspace=@openpool/worker",
+    "db:migrate:remote": "npm run db:migrate:remote --workspace=@openpool/worker",
+    "dev": "concurrently -k -n worker,web -c yellow,cyan \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:web": "npm run dev --workspace=@openpool/web",
+    "dev:worker": "npm run dev --workspace=@openpool/worker",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run && npm run test --workspace=@openpool/worker",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.2",
+    "@cloudflare/workers-types": "^5.20260901.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.5",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.1"
+  }
+}
