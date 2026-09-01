@@ -36,8 +36,10 @@
   （2026-09-01）。credential 未经过仓库或聊天。
 - [ ] 为 Backblaze B2 创建独立测试 bucket 和受限 application key，执行 S3-compatible smoke test。
 - [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
-- [ ] 在浏览器中实际验证 R2 CORS；后续 B2/Generic S3 bucket 也必须配置最小化 CORS：仅允许管理后台
-  实际 origin 和直传/直取所需 method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
+- [x] 已从 staging 控制台浏览器实际完成 R2 文件上传、下载和删除，确认 signed PUT/GET 与最小化
+  CORS policy 生效（2026-09-01）。
+- [ ] 后续 B2/Generic S3 bucket 也必须配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/
+  直取所需 method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
 
 所有 secret 都只能通过本地忽略文件、交互式命令、Cloudflare Secret 或外部 secret manager 注入，不能写入
 仓库、测试快照、日志或聊天记录。

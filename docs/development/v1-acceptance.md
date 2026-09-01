@@ -103,11 +103,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   smoke。
 - [ ] Generic S3：提供 HTTPS endpoint、region、validation bucket、addressing style 和受限凭证；
   记录兼容性差异及错误分类。
-- [ ] 在每个真实 bucket 配置最小化 CORS，只允许管理后台实际 origin，允许浏览器 signed URL 所需
-  的 `PUT`、`GET`、`HEAD` 和 `Content-Type`（以及必要响应头）；R2 policy 已配置但仍需浏览器实测，
-  B2/Generic S3 尚未配置。不得开放不必要 origin/method/header。
-- [ ] 通过浏览器实际执行 signed PUT/GET，确认 CORS preflight 和 response headers 正常；curl 成功
-  不能替代浏览器 CORS 验收。
+- [x] R2 bucket 使用最小化 CORS，只允许 staging 控制台 origin，以及 signed URL 所需的
+  `PUT`、`GET`、`HEAD`、`DELETE`、`Content-Type` 和 `ETag`；已通过浏览器实际上传、下载和删除
+  验收（2026-09-01）。
+- [ ] B2/Generic S3 bucket 仍需分别配置并实测最小化 CORS，不得开放不必要 origin/method/header。
 
 ## 7. 远端升级与部署（必须由所有者明确授权）
 
@@ -142,8 +141,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 部署后健康接口、静态控制台和初始 `initialized: false` 已验证；使用钥匙串中的高熵随机密码
   初始化 `admin` 后，登录、session、管理员 audit 查询、登出和撤销后 session 均通过远端检查。
   删除 bootstrap secret 后再次验证健康、`initialized: true`、登录和登出（2026-09-01）。
-- [ ] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard 和非浏览器 signed PUT/GET/DELETE smoke 已完成；
-  浏览器 CORS、B2/Generic S3 联调与 observability 敏感值检查仍待完成。
+- [ ] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard、signed PUT/GET/DELETE 及浏览器 CORS smoke 已
+  完成；B2/Generic S3 联调与 observability 敏感值检查仍待完成。
 - [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
   看到至少一次 scheduled maintenance 运行记录；确认失败清理会留待下次重试。
 
