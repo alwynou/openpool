@@ -141,10 +141,13 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 部署后健康接口、静态控制台和初始 `initialized: false` 已验证；使用钥匙串中的高熵随机密码
   初始化 `admin` 后，登录、session、管理员 audit 查询、登出和撤销后 session 均通过远端检查。
   删除 bootstrap secret 后再次验证健康、`initialized: true`、登录和登出（2026-09-01）。
-- [ ] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard、signed PUT/GET/DELETE 及浏览器 CORS smoke 已
-  完成；B2/Generic S3 联调与 observability 敏感值检查仍待完成。
-- [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
-  看到至少一次 scheduled maintenance 运行记录；确认失败清理会留待下次重试。
+- [x] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard、signed PUT/GET/DELETE 及浏览器 CORS smoke 已
+  完成；live tail 抽样中的 Cookie/路径标识被标为 `REDACTED`，没有应用日志、异常、credential、token、
+  signed URL 或响应正文。标准客户端网络/地理 metadata 仍要求受限访问和保留策略（2026-09-01）。
+- [ ] B2/Generic S3 真实联调仍待完成。
+- [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
+  exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
+  非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
 
 ### 失败、回滚与后续
 

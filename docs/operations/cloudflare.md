@@ -6,7 +6,8 @@ OpenPool 由一个 Worker 同时提供 API 和构建后的 SPA，D1 保存 metad
 本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对、APAC staging
 D1 创建、0001→0003 migration、首次部署所需的三个 staging Secrets 和 `workers.dev` 部署；健康接口、
 静态控制台、`admin` 初始化及登录/session/audit/logout 已通过远端检查。初始化后已从 Worker 删除一次性
-`ADMIN_BOOTSTRAP_TOKEN`，当前只保留 `CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER`。
+`ADMIN_BOOTSTRAP_TOKEN`，当前只保留 `CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER`。同日通过 live
+tail 捕获到 `*/5 * * * *` scheduled event，outcome 为 `ok`，无 exception 或应用日志。
 
 Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 的 direct-upload session：原子
 释放预留、保留 `PENDING` object tombstone，并重试 Provider 残留清理；成功后 upload session 变为
