@@ -9,6 +9,8 @@ import type {
   CreateLogicalBucketRequest,
   CreateStorageShardRequest,
   HealthResponse,
+  ListAuditLogsQuery,
+  ListAuditLogsResponse,
   LoginResponse,
   LogicalBucketResponse,
   ObjectMetadataResponse,
@@ -121,7 +123,17 @@ export const api = {
   listApiKeys: () => request<readonly ApiKeyResponse[]>('/api/v1/api-keys'),
   createApiKey: (input: { name: string; scopes: readonly string[]; logicalBucketId?: string | null; pathPrefix?: string | null; expiresAt?: string | null }) => request<CreatedApiKeyResponse>('/api/v1/api-keys', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
   revokeApiKey: (id: string) => request<ApiKeyResponse>(`/api/v1/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  listAuditLogs: () => request<{ readonly items: readonly { readonly id: string; readonly actorType: string; readonly action: string; readonly resourceType: string; readonly createdAt: string }[]; readonly nextCursor: unknown }>('/api/v1/audit-logs?limit=100'),
+  listAuditLogs: (query: ListAuditLogsQuery = { limit: 100 }) => {
+    const parameters = new URLSearchParams();
+    if (query.limit !== undefined) parameters.set('limit', String(query.limit));
+    if (query.actorType !== undefined) parameters.set('actorType', query.actorType);
+    if (query.action !== undefined) parameters.set('action', query.action);
+    if (query.resourceType !== undefined) parameters.set('resourceType', query.resourceType);
+    if (query.resourceId !== undefined) parameters.set('resourceId', query.resourceId);
+    if (query.afterCreatedAt !== undefined) parameters.set('afterCreatedAt', query.afterCreatedAt);
+    if (query.afterId !== undefined) parameters.set('afterId', query.afterId);
+    return request<ListAuditLogsResponse>(`/api/v1/audit-logs?${parameters.toString()}`);
+  },
 };
 
 export function isUnauthorized(error: unknown): boolean {
