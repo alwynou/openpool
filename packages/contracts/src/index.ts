@@ -3,6 +3,12 @@ export interface ApiEnvelope<T> {
   readonly requestId: string;
 }
 
+export * from './api-keys';
+export * from './audit-logs';
+export * from './buckets';
+export * from './objects';
+export * from './storage-accounts';
+
 export interface ApiError<TCode extends string = string> {
   readonly error: {
     readonly code: TCode;
@@ -57,17 +63,4 @@ export interface HealthResponse {
   readonly status: 'ok';
   readonly version: string;
   readonly environment: string;
-}
-
-export interface CreateUploadRequest {
-  readonly bucketId: string;
-  readonly key: string;
-  readonly sizeBytes: number;
-  readonly contentType: string;
-}
-
-export interface CreateUploadResponse {
-  readonly objectId: string;
-  readonly uploadUrl: string;
-  readonly expiresAt: string;
 }

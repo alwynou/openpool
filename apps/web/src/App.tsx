@@ -1,344 +1,59 @@
+/* oxlint-disable react/set-state-in-effect */
 import type {
   AdministratorResponse,
-  ApiEnvelope,
+  ApiKeyResponse,
+  ApiKeyScope,
   HealthResponse,
-  InitializeAdminRequest,
-  LoginRequest,
-  LoginResponse,
+  LogicalBucketResponse,
+  ObjectMetadataResponse,
   SessionResponse,
   SetupStatusResponse,
+  StorageAccountResponse,
+  StorageShardResponse,
 } from '@openpool/contracts';
-import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 
-type HealthState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly health: HealthResponse }
-  | { readonly status: 'error' };
+import { api } from './api';
 
-type AuthView =
-  | 'loading'
-  | 'setup'
-  | 'login'
-  | 'authenticated'
-  | 'unavailable';
+type AuthView = 'loading' | 'setup' | 'login' | 'authenticated' | 'unavailable';
+type Page = 'overview' | 'accounts' | 'buckets' | 'files' | 'keys' | 'audit';
+type LoadState<T> = { data: T; loading: boolean; error: string | null };
+const empty = <T,>(data: T): LoadState<T> => ({ data, loading: false, error: null });
+const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+const formatBytes = (bytes: number) => { if (bytes < 1024) return `${bytes} B`; const units = ['KB', 'MB', 'GB', 'TB']; let value = bytes; let unit = -1; do { value /= 1024; unit += 1; } while (value >= 1024 && unit < units.length - 1); return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`; };
+const dateText = (value: string | null) => value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
 
-const fetchOptions = {
-  credentials: 'same-origin' as const,
-};
+function ErrorNotice({ error, onRetry }: { error: string | null; onRetry?: (() => void) | undefined }) { if (!error) return null; return <div className="notice notice--error" role="alert"><span>{error}</span>{onRetry ? <button className="link-button" onClick={onRetry}>Retry</button> : null}</div>; }
+function EmptyState({ title, detail }: { title: string; detail: string }) { return <div className="empty-state"><div className="empty-icon" aria-hidden="true">○</div><strong>{title}</strong><span>{detail}</span></div>; }
+function StatusPill({ value }: { value: string }) { const tone = /ACTIVE|HEALTHY|READY|EXACT|CONFIGURED/u.test(value) ? 'good' : /DEGRADED|VERIFYING|STANDBY|UNKNOWN|ESTIMATED/u.test(value) ? 'warn' : 'muted'; return <span className={`status-pill status-pill--${tone}`}>{value.replaceAll('_', ' ')}</span>; }
+function Button({ children, variant = 'primary', busy = false, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger'; busy?: boolean }) { return <button {...props} className={`button button--${variant} ${props.className ?? ''}`} disabled={busy || props.disabled}>{busy ? 'Working…' : children}</button>; }
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}{hint ? <small>{hint}</small> : null}</label>; }
+function SectionHeader({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: ReactNode }) { return <div className="section-header"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="section-detail">{detail}</p></div>{action}</div>; }
+function Loading() { return <div className="loading" aria-label="Loading"><span /><span /><span /></div>; }
 
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const body: unknown = await response.json();
-    if (
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof body.error === 'object' &&
-      body.error !== null &&
-      'message' in body.error &&
-      typeof body.error.message === 'string' &&
-      body.error.message.trim()
-    ) {
-      return body.error.message;
-    }
-  } catch {
-    // Non-JSON error responses use the safe generic message below.
-  }
-  return 'Something went wrong. Please try again.';
-}
+function Overview({ accounts, buckets, keys, objects }: { accounts: StorageAccountResponse[]; buckets: LogicalBucketResponse[]; keys: ApiKeyResponse[]; objects: ObjectMetadataResponse[] }) { const used = accounts.reduce((sum, item) => sum + item.usedBytes, 0); const capacity = accounts.reduce((sum, item) => sum + item.capacityBytes, 0); const healthy = accounts.filter((item) => item.healthStatus === 'HEALTHY').length; return <><SectionHeader eyebrow="Control plane" title="Overview" detail="A clear view of your storage pool and its working namespaces." /><div className="metric-grid"><Metric label="Storage accounts" value={String(accounts.length)} detail={`${healthy} healthy`} icon="01" /><Metric label="Available capacity" value={formatBytes(Math.max(0, capacity - used))} detail={`${formatBytes(used)} used`} icon="02" /><Metric label="Logical buckets" value={String(buckets.length)} detail="Namespaces" icon="03" /><Metric label="API keys" value={String(keys.filter((key) => !key.revokedAt).length)} detail={`${keys.length} total`} icon="04" /></div><div className="overview-grid"><div className="panel"><div className="panel-heading"><div><p className="eyebrow">Capacity</p><h2>Pool utilization</h2></div><span className="heading-value">{capacity ? `${Math.round((used / capacity) * 100)}%` : '—'}</span></div><div className="progress"><span style={{ width: `${capacity ? Math.min(100, (used / capacity) * 100) : 0}%` }} /></div><div className="split-note"><span>{formatBytes(used)} used</span><span>{formatBytes(capacity)} total</span></div></div><div className="panel"><div className="panel-heading"><div><p className="eyebrow">Recent objects</p><h2>Latest files</h2></div><span className="heading-value">{objects.length}</span></div>{objects.length ? <div className="mini-list">{objects.slice(0, 4).map((object) => <div className="mini-row" key={object.id}><span className="file-mark">↳</span><span className="truncate">{object.logicalKey}</span><span className="muted-text">{formatBytes(object.sizeBytes)}</span></div>)}</div> : <p className="muted-text">Select a bucket in Files to see its objects.</p>}</div></div><div className="panel info-panel"><span className="info-symbol">i</span><div><strong>Direct provider transfers are enabled.</strong><p>OpenPool handles metadata and signing; file bytes travel directly between your browser and the storage provider.</p></div></div></>; }
+function Metric({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: string }) { return <div className="metric-card"><span className="metric-icon">{icon}</span><span className="metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></div>; }
 
-async function loadSession(signal: AbortSignal): Promise<SessionResponse> {
-  const response = await fetch('/api/v1/auth/session', {
-    ...fetchOptions,
-    signal,
-  });
-  if (!response.ok) throw new Error(await errorMessage(response));
-  const envelope = (await response.json()) as ApiEnvelope<SessionResponse>;
-  return envelope.data;
-}
+function AccountForm({ onCreated }: { onCreated: () => Promise<void> }) { const [provider, setProvider] = useState<'r2' | 'b2' | 's3'>('r2'); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const config: Record<string, string> = { validationBucket: String(form.get('validationBucket') ?? '') }; if (provider === 'r2') { config.accountId = String(form.get('accountId') ?? ''); const jurisdiction = String(form.get('jurisdiction') ?? ''); if (jurisdiction) config.jurisdiction = jurisdiction; } if (provider === 'b2') config.region = String(form.get('region') ?? ''); if (provider === 's3') { config.endpoint = String(form.get('endpoint') ?? ''); config.region = String(form.get('region') ?? ''); } const input = { name: String(form.get('name') ?? ''), provider, providerConfig: config, credentials: { accessKeyId: String(form.get('accessKeyId') ?? ''), secretAccessKey: String(form.get('secretAccessKey') ?? ''), ...(String(form.get('sessionToken') ?? '') ? { sessionToken: String(form.get('sessionToken')) } : {}) }, priority: Number(form.get('priority') ?? 100), ...(String(form.get('capacityBytes') ?? '') ? { capacityBytes: Number(form.get('capacityBytes')) } : {}) }; setBusy(true); setError(null); try { await api.createAccount(input); formElement.reset(); setProvider('r2'); await onCreated(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(false); } } return <details className="form-disclosure"><summary><span className="plus">+</span> Add storage account</summary><form className="form-grid" onSubmit={(event) => void submit(event)}><ErrorNotice error={error} /><Field label="Display name"><input name="name" placeholder="Primary R2" required /></Field><Field label="Provider"><select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">Generic S3-compatible</option></select></Field>{provider === 'r2' ? <Field label="Cloudflare account ID"><input name="accountId" required /></Field> : null}{provider === 's3' ? <Field label="HTTPS endpoint"><input name="endpoint" type="url" placeholder="https://s3.example.com" required /></Field> : null}{provider !== 'r2' ? <Field label="Region"><input name="region" placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} required /></Field> : <Field label="Jurisdiction"><select name="jurisdiction"><option value="">Default</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>}<Field label="Validation bucket" hint="An existing physical bucket this credential can access."><input name="validationBucket" required /></Field><Field label="Access key ID"><input name="accessKeyId" autoComplete="off" required /></Field><Field label="Secret access key"><input name="secretAccessKey" type="password" autoComplete="new-password" required /></Field><Field label="Session token (optional)"><input name="sessionToken" type="password" autoComplete="off" /></Field><Field label="Priority"><input name="priority" type="number" defaultValue="100" min="0" /></Field><Field label="Capacity (bytes)" hint="Required for R2; leave blank only when provider usage is observable."><input name="capacityBytes" type="number" min="0" /></Field><div className="form-actions"><Button type="submit" busy={busy}>Create account</Button></div></form></details>; }
 
-export function App() {
-  const [healthState, setHealthState] = useState<HealthState>({
-    status: 'loading',
-  });
-  const [authView, setAuthView] = useState<AuthView>('loading');
-  const [administrator, setAdministrator] =
-    useState<AdministratorResponse | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+function AccountsPage({ accounts, loading, error, refresh }: { accounts: StorageAccountResponse[]; loading: boolean; error: string | null; refresh: () => Promise<void> }) { const [action, setAction] = useState<string | null>(null); const [actionError, setActionError] = useState<string | null>(null); async function run(key: string, operation: () => Promise<unknown>) { setAction(key); setActionError(null); try { await operation(); await refresh(); } catch (caught) { setActionError(errorText(caught)); } finally { setAction(null); } } return <><SectionHeader eyebrow="Infrastructure" title="Storage accounts" detail="Connect and verify the providers that make up your pool." action={<Button onClick={() => void refresh()} variant="secondary" busy={loading}>Refresh</Button>} /><AccountForm onCreated={refresh} /><ErrorNotice error={error || actionError} onRetry={error ? () => void refresh() : undefined} />{loading && !accounts.length ? <Loading /> : accounts.length ? <div className="table-wrap"><table><thead><tr><th>Account</th><th>Status</th><th>Health</th><th>Capacity</th><th>Actions</th></tr></thead><tbody>{accounts.map((account) => <tr key={account.id}><td><div className="table-primary">{account.name}</div><div className="table-secondary">{account.provider.toUpperCase()} · priority {account.priority}</div></td><td><StatusPill value={account.status} /></td><td><StatusPill value={account.healthStatus} /><div className="table-secondary">{account.lastHealthCheckedAt ? dateText(account.lastHealthCheckedAt) : 'Not checked'}</div></td><td><div>{formatBytes(account.usedBytes)} / {formatBytes(account.capacityBytes)}</div><div className="table-secondary">{account.capacityAccuracy}</div></td><td><div className="row-actions">{account.status === 'VERIFYING' ? <Button variant="secondary" busy={action === `verify-${account.id}`} onClick={() => void run(`verify-${account.id}`, () => api.verifyAccount(account.id))}>Verify</Button> : null}{account.status !== 'REMOVED' ? <Button variant="secondary" busy={action === `health-${account.id}`} onClick={() => void run(`health-${account.id}`, () => api.healthAccount(account.id))}>Health</Button> : null}{account.status === 'ACTIVE' ? <Button variant="danger" busy={action === `drain-${account.id}`} onClick={() => void run(`drain-${account.id}`, () => api.updateAccountStatus(account.id, { status: 'DRAINING' }))}>Drain</Button> : null}{account.status === 'DRAINING' ? <Button variant="danger" busy={action === `readonly-${account.id}`} onClick={() => void run(`readonly-${account.id}`, () => api.updateAccountStatus(account.id, { status: 'READ_ONLY' }))}>Make read-only</Button> : null}{account.status === 'READ_ONLY' ? <Button variant="danger" busy={action === `remove-${account.id}`} onClick={() => void run(`remove-${account.id}`, () => api.updateAccountStatus(account.id, { status: 'REMOVED' }))}>Remove</Button> : null}</div></td></tr>)}</tbody></table></div> : <EmptyState title="No storage accounts yet" detail="Add your first provider above to begin building the pool." />}</>; }
 
-  useEffect(() => {
-    const controller = new AbortController();
+function BucketForm({ onCreated }: { onCreated: () => Promise<void> }) { const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); setBusy(true); setError(null); try { await api.createBucket({ name: String(form.get('name') ?? ''), description: String(form.get('description') ?? '') || null }); formElement.reset(); await onCreated(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(false); } } return <details className="form-disclosure"><summary><span className="plus">+</span> Create logical bucket</summary><form className="compact-form" onSubmit={(event) => void submit(event)}><ErrorNotice error={error} /><Field label="Bucket name"><input name="name" placeholder="documents" required /></Field><Field label="Description"><input name="description" placeholder="Team documents" /></Field><Button type="submit" busy={busy}>Create bucket</Button></form></details>; }
+const shardTransitions: Record<StorageShardResponse['status'], StorageShardResponse['status'][]> = { STANDBY: ['ACTIVE', 'RETIRED'], ACTIVE: ['READ_ONLY', 'MIGRATING', 'RETIRED'], READ_ONLY: ['RETIRED'], MIGRATING: ['ACTIVE', 'READ_ONLY', 'RETIRED'], RETIRED: [] };
+function ShardPanel({ bucket, accounts, onChanged }: { bucket: LogicalBucketResponse; accounts: StorageAccountResponse[]; onChanged: () => Promise<void> }) { const [shards, setShards] = useState<StorageShardResponse[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [action, setAction] = useState<string | null>(null); const load = useCallback(async () => { setLoading(true); try { setShards([...await api.listShards(bucket.id)]); setError(null); } catch (caught) { setError(errorText(caught)); } finally { setLoading(false); } }, [bucket.id]); useEffect(() => { void load(); }, [load]); async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); setBusy(true); setError(null); try { await api.createShard(bucket.id, { storageAccountId: String(form.get('storageAccountId') ?? ''), physicalBucket: String(form.get('physicalBucket') ?? ''), status: String(form.get('status') ?? 'STANDBY') as 'STANDBY' | 'ACTIVE', ...(String(form.get('capacityBytes') ?? '') ? { capacityBytes: Number(form.get('capacityBytes')) } : {}) }); formElement.reset(); await load(); await onChanged(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(false); } } async function transition(shard: StorageShardResponse, status: StorageShardResponse['status']) { setAction(shard.id); setError(null); try { await api.updateShardStatus(shard.id, { status }); await load(); } catch (caught) { setError(errorText(caught)); } finally { setAction(null); } } return <div className="shard-panel"><div className="subsection-heading"><div><span className="bucket-symbol">⌁</span><strong>{bucket.name}</strong><span className="muted-text">{bucket.description || 'No description'}</span></div><span className="muted-text">{shards.length} shard{shards.length === 1 ? '' : 's'}</span></div><ErrorNotice error={error} onRetry={() => void load()} />{loading ? <Loading /> : shards.length ? <div className="shard-list">{shards.map((shard) => { const account = accounts.find((item) => item.id === shard.storageAccountId); return <div className="shard-row" key={shard.id}><div><div className="table-primary"><StatusPill value={shard.status} /> <span>{shard.physicalBucket}</span></div><div className="table-secondary">{account?.name || 'Unknown account'} · {formatBytes(shard.usedBytes)} / {formatBytes(shard.capacityBytes)}</div></div><select value="" aria-label={`Transition ${shard.physicalBucket}`} disabled={action === shard.id} onChange={(event) => { if (event.target.value) void transition(shard, event.target.value as StorageShardResponse['status']); }}><option value="">Transition…</option>{shardTransitions[shard.status].map((status) => <option value={status} key={status}>{status.replaceAll('_', ' ')}</option>)}</select></div>; })}</div> : <p className="muted-text">No shards configured for this namespace.</p>}<form className="shard-form" onSubmit={(event) => void create(event)}><strong>Add shard</strong><Field label="Storage account"><select name="storageAccountId" required><option value="">Choose account…</option>{accounts.filter((account) => account.status === 'ACTIVE').map((account) => <option value={account.id} key={account.id}>{account.name}</option>)}</select></Field><Field label="Physical bucket"><input name="physicalBucket" required placeholder="physical-bucket" /></Field><Field label="Initial state"><select name="status" defaultValue="STANDBY"><option value="STANDBY">Standby</option><option value="ACTIVE">Active</option></select></Field><Field label="Capacity (bytes)"><input name="capacityBytes" type="number" min="0" /></Field><Button type="submit" busy={busy}>Add shard</Button></form></div>; }
+function BucketsPage({ buckets, accounts, loading, error, refresh }: { buckets: LogicalBucketResponse[]; accounts: StorageAccountResponse[]; loading: boolean; error: string | null; refresh: () => Promise<void> }) { return <><SectionHeader eyebrow="Namespaces" title="Buckets & shards" detail="Map stable logical namespaces to physical provider buckets." action={<Button onClick={() => void refresh()} variant="secondary" busy={loading}>Refresh</Button>} /><BucketForm onCreated={refresh} /><ErrorNotice error={error} onRetry={() => void refresh()} />{loading && !buckets.length ? <Loading /> : buckets.length ? <div className="bucket-stack">{buckets.map((bucket) => <ShardPanel bucket={bucket} accounts={accounts} onChanged={refresh} key={bucket.id} />)}</div> : <EmptyState title="No logical buckets yet" detail="Create a namespace to start organizing files." />}</>; }
 
-    void fetch('/api/v1/health', {
-      ...fetchOptions,
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Health check failed');
-        return (await response.json()) as ApiEnvelope<HealthResponse>;
-      })
-      .then(({ data }) => setHealthState({ status: 'ready', health: data }))
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          setHealthState({ status: 'error' });
-        }
-      });
+function FilesPage({ buckets, onObjects }: { buckets: LogicalBucketResponse[]; onObjects: (objects: ObjectMetadataResponse[]) => void }) { const [bucketId, setBucketId] = useState(''); const [objects, setObjects] = useState<ObjectMetadataResponse[]>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); useEffect(() => { if (!bucketId && buckets[0]) setBucketId(buckets[0].id); }, [buckets, bucketId]); const load = useCallback(async () => { if (!bucketId) return; setLoading(true); try { const result = [...await api.listObjects(bucketId)]; setObjects(result); onObjects(result); setError(null); } catch (caught) { setError(errorText(caught)); } finally { setLoading(false); } }, [bucketId, onObjects]); useEffect(() => { void load(); }, [load]); async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const file = form.get('file'); if (!(file instanceof File)) { setError('Choose a file before uploading.'); return; } const key = String(form.get('logicalKey') ?? '').trim() || file.name; setBusy('upload'); setError(null); setNotice(null); try { const signed = await api.createUpload(bucketId, key, file); await api.uploadDirect(signed.uploadUrl, file, file.type || 'application/octet-stream'); await api.completeUpload(signed.objectId, signed.uploadSessionId); formElement.reset(); setNotice('Upload complete.'); await load(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(null); } } async function download(object: ObjectMetadataResponse) { setBusy(object.id); setError(null); try { const signed = await api.downloadObject(object.id); window.open(signed.downloadUrl, '_blank', 'noopener,noreferrer'); } catch (caught) { setError(errorText(caught)); } finally { setBusy(null); } } async function remove(object: ObjectMetadataResponse) { if (!window.confirm(`Delete “${object.logicalKey}”?`)) return; setBusy(object.id); setError(null); try { await api.deleteObject(object.id); setNotice('File deleted.'); await load(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(null); } } return <><SectionHeader eyebrow="Objects" title="Files" detail="Upload and manage objects with direct, signed provider transfers." action={<div className="header-controls"><select value={bucketId} onChange={(event) => setBucketId(event.target.value)} disabled={!buckets.length}><option value="">Choose bucket…</option>{buckets.map((bucket) => <option value={bucket.id} key={bucket.id}>{bucket.name}</option>)}</select><Button onClick={() => void load()} variant="secondary" busy={loading}>Refresh</Button></div>} />{!buckets.length ? <EmptyState title="Create a bucket first" detail="Files become available once a logical namespace exists." /> : <><form className="upload-box" onSubmit={(event) => void upload(event)}><div className="upload-copy"><span className="upload-symbol">↑</span><div><strong>Upload a file</strong><span>Bytes go directly from your browser to the active provider shard.</span></div></div><div className="upload-fields"><Field label="Logical key"><input name="logicalKey" placeholder="reports/2026.pdf" /></Field><Field label="File"><input name="file" type="file" required /></Field><Button type="submit" busy={busy === 'upload'} disabled={!bucketId}>Upload</Button></div></form><ErrorNotice error={error} /><div className="inline-notice">{notice}</div>{loading && !objects.length ? <Loading /> : objects.length ? <div className="table-wrap"><table><thead><tr><th>File</th><th>Size</th><th>Status</th><th>Updated</th><th /></tr></thead><tbody>{objects.map((object) => <tr key={object.id}><td><div className="table-primary file-name">{object.logicalKey}</div><div className="table-secondary">{object.contentType}</div></td><td>{formatBytes(object.sizeBytes)}</td><td><StatusPill value={object.status} /></td><td>{dateText(object.updatedAt)}</td><td><div className="row-actions"><Button variant="secondary" busy={busy === object.id} disabled={object.status !== 'READY'} onClick={() => void download(object)}>Download</Button><Button variant="danger" busy={busy === object.id} disabled={object.status !== 'READY' && object.status !== 'DELETING'} onClick={() => void remove(object)}>Delete</Button></div></td></tr>)}</tbody></table></div> : <EmptyState title="This bucket is empty" detail="Upload your first file above." />}</>}</>; }
 
-    void fetch('/api/v1/setup/status', {
-      ...fetchOptions,
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(await errorMessage(response));
-        return (await response.json()) as ApiEnvelope<SetupStatusResponse>;
-      })
-      .then(async ({ data }) => {
-        if (!data.initialized) {
-          setAuthView('setup');
-          return;
-        }
+const scopes: ApiKeyScope[] = ['objects:list', 'objects:read', 'objects:upload', 'objects:delete'];
+function ApiKeysPage({ buckets }: { buckets: LogicalBucketResponse[] }) { const [keys, setKeys] = useState<ApiKeyResponse[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false); const [token, setToken] = useState<string | null>(null); const load = useCallback(async () => { setLoading(true); try { setKeys([...await api.listApiKeys()]); setError(null); } catch (caught) { setError(errorText(caught)); } finally { setLoading(false); } }, []); useEffect(() => { void load(); }, [load]); async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const selected = scopes.filter((scope) => form.get(`scope-${scope}`) === 'on'); if (!selected.length) { setError('Choose at least one scope.'); return; } setBusy(true); setError(null); try { const created = await api.createApiKey({ name: String(form.get('name') ?? ''), scopes: selected, ...(String(form.get('logicalBucketId') ?? '') ? { logicalBucketId: String(form.get('logicalBucketId')) } : {}), ...(String(form.get('pathPrefix') ?? '') ? { pathPrefix: String(form.get('pathPrefix')) } : {}), ...(String(form.get('expiresAt') ?? '') ? { expiresAt: new Date(String(form.get('expiresAt'))).toISOString() } : {}) }); formElement.reset(); setToken(created.token); await load(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(false); } } async function revoke(id: string) { if (!window.confirm('Revoke this API key?')) return; setBusy(true); setError(null); try { await api.revokeApiKey(id); await load(); } catch (caught) { setError(errorText(caught)); } finally { setBusy(false); } } return <><SectionHeader eyebrow="Access" title="API keys" detail="Issue scoped access for integrations. Raw tokens are shown exactly once." action={<Button onClick={() => void load()} variant="secondary" busy={loading}>Refresh</Button>} /><details className="form-disclosure"><summary><span className="plus">+</span> Create API key</summary><form className="form-grid" onSubmit={(event) => void create(event)}><ErrorNotice error={error} /><Field label="Key name"><input name="name" placeholder="CI upload key" required /></Field><Field label="Bucket restriction"><select name="logicalBucketId"><option value="">All buckets</option>{buckets.map((bucket) => <option value={bucket.id} key={bucket.id}>{bucket.name}</option>)}</select></Field><Field label="Path prefix" hint="Optional restriction, e.g. reports/2026/."><input name="pathPrefix" placeholder="reports/" /></Field><Field label="Expires"><input name="expiresAt" type="date" /></Field><fieldset className="scope-field"><legend>Scopes</legend>{scopes.map((scope) => <label className="check-row" key={scope}><input name={`scope-${scope}`} type="checkbox" defaultChecked={scope === 'objects:list' || scope === 'objects:read'} /><span>{scope}</span></label>)}</fieldset><div className="form-actions"><Button type="submit" busy={busy}>Generate key</Button></div></form></details><ErrorNotice error={error} onRetry={() => void load()} />{loading && !keys.length ? <Loading /> : keys.length ? <div className="table-wrap"><table><thead><tr><th>Name</th><th>Scopes</th><th>Restriction</th><th>Status</th><th>Created</th><th /></tr></thead><tbody>{keys.map((key) => <tr key={key.id}><td><div className="table-primary">{key.name}</div><div className="table-secondary"><code>{key.keyPrefix}…</code></div></td><td><div className="scope-list">{key.scopes.map((scope) => <span key={scope}>{scope}</span>)}</div></td><td><div>{key.logicalBucketId ? buckets.find((bucket) => bucket.id === key.logicalBucketId)?.name || 'Specific bucket' : 'All buckets'}</div><div className="table-secondary">{key.pathPrefix || 'All paths'}</div></td><td>{key.revokedAt ? <StatusPill value="REVOKED" /> : key.expiresAt && new Date(key.expiresAt) < new Date() ? <StatusPill value="EXPIRED" /> : <StatusPill value="ACTIVE" />}</td><td>{dateText(key.createdAt)}</td><td>{!key.revokedAt ? <Button variant="danger" busy={busy} onClick={() => void revoke(key.id)}>Revoke</Button> : null}</td></tr>)}</tbody></table></div> : <EmptyState title="No API keys" detail="Create a scoped key when an integration needs access." />}{token ? <div className="modal-backdrop"><section className="token-modal" role="dialog" aria-modal="true" aria-labelledby="token-title"><div className="token-warning">!</div><p className="eyebrow">Copy now</p><h2 id="token-title">Your API key is ready</h2><p>This token will not be shown again. Copy it to your password manager before closing this message.</p><div className="token-box"><code>{token}</code><Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(token)}>Copy token</Button></div><Button onClick={() => setToken(null)}>I’ve copied the token</Button></section></div> : null}</>; }
 
-        const session = await loadSession(controller.signal);
-        if (session.authenticated && session.administrator) {
-          setAdministrator(session.administrator);
-          setAuthView('authenticated');
-        } else {
-          setAuthView('login');
-        }
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setAuthView('unavailable');
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : 'Unable to connect to OpenPool. Please try again.',
-        );
-      });
+function AuditPage() { const [items, setItems] = useState<{ id: string; actorType: string; action: string; resourceType: string; createdAt: string }[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); useEffect(() => { let active = true; void api.listAuditLogs().then((result) => { if (active) setItems([...result.items]); }).catch((caught) => { if (active) setError(errorText(caught)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []); return <><SectionHeader eyebrow="Security" title="Audit log" detail="Recent control-plane actions from administrators and integrations." /><ErrorNotice error={error} />{loading ? <Loading /> : items.length ? <div className="table-wrap"><table><thead><tr><th>Action</th><th>Actor</th><th>Resource</th><th>When</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td className="table-primary">{item.action}</td><td><StatusPill value={item.actorType} /></td><td>{item.resourceType}</td><td>{dateText(item.createdAt)}</td></tr>)}</tbody></table></div> : <EmptyState title="No audit events" detail="Actions will appear here as the control plane is used." />}</>; }
 
-    return () => controller.abort();
-  }, []);
+function AdminConsole({ administrator, onLogout }: { administrator: AdministratorResponse; onLogout: () => Promise<void> }) { const [page, setPage] = useState<Page>('overview'); const [accounts, setAccounts] = useState<LoadState<StorageAccountResponse[]>>(empty([])); const [buckets, setBuckets] = useState<LoadState<LogicalBucketResponse[]>>(empty([])); const [keys, setKeys] = useState<LoadState<ApiKeyResponse[]>>(empty([])); const [objects, setObjects] = useState<ObjectMetadataResponse[]>([]); const [logoutBusy, setLogoutBusy] = useState(false); const loadAccounts = useCallback(async () => { setAccounts((state) => ({ ...state, loading: true, error: null })); try { setAccounts({ data: [...await api.listAccounts()], loading: false, error: null }); } catch (caught) { setAccounts((state) => ({ ...state, loading: false, error: errorText(caught) })); } }, []); const loadBuckets = useCallback(async () => { setBuckets((state) => ({ ...state, loading: true, error: null })); try { setBuckets({ data: [...await api.listBuckets()], loading: false, error: null }); } catch (caught) { setBuckets((state) => ({ ...state, loading: false, error: errorText(caught) })); } }, []); const loadKeys = useCallback(async () => { setKeys((state) => ({ ...state, loading: true, error: null })); try { setKeys({ data: [...await api.listApiKeys()], loading: false, error: null }); } catch (caught) { setKeys((state) => ({ ...state, loading: false, error: errorText(caught) })); } }, []); useEffect(() => { void Promise.all([loadAccounts(), loadBuckets(), loadKeys()]); }, [loadAccounts, loadBuckets, loadKeys]); async function logout() { setLogoutBusy(true); try { await onLogout(); } finally { setLogoutBusy(false); } } const nav: { id: Page; label: string; icon: string }[] = [{ id: 'overview', label: 'Overview', icon: '◈' }, { id: 'accounts', label: 'Storage accounts', icon: '◒' }, { id: 'buckets', label: 'Buckets & shards', icon: '⌁' }, { id: 'files', label: 'Files', icon: '▤' }, { id: 'keys', label: 'API keys', icon: '⌘' }, { id: 'audit', label: 'Audit log', icon: '≡' }]; return <div className="console-shell"><aside className="sidebar"><a className="brand" href="/"><span className="brand-mark">O</span><span>OpenPool</span></a><div className="workspace"><span className="workspace-dot" /> Admin workspace</div><nav aria-label="Main navigation">{nav.map((item) => <button className={page === item.id ? 'nav-item nav-item--active' : 'nav-item'} onClick={() => setPage(item.id)} key={item.id}><span>{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-footer"><div className="user-chip"><span className="avatar">{administrator.username.slice(0, 1).toUpperCase()}</span><span className="truncate"><strong>{administrator.username}</strong><small>Administrator</small></span></div><Button variant="secondary" onClick={() => void logout()} busy={logoutBusy}>Sign out</Button></div></aside><main className="content"><header className="mobile-topbar"><a className="brand" href="/"><span className="brand-mark">O</span>OpenPool</a><Button variant="secondary" onClick={() => void logout()} busy={logoutBusy}>Sign out</Button></header><div className="content-inner">{page === 'overview' ? <Overview accounts={accounts.data} buckets={buckets.data} keys={keys.data} objects={objects} /> : page === 'accounts' ? <AccountsPage accounts={accounts.data} loading={accounts.loading} error={accounts.error} refresh={loadAccounts} /> : page === 'buckets' ? <BucketsPage buckets={buckets.data} accounts={accounts.data} loading={buckets.loading} error={buckets.error} refresh={loadBuckets} /> : page === 'files' ? <FilesPage buckets={buckets.data} onObjects={setObjects} /> : page === 'keys' ? <ApiKeysPage buckets={buckets.data} /> : <AuditPage />}</div></main></div>; }
 
-  async function initialize(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const payload: InitializeAdminRequest = {
-      username: String(form.get('username') ?? ''),
-      password: String(form.get('password') ?? ''),
-    };
-    const bootstrapToken = String(form.get('bootstrapToken') ?? '');
+function AuthCard({ view, busy, message, onSetup, onLogin }: { view: 'setup' | 'login'; busy: boolean; message: string | null; onSetup: (username: string, password: string, token: string) => Promise<void>; onLogin: (username: string, password: string) => Promise<void> }) { async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); if (view === 'setup') await onSetup(String(form.get('username') ?? ''), String(form.get('password') ?? ''), String(form.get('bootstrapToken') ?? '')); else await onLogin(String(form.get('username') ?? ''), String(form.get('password') ?? '')); formElement.reset(); } return <section className="auth-card"><p className="eyebrow">{view === 'setup' ? 'First-time setup' : 'Administrator access'}</p><h1>{view === 'setup' ? 'Create your administrator account' : 'Sign in to OpenPool'}</h1>{view === 'setup' ? <p className="form-help">The bootstrap token is used once and never stored in the browser.</p> : null}<form onSubmit={(event) => void submit(event)}><Field label="Username"><input name="username" autoComplete="username" minLength={view === 'setup' ? 3 : undefined} required /></Field><Field label="Password"><input name="password" type="password" autoComplete={view === 'setup' ? 'new-password' : 'current-password'} minLength={view === 'setup' ? 12 : undefined} required /></Field>{view === 'setup' ? <Field label="Bootstrap token"><input name="bootstrapToken" type="password" autoComplete="off" required /></Field> : null}<Button type="submit" busy={busy}>{view === 'setup' ? 'Initialize OpenPool' : 'Sign in'}</Button></form>{message ? <p className="form-message" role="status">{message}</p> : null}</section>; }
 
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch('/api/v1/setup', {
-        ...fetchOptions,
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-openpool-bootstrap-token': bootstrapToken,
-        },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error(await errorMessage(response));
-      formElement.reset();
-      setAuthView('login');
-      setMessage('Setup complete. Sign in to continue.');
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : 'Setup failed. Please try again.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function login(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const payload: LoginRequest = {
-      username: String(form.get('username') ?? ''),
-      password: String(form.get('password') ?? ''),
-    };
-
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch('/api/v1/auth/login', {
-        ...fetchOptions,
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error(await errorMessage(response));
-      const result = (await response.json()) as ApiEnvelope<LoginResponse>;
-      formElement.reset();
-      setAdministrator(result.data.administrator);
-      setAuthView('authenticated');
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : 'Sign in failed. Please try again.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function logout() {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch('/api/v1/auth/session', {
-        ...fetchOptions,
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error(await errorMessage(response));
-      setAdministrator(null);
-      setAuthView('login');
-      setMessage('You have been signed out.');
-    } catch (error: unknown) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : 'Sign out failed. Please try again.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const healthText =
-    healthState.status === 'ready'
-      ? `Control plane ${healthState.health.status}`
-      : healthState.status === 'loading'
-        ? 'Connecting…'
-        : 'Control plane unavailable';
-
-  return (
-    <main className="shell">
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="OpenPool home">
-          <span className="brand-mark" aria-hidden="true">
-            O
-          </span>
-          OpenPool
-        </a>
-        <span className={`health health--${healthState.status}`}>
-          {healthText}
-        </span>
-      </header>
-
-      <section className="hero">
-        <p className="eyebrow">Cloudflare-native · Self-hosted</p>
-        <h1>One namespace for every object store.</h1>
-        <p className="lede">
-          Connect R2, B2, and S3-compatible accounts to one storage pool while
-          data moves directly between clients and providers.
-        </p>
-      </section>
-
-      <section className="auth-card" aria-live="polite">
-        {authView === 'loading' ? (
-          <p className="auth-status">Checking access…</p>
-        ) : authView === 'unavailable' ? (
-          <div>
-            <p className="card-label">Control plane</p>
-            <h2>OpenPool is unavailable</h2>
-          </div>
-        ) : authView === 'setup' ? (
-          <form onSubmit={(event) => void initialize(event)}>
-            <p className="card-label">First-time setup</p>
-            <h2>Create your administrator account</h2>
-            <p className="form-help">
-              The bootstrap token is used once and never stored in the browser.
-            </p>
-            <label>
-              Username
-              <input
-                name="username"
-                autoComplete="username"
-                minLength={3}
-                maxLength={64}
-                required
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={256}
-                required
-              />
-            </label>
-            <label>
-              Bootstrap token
-              <input
-                name="bootstrapToken"
-                type="password"
-                autoComplete="off"
-                required
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              {busy ? 'Setting up…' : 'Initialize OpenPool'}
-            </button>
-          </form>
-        ) : authView === 'login' ? (
-          <form onSubmit={(event) => void login(event)}>
-            <p className="card-label">Administrator access</p>
-            <h2>Sign in to OpenPool</h2>
-            <label>
-              Username
-              <input name="username" autoComplete="username" required />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
-            </button>
-          </form>
-        ) : (
-          <div className="account">
-            <div>
-              <p className="card-label">Administrator</p>
-              <h2>Welcome back, {administrator?.username}</h2>
-              <p className="form-help">Your control plane is ready.</p>
-            </div>
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => void logout()}
-              disabled={busy}
-            >
-              {busy ? 'Signing out…' : 'Sign out'}
-            </button>
-          </div>
-        )}
-
-        {message ? (
-          <p className="form-message" role="status">
-            {message}
-          </p>
-        ) : null}
-      </section>
-    </main>
-  );
-}
+export function App() { const [health, setHealth] = useState<HealthResponse | null>(null); const [healthLoading, setHealthLoading] = useState(true); const [authView, setAuthView] = useState<AuthView>('loading'); const [administrator, setAdministrator] = useState<AdministratorResponse | null>(null); const [message, setMessage] = useState<string | null>(null); const [busy, setBusy] = useState(false); useEffect(() => { void api.health().then(setHealth).catch(() => setHealth(null)).finally(() => setHealthLoading(false)); void api.setupStatus().then(async (status: SetupStatusResponse) => { if (!status.initialized) { setAuthView('setup'); return; } const session: SessionResponse = await api.session(); if (session.authenticated && session.administrator) { setAdministrator(session.administrator); setAuthView('authenticated'); } else setAuthView('login'); }).catch((caught) => { setAuthView('unavailable'); setMessage(errorText(caught)); }); }, []); async function setup(username: string, password: string, token: string) { setBusy(true); setMessage(null); try { await api.setup(username, password, token); setAuthView('login'); setMessage('Setup complete. Sign in to continue.'); } catch (caught) { setMessage(errorText(caught)); } finally { setBusy(false); } } async function login(username: string, password: string) { setBusy(true); setMessage(null); try { const result = await api.login(username, password); setAdministrator(result.administrator); setAuthView('authenticated'); } catch (caught) { setMessage(errorText(caught)); } finally { setBusy(false); } } async function logout() { setBusy(true); setMessage(null); try { await api.logout(); setAdministrator(null); setAuthView('login'); setMessage('You have been signed out.'); } catch (caught) { setMessage(errorText(caught)); } finally { setBusy(false); } } if (authView === 'authenticated' && administrator) return <AdminConsole administrator={administrator} onLogout={logout} />; if (authView === 'loading') return <div className="auth-page"><Header health={health} loading={healthLoading} /><div className="auth-loading"><Loading /><p>Checking access…</p></div></div>; return <div className="auth-page"><Header health={health} loading={healthLoading} /><div className="auth-hero"><p className="eyebrow">Cloudflare-native · Self-hosted</p><h1>One namespace for every object store.</h1><p>Connect R2, B2, and S3-compatible accounts to one storage pool while data moves directly between clients and providers.</p></div>{authView === 'unavailable' ? <section className="auth-card"><p className="eyebrow">Control plane</p><h1>OpenPool is unavailable</h1><p className="form-help">{message || 'Unable to connect. Check the Worker and try again.'}</p></section> : <AuthCard view={authView === 'setup' ? 'setup' : 'login'} busy={busy} message={message} onSetup={setup} onLogin={login} />}</div>; }
+function Header({ health, loading }: { health: HealthResponse | null; loading: boolean }) { return <header className="topbar"><a className="brand" href="/"><span className="brand-mark">O</span>OpenPool</a><span className={`health health--${health ? 'ready' : loading ? 'loading' : 'error'}`}><span className="health-dot" />{health ? `Control plane ${health.status}` : loading ? 'Connecting…' : 'Control plane unavailable'}</span></header>; }

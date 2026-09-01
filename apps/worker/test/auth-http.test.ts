@@ -67,6 +67,58 @@ beforeEach(async () => {
 });
 
 describe('authentication HTTP API', () => {
+  it('accepts only bounded safe client request IDs', async () => {
+    const accepted = await dispatch('/api/v1/health', {
+      headers: { 'x-request-id': 'client.trace-1:attempt_2' },
+    });
+    expect(accepted.headers.get('x-request-id')).toBe(
+      'client.trace-1:attempt_2',
+    );
+
+    const rejected = await dispatch('/api/v1/health', {
+      headers: { 'x-request-id': 'x'.repeat(129) },
+    });
+    const generated = rejected.headers.get('x-request-id');
+    expect(generated).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(generated).not.toBe('x'.repeat(129));
+  });
+
+  it('rejects non-JSON, oversized, and extra authentication fields', async () => {
+    const nonJson = await dispatch('/api/v1/setup', {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain',
+        'x-openpool-bootstrap-token': 'test-bootstrap-token',
+      },
+      body: JSON.stringify({
+        username: 'administrator',
+        password: 'correct horse battery staple',
+      }),
+    });
+    expect(nonJson.status).toBe(400);
+
+    const oversized = await jsonRequest(
+      '/api/v1/setup',
+      {
+        username: 'administrator',
+        password: 'x'.repeat(64 * 1024),
+      },
+      { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+    );
+    expect(oversized.status).toBe(400);
+
+    const extra = await jsonRequest(
+      '/api/v1/setup',
+      {
+        username: 'administrator',
+        password: 'correct horse battery staple',
+        role: 'superuser',
+      },
+      { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+    );
+    expect(extra.status).toBe(400);
+  });
+
   it('reports setup state and protects one-time initialization', async () => {
     const initialStatus = await dispatch('/api/v1/setup/status');
     expect(initialStatus.status).toBe(200);

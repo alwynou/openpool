@@ -22,6 +22,7 @@ import type { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
 import type { Env } from '../../env';
+import { readJsonBody } from './json-body';
 import type { AppEnvironment } from './types';
 
 const SESSION_COOKIE = 'openpool_session';
@@ -60,19 +61,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function parseCredentials(
   request: Request,
 ): Promise<InitializeAdminRequest | LoginRequest | undefined> {
-  try {
-    const value: unknown = await request.json();
-    if (
-      !isRecord(value) ||
-      typeof value.username !== 'string' ||
-      typeof value.password !== 'string'
-    ) {
-      return undefined;
-    }
-    return { username: value.username, password: value.password };
-  } catch {
+  const value = await readJsonBody(request);
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 2 ||
+    !Object.hasOwn(value, 'username') ||
+    !Object.hasOwn(value, 'password') ||
+    typeof value.username !== 'string' ||
+    typeof value.password !== 'string'
+  ) {
     return undefined;
   }
+  return { username: value.username, password: value.password };
 }
 
 function authError(

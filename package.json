@@ -17,6 +17,8 @@
     "cf:typegen": "npm run cf:typegen --workspace=@openpool/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace=@openpool/worker",
     "db:migrate:remote": "npm run db:migrate:remote --workspace=@openpool/worker",
+    "deploy": "npm run build --workspace=@openpool/web && npm run deploy --workspace=@openpool/worker",
+    "deploy:with-migrations": "npm run db:migrate:remote && npm run deploy",
     "dev": "concurrently -k -n worker,web -c yellow,cyan \"npm:dev:worker\" \"npm:dev:web\"",
     "dev:web": "npm run dev --workspace=@openpool/web",
     "dev:worker": "npm run dev --workspace=@openpool/worker",
@@ -25,6 +27,19 @@
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_BOOTSTRAP_TOKEN": {
+        "description": "Generate a high-entropy one-time administrator bootstrap token."
+      },
+      "CREDENTIAL_MASTER_KEY": {
+        "description": "Generate exactly 32 random bytes and encode them as canonical base64. Never rotate this value until credential re-encryption exists."
+      },
+      "API_KEY_PEPPER": {
+        "description": "Generate a separate 32-byte canonical base64 secret used only for API key HMAC hashing."
+      }
+    }
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.2",

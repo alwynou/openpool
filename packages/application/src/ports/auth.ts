@@ -34,7 +34,7 @@ export interface TokenHasher {
 }
 
 export interface AuditLogEntry {
-  readonly actorType: 'ADMIN' | 'SYSTEM';
+  readonly actorType: 'ADMIN' | 'API_KEY' | 'SYSTEM';
   readonly actorId: string | null;
   readonly action: string;
   readonly resourceType: string;

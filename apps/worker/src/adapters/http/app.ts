@@ -9,15 +9,51 @@ import {
   registerAuthRoutes,
   type AuthRouteDependencies,
 } from './auth-routes';
+import {
+  registerAuditRoutes,
+  type AuditRouteDependencies,
+} from './audit-routes';
+import {
+  registerApiKeyRoutes,
+  type ApiKeyRouteDependencies,
+} from './api-key-routes';
+import {
+  registerBucketRoutes,
+  type BucketRouteDependencies,
+} from './bucket-routes';
+import {
+  registerObjectRoutes,
+  type ObjectRouteDependencies,
+} from './object-routes';
+import {
+  registerStorageAccountRoutes,
+  type StorageAccountRouteDependencies,
+} from './storage-account-routes';
 import type { AppEnvironment } from './types';
 
+const CLIENT_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
+function requestIdFor(request: Request): string {
+  const provided = request.headers.get('x-request-id');
+  return provided !== null && CLIENT_REQUEST_ID.test(provided)
+    ? provided
+    : crypto.randomUUID();
+}
+
+export type HttpAppDependencies = AuthRouteDependencies &
+  ApiKeyRouteDependencies &
+  AuditRouteDependencies &
+  StorageAccountRouteDependencies &
+  BucketRouteDependencies &
+  ObjectRouteDependencies;
+
 export function createHttpApp(
-  dependencies: AuthRouteDependencies,
+  dependencies: HttpAppDependencies,
 ): Hono<AppEnvironment> {
   const app = new Hono<AppEnvironment>();
 
   app.use('/api/*', async (context, next) => {
-    const requestId = context.req.header('x-request-id') ?? crypto.randomUUID();
+    const requestId = requestIdFor(context.req.raw);
     context.set('requestId', requestId);
     await next();
     context.header('x-request-id', requestId);
@@ -39,6 +75,11 @@ export function createHttpApp(
   });
 
   registerAuthRoutes(app, dependencies);
+  registerApiKeyRoutes(app, dependencies);
+  registerAuditRoutes(app, dependencies);
+  registerStorageAccountRoutes(app, dependencies);
+  registerBucketRoutes(app, dependencies);
+  registerObjectRoutes(app, dependencies);
 
   app.notFound((context) => {
     const response: ApiError = {

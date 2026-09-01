@@ -7,16 +7,19 @@
     "build": "wrangler deploy --dry-run --outdir ../../dist/worker",
     "cf:typegen": "wrangler types src/generated/worker-configuration.d.ts --include-runtime false",
     "db:migrate:local": "wrangler d1 migrations apply openpool --local",
-    "db:migrate:remote": "wrangler d1 migrations apply openpool --remote",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev --port 8787",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/core": "3.977.9",
+    "@aws-sdk/s3-request-presigner": "3.1123.0",
     "@openpool/application": "*",
     "@openpool/contracts": "*",
     "@openpool/domain": "*",
+    "@smithy/core": "3.33.3",
     "hono": "^4.13.5"
   }
 }

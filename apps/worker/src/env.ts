@@ -5,6 +5,8 @@ export interface Env {
   readonly DB: D1Database;
   readonly ADMIN_BOOTSTRAP_TOKEN?: string;
   readonly CREDENTIAL_MASTER_KEY?: string;
+  readonly CREDENTIAL_MASTER_KEY_ID?: string;
+  readonly API_KEY_PEPPER?: string;
 }
 
 export interface Variables {

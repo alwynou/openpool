@@ -1,11 +1,27 @@
 # D1 migrations
 
-迁移按四位递增编号保存，例如 `0002_add_provider_capabilities.sql`。
+迁移按四位递增编号保存。当前 V1 的升级顺序不可跳过：
+
+1. `0001_initial.sql`：基础表，以及 API key/audit log 表；
+2. `0002_storage_account_metadata.sql`：Storage Account capabilities、容量准确性；
+3. `0003_object_capacity_reservations.sql`：upload session 唯一约束、D1 断言和容量预留/释放触发器。
 
 ```bash
 npm run db:migrate:local
 npm run db:migrate:remote
 ```
 
-只追加新迁移，不修改已在共享或远端环境执行过的 SQL。远端迁移必须由用户明确授权；执行前确认
-`apps/worker/wrangler.jsonc` 的数据库 ID 和当前 Cloudflare 账号。
+`db:migrate:local` 只操作 Wrangler 本地持久化 D1；`db:migrate:remote` 会改变远端 D1，必须由用户
+明确授权。执行前确认 `apps/worker/wrangler.jsonc` 的 database ID、当前 Cloudflare account、目标
+环境，并在仓库外安全位置导出备份：
+
+```bash
+npx wrangler d1 migrations list openpool --config apps/worker/wrangler.jsonc
+npx wrangler d1 export openpool --remote --output <secure-path>/openpool-before-migration.sql --config apps/worker/wrangler.jsonc
+```
+
+Wrangler 按 migration history 依次应用尚未执行的文件；单个 migration 失败时该次迁移保持回滚，
+之前成功的 migration 不变。只追加新迁移，不修改已在共享或远端环境执行过的 SQL；schema 修复必须
+通过新的补偿迁移前滚。不要用回滚 SQL 或手工删除 migration history 降级。数据恢复需所有者批准，
+并使用受保护的 export 或 D1 Time Travel；这可能丢失恢复点之后的数据，完整 runbook 见
+[Cloudflare 部署](../docs/operations/cloudflare.md)和[V1 验收清单](../docs/development/v1-acceptance.md)。
