@@ -10,6 +10,7 @@
 
 ```bash
 npm install
+npm run dev:secrets
 npm run db:migrate:local
 npm run dev
 ```
@@ -30,13 +31,19 @@ npm run typecheck
 npm run lint
 npm run build
 npm run verify
+npm run dev:worker:scheduled
 ```
 
 代码检查由 Oxlint 执行；仓库不依赖 ESLint 或 Prettier。
 
+`npm run dev:worker:scheduled` 会显式启用 Wrangler 的 `--test-scheduled`，可通过
+`http://localhost:8787/cdn-cgi/handler/scheduled?format=json` 手工触发一次本地 Cron，并检查结构化
+outcome。该 Wrangler 保留路径不会被 Static Assets 的 SPA fallback 截获，也不是业务 API。
+
 新增或修改 `wrangler.jsonc` binding 后运行 `npm run cf:typegen`。生成文件不手工编辑。
 
-本地 Secret 放在 `apps/worker/.dev.vars`，不要提交：
+首次本地启动使用 `npm run dev:secrets` 创建权限为 `0600` 的 `apps/worker/.dev.vars`。该命令生成三组
+独立的 32-byte 随机值，不打印 secret，并在文件已存在时拒绝覆盖。本地 Secret 不要提交：
 
 ```dotenv
 ADMIN_BOOTSTRAP_TOKEN=generate-a-long-random-value

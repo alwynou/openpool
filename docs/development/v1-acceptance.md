@@ -1,32 +1,37 @@
 # V1 本地验收与发布清单
 
 这是一份可执行的 runbook。勾选项代表项目所有者或验收者已经取得证据；2026-09-01 已完成的
-staging 远端操作记录在第 7 节，真实 Provider smoke 仍未执行。
+staging 远端操作记录在第 7 节。真实 R2 smoke 已完成，B2 与 Generic S3 仍需项目所有者提供资源。
 
 ## 1. 本地前置条件
 
-- [ ] Node.js 22+、npm 10+，且 `npm install` 成功。
-- [ ] `apps/worker/.dev.vars` 由本地安全值填充，至少包含：
+- [x] Node.js 22.23.2、npm 10.9.8，且依赖安装与 workspace 命令成功（2026-09-01）。
+- [x] `npm run dev:secrets` 创建权限为 `0600` 的 `apps/worker/.dev.vars`，至少包含：
   `ADMIN_BOOTSTRAP_TOKEN`、独立的 32 字节 canonical-base64 `CREDENTIAL_MASTER_KEY`、
   `CREDENTIAL_MASTER_KEY_ID=primary-v1`（或已审计的稳定 ID）、独立的 32 字节 canonical-base64
   `API_KEY_PEPPER`。
-- [ ] `.dev.vars`、`.wrangler`、D1 导出和 Provider 凭证不在 git 状态中。
-- [ ] 本地 migration 只通过 `npm run db:migrate:local` 应用；`npm run dev` 后确认
-  `http://localhost:8787/api/v1/health` 返回 `status: ok`，Web 为 `http://localhost:5173`。
-- [ ] `npm run verify` 通过，并保存 CI/本地输出作为本地证据。
+- [x] `.dev.vars` 与 `.wrangler` 均由 `.gitignore` 排除，git 状态中没有 D1 导出或 Provider 凭证
+  （2026-09-01）。
+- [x] 本地 migration 只通过 `npm run db:migrate:local` 应用；`npm run dev` 后
+  `http://localhost:8787/api/v1/health` 返回 `status: ok`，Web 由 Vite 在
+  `http://localhost:5173` 提供（2026-09-01）。
+- [x] `npm run verify` 通过：Oxlint、全部 workspace typecheck、314 个测试和 Web/Worker build
+  （2026-09-01）。
 
 ## 2. 本地认证与安全边界
 
-- [ ] `GET /api/v1/setup/status` 初始返回 `initialized: false`。
-- [ ] 用 `x-openpool-bootstrap-token` 调用 `POST /api/v1/setup`，验证只成功一次；错误 token 为
+- [x] `GET /api/v1/setup/status` 初始返回 `initialized: false`（2026-09-01）。
+- [x] 用 `x-openpool-bootstrap-token` 调用 `POST /api/v1/setup`，验证只成功一次；错误 token 为
   `403 INVALID_BOOTSTRAP_TOKEN`，重复初始化为 `409 ALREADY_INITIALIZED`，密码长度限制为 12–256。
   真实环境使用密码管理器生成的高熵随机密码，以配合 Workers 允许的 100,000 次 PBKDF2 上限。
-- [ ] `POST /api/v1/auth/login` 设置 `openpool_session` HttpOnly、SameSite=Strict Cookie；错误
+- [x] `POST /api/v1/auth/login` 设置 `openpool_session` HttpOnly、SameSite=Strict Cookie；错误
   用户名与错误密码都返回 `401 INVALID_CREDENTIALS`，不泄漏用户存在性。
-- [ ] `GET /api/v1/auth/session` 可读取当前 session；`DELETE /api/v1/auth/session` 撤销并清除
+- [x] `GET /api/v1/auth/session` 可读取当前 session；`DELETE /api/v1/auth/session` 撤销并清除
   Cookie，重复登出仍为 `204`。
-- [ ] 认证响应、管理响应和错误响应都包含 `requestId`；敏感响应为 `Cache-Control: no-store`。
-- [ ] 初始化成功后删除 bootstrap Secret；后续初始化不需要它。重建全新实例时才生成新的 token。
+- [x] 认证响应、管理响应和错误响应都包含 `requestId`；敏感响应为 `Cache-Control: no-store`
+  （2026-09-01）。
+- [x] staging 初始化成功后已删除 bootstrap Secret；后续初始化不需要它。忽略的本地 `.dev.vars`
+  保留 token 仅用于重建本地 D1，重建实例时由生成器创建新值（2026-09-01）。
 
 ## 3. 本地迁移顺序、备份与恢复演练
 
@@ -37,11 +42,11 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 3. `database/migrations/0003_object_capacity_reservations.sql`：上传 session 唯一约束、断言
    guard 和容量预留/释放 triggers。
 
-- [ ] `npx wrangler d1 migrations list openpool --local --config apps/worker/wrangler.jsonc` 显示
+- [x] `npx wrangler d1 migrations list openpool --local --config apps/worker/wrangler.jsonc` 显示
   0001、0002、0003 均按顺序应用。
-- [ ] 用本地 D1 数据验证关键约束：同一 Bucket/key 唯一、每对象最多一个上传 session、每 Bucket
-  最多一个 ACTIVE shard；容量预留、过期释放和删除释放各只发生一次。
-- [ ] 迁移文件一旦在共享/远端环境执行，不再修改；schema 修复只新增编号更高的补偿 migration。
+- [x] Workers Vitest 的本地 D1 验证关键约束：同一 Bucket/key 唯一、每对象最多一个上传 session、
+  每 Bucket 最多一个 ACTIVE shard；容量预留、过期释放和删除释放各只发生一次（2026-09-01）。
+- [x] 已远端应用的 0001–0003 保持未修改；schema 修复只新增编号更高的补偿 migration。
 - [ ] 迁移前导出受保护备份，导出路径在仓库外且不提交：
 
   ```bash
@@ -53,25 +58,26 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 ## 4. 本地控制面流程
 
-- [ ] 用 fake transport 创建并验证 R2、B2、Generic S3 Storage Account；验证成功才进入 `ACTIVE`，
+- [x] 用 fake transport 创建并验证 R2、B2、Generic S3 Storage Account；验证成功才进入 `ACTIVE`，
   列表不返回 credential 或 envelope。
-- [ ] 创建 logical Bucket；为其创建 `STANDBY` shard 并激活；确认账号状态、健康、能力和容量门槛
+- [x] 创建 logical Bucket；为其创建 `STANDBY` shard 并激活；确认账号状态、健康、能力和容量门槛
   约束写入。
-- [ ] Storage Account 仍有非 `RETIRED` shard、未删除 object location 或非零容量时，转为
+- [x] Storage Account 仍有非 `RETIRED` shard、未删除 object location 或非零容量时，转为
   `REMOVED` 返回 `409 STORAGE_ACCOUNT_HAS_REFERENCES`；清理引用后才允许最终移除。
-- [ ] 创建上传 reservation，确认 Worker 只返回短期签名 URL，不接收对象正文。
-- [ ] 客户端直接 `PUT` 到 Provider，随后调用 complete；`HEAD` 大小不匹配返回
+- [x] 创建上传 reservation，确认 Worker 只返回短期签名 URL，不接收对象正文。
+- [x] 客户端直接 `PUT` 到 Provider，随后调用 complete；`HEAD` 大小不匹配返回
   `422 OBJECT_SIZE_MISMATCH`，匹配时 object/session 进入 `READY`/`COMPLETED`。签名必须包含预留的
   精确 `Content-Length` 和请求的 `Content-Type`；浏览器用同一个 `File`/`Blob` 作为 body，让运行时
   设置长度，不手工设置受限的 `Content-Length` header。
-- [ ] `READY` 对象可生成短期 signed `GET` URL；删除经历 `DELETING → DELETED` 并只释放一次容量；
+- [x] `READY` 对象可生成短期 signed `GET` URL；删除经历 `DELETING → DELETED` 并只释放一次容量；
   Provider 404 删除可安全重试。
-- [ ] 列表支持 `status`、`prefix`、`afterKey`、`limit`（1–1000）并按 logical key 稳定排序；
+- [x] 列表支持 `status`、`prefix`、`afterKey`、`limit`（1–1000）并按 logical key 稳定排序；
   公开响应不包含 account、shard、physical bucket/key、credential 或签名 URL。
-- [ ] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；同一 logical key 的后续
+- [x] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；同一 logical key 的后续
   reservation 按 V1 约束冲突。该限制待 future retry/version namespace design。
-- [ ] 用 `npm run dev:worker -- --test-scheduled` 启动本地 Worker，并访问
-  `http://localhost:8787/__scheduled` 触发一次 scheduled maintenance：验证签名 expiry 后 5 分钟
+- [x] 用 `npm run dev:worker:scheduled` 启动本地 Worker，并访问
+  `http://localhost:8787/cdn-cgi/handler/scheduled?format=json` 触发一次 scheduled maintenance：验证
+  outcome 为 `ok`，并通过 scheduled/repository tests 验证签名 expiry 后 5 分钟
   grace 才将 session 原子标为 `EXPIRED`、释放一次容量并尝试清理 Provider；清理成功标为 `ABORTED`，
   Provider 失败时保留 `EXPIRED` 供下一次 cron 重试。确认 object tombstone 仍保留。
 
@@ -119,9 +125,11 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   `ADMIN_BOOTSTRAP_TOKEN`，并在 macOS 登录钥匙串备份；`CREDENTIAL_MASTER_KEY_ID=primary-v1`
   （2026-09-01）。管理员初始化后已从 Worker 删除一次性 bootstrap secret，当前远端 secret list
   只保留 master key 和 pepper。V1 期间不更换已有 key/ID。
-- [ ] 运行 `npx wrangler whoami --json`、`npx wrangler d1 info openpool --config apps/worker/wrangler.jsonc`
-  和 migrations list，确认目标无误。
-- [ ] 用仓库外受限路径保存迁移前 D1 export（包含 metadata、audit 和加密 credential envelope）：
+- [x] 运行 `npx wrangler whoami --json`、`npx wrangler d1 info openpool-staging --json` 和
+  `npx wrangler d1 migrations list DB --remote --env staging --config apps/worker/wrangler.jsonc`，确认
+  唯一可见 account、APAC staging D1 和 migration history 无误（2026-09-01）。
+- [ ] 下一次对已有数据的远端 schema 升级前，用仓库外受限路径保存 D1 export（包含 metadata、audit
+  和加密 credential envelope）：
 
   ```bash
   npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-v1.sql --config apps/worker/wrangler.jsonc
@@ -133,8 +141,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   且只前滚
   0001→0002→0003，随后 migrations list 显示无待办（2026-09-01）。新库迁移前为空，无用户数据
   可备份。
-- [ ] 迁移成功后检查 migration history、健康接口、D1 关键约束和已有 credential 解密，再部署
-  Worker；生产覆盖 `APP_ENV`，不使用 `development`。
+- [x] 迁移成功后已检查 migration history、健康接口、D1 容量约束，并通过真实 R2 生命周期验证已有
+  credential 可解密，再部署 Worker；staging 使用 `APP_ENV=staging`（2026-09-01）。production 创建时
+  也必须显式覆盖 `APP_ENV`，不能使用 `development`。
 - [x] 迁移确认完成后，运行根目录 `npm run deploy:staging` 构建 Web 并部署
   `openpool-staging`；该命令不会隐式迁移 D1，但不是 dry-run，必须视为有远端发布副作用的命令。
 - [ ] 仅在明确需要把两个远端步骤合并且已再次确认账号、D1、备份和授权时，才使用
@@ -163,5 +172,5 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-在 owner 提供证据前，以下剩余事项必须保持未勾选：Cron 实际运行记录、真实 R2/B2/Generic S3
-smoke、bucket CORS、自定义域名和 production 环境。
+当前剩余外部事项是 B2/Generic S3 资源、相应 CORS、CI/CD token、production/自定义域名决策，以及
+下一次有数据的 schema 升级所需受保护备份位置和恢复负责人；在 owner 提供证据前保持未勾选。

@@ -27,6 +27,10 @@
 - [x] staging live tail 抽样中的 session Cookie 和路径标识被 Cloudflare 标为 `REDACTED`，Worker
   没有输出 credential、token、signed URL、异常或响应正文；tail 仍包含标准客户端网络/地理 metadata，
   其访问权限和保留策略必须继续受限（2026-09-01）。
+- [ ] 在下一次包含已有数据的远端 schema 升级前，项目所有者指定仓库外、受限且持久的 D1 export
+  保存位置，并确认 Time Travel/恢复负责人；恢复演练会改写数据，必须另行授权。
+- [ ] 正式上线前决定 production 使用当前还是独立 Cloudflare account，创建独立 D1、Secrets 和
+  Provider 资源，并决定是否绑定自定义域名；不得复用 staging database、credential 或 bucket。
 - [ ] 如启用 CI/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入。
 
 ## Provider 真实联调

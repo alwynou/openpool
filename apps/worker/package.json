@@ -10,6 +10,7 @@
     "db:migrate:staging": "wrangler d1 migrations apply DB --remote --env staging",
     "deploy:staging": "wrangler deploy --env staging",
     "dev": "wrangler dev --port 8787",
+    "dev:scheduled": "wrangler dev --port 8787 --test-scheduled",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

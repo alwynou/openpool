@@ -8,8 +8,8 @@ OpenPool 把用户合法拥有的多个 Cloudflare R2、Backblaze B2 和 S3-comp
 当前仓库是持续实现中的 V1 控制面：Worker 健康接口、单管理员初始化与 session、AES-GCM
 credential vault、Storage Account 生命周期、R2/B2/Generic S3 验证与签名、D1 模型、Placement
 Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管理与 audit-log 查询 API
-以及覆盖这些管理面的 Web 控制台已经实现。远端 Cloudflare 账号、D1、Secret、真实 Provider 和
-部署尚未在本仓库验收，不把远端 smoke test 视为已完成。
+以及覆盖这些管理面的 Web 控制台已经实现。独立 Cloudflare staging、D1、Secret、部署及真实 R2
+直传 smoke 已验收；B2、Generic S3、production 和 CI/CD 仍需要项目所有者提供外部资源或授权。
 
 ## 架构原则
 
@@ -30,6 +30,7 @@ Browser / SDK ── control API ──> Worker ──> D1
 
 ```bash
 npm install
+npm run dev:secrets
 npm run db:migrate:local
 npm run dev
 ```
