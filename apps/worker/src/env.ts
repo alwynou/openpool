@@ -3,6 +3,7 @@ export interface Env {
   readonly APP_VERSION: string;
   readonly ASSETS: Fetcher;
   readonly DB: D1Database;
+  readonly ADMIN_BOOTSTRAP_TOKEN?: string;
   readonly CREDENTIAL_MASTER_KEY?: string;
 }
 

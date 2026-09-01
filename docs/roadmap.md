@@ -1,6 +1,6 @@
 # 路线图
 
-## Phase 0：Foundation（当前）
+## Phase 0：Foundation（完成）
 
 - workspace、严格 TypeScript、Oxlint、test/build；
 - Worker + Static Assets + D1；
@@ -9,7 +9,7 @@
 
 ## Phase 1：V1
 
-1. 单管理员初始化、登录与 session；
+1. 单管理员初始化、登录与 session（完成）；
 2. AES-GCM credential vault；
 3. R2 Provider 验证与签名上传/下载；
 4. logical bucket、对象 reserve/complete/delete；

@@ -5,9 +5,9 @@
 OpenPool 把用户合法拥有的多个 Cloudflare R2、Backblaze B2 和 S3-compatible
 存储账号组织成一个逻辑存储池，并通过统一命名空间、管理后台和 API 提供访问。
 
-当前仓库是可运行的 V1 基础骨架：Worker 健康接口、React 控制台、D1 初始模型、
-Placement Engine 和 Workers 运行时测试已经就位；登录、Provider 凭证接入和完整上传流程
-仍在后续路线中。
+当前仓库是可运行的 V1 控制面：Worker 健康接口、单管理员初始化与 session、React 控制台、
+D1 初始模型、Placement Engine 和 Workers 运行时测试已经就位；Provider 凭证接入和完整上传
+流程仍在后续路线中。
 
 ## 架构原则
 

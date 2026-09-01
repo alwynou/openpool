@@ -39,5 +39,13 @@ npm run verify
 本地 Secret 放在 `apps/worker/.dev.vars`，不要提交：
 
 ```dotenv
+ADMIN_BOOTSTRAP_TOKEN=generate-a-long-random-value
 CREDENTIAL_MASTER_KEY=base64-encoded-32-byte-key
 ```
+
+首次打开控制台时，用 `ADMIN_BOOTSTRAP_TOKEN` 创建唯一的管理员。bootstrap token 仅从请求头读取，
+不会写入 D1 或浏览器存储；管理员密码需为 12–256 个字符。初始化完成后仍应保留该 Secret，
+后续初始化请求会被拒绝。
+
+本地开发与 Workers Vitest 不需要 `wrangler login`。登录只在创建或操作远端 Cloudflare 资源时需要，
+这些步骤记录在 [Deferred 外部步骤](deferred-external-steps.md)。

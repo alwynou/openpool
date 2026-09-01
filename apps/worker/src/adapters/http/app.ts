@@ -5,14 +5,15 @@ import type {
 } from '@openpool/contracts';
 import { Hono } from 'hono';
 
-import type { Env, Variables } from '../../env';
+import {
+  registerAuthRoutes,
+  type AuthRouteDependencies,
+} from './auth-routes';
+import type { AppEnvironment } from './types';
 
-export type AppEnvironment = {
-  Bindings: Env;
-  Variables: Variables;
-};
-
-export function createHttpApp(): Hono<AppEnvironment> {
+export function createHttpApp(
+  dependencies: AuthRouteDependencies,
+): Hono<AppEnvironment> {
   const app = new Hono<AppEnvironment>();
 
   app.use('/api/*', async (context, next) => {
@@ -37,6 +38,8 @@ export function createHttpApp(): Hono<AppEnvironment> {
     return context.json(response);
   });
 
+  registerAuthRoutes(app, dependencies);
+
   app.notFound((context) => {
     const response: ApiError = {
       error: {
@@ -52,7 +55,7 @@ export function createHttpApp(): Hono<AppEnvironment> {
   app.onError((error, context) => {
     console.error('Unhandled request error', {
       requestId: context.get('requestId'),
-      error,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
     });
 
     const response: ApiError = {

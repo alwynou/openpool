@@ -12,7 +12,12 @@ tag 随 Web Crypto ciphertext 保存。
 ## API Key 与会话
 
 - API Key 使用高熵随机值，数据库只保存 prefix 和带服务端 pepper 的哈希。
-- session token 同样只保存哈希，设置短过期时间与安全 Cookie。
+- 管理员初始化要求 Worker Secret `ADMIN_BOOTSTRAP_TOKEN`，并使用常量时间比较；该 token 不写入
+  D1 或浏览器存储。
+- 管理员密码使用带随机 salt 的 PBKDF2-SHA256 哈希；登录对未知用户执行等价的 dummy derivation，
+  避免通过响应内容区分用户名是否存在。
+- session token 使用 32 字节 CSPRNG 随机值，D1 只保存 SHA-256 哈希。默认 8 小时过期，Cookie
+  使用 `HttpOnly`、`SameSite=Strict`，非本地开发环境同时使用 `Secure`。
 - 权限按 action、logical bucket 和 path prefix 组合，不把 Provider 权限暴露给客户端。
 
 ## 签名 URL
