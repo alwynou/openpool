@@ -30,7 +30,8 @@ CREATE TRIGGER object_primary_location_reservation_guard
 BEFORE INSERT ON object_locations
 WHEN NEW.is_primary = 1
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'openpool_object_reservation_unavailable')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM objects AS object
     JOIN storage_shards AS shard
@@ -51,7 +52,7 @@ BEGIN
         shard.capacity_bytes - ((shard.capacity_bytes + 9) / 10) - shard.used_bytes
       AND object.size_bytes <=
         account.capacity_bytes - ((account.capacity_bytes + 9) / 10) - account.used_bytes
-  ) THEN RAISE(ABORT, 'openpool_object_reservation_unavailable') END;
+  );
 END;
 
 CREATE TRIGGER object_primary_location_reservation_apply
@@ -83,7 +84,8 @@ CREATE TRIGGER upload_session_expiry_release_guard
 BEFORE UPDATE OF status ON upload_sessions
 WHEN OLD.status = 'PENDING' AND NEW.status = 'EXPIRED'
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'openpool_object_capacity_underflow')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM objects AS object
     JOIN object_locations AS location
@@ -97,7 +99,7 @@ BEGIN
       AND object.status = 'PENDING'
       AND shard.used_bytes >= object.size_bytes
       AND account.used_bytes >= object.size_bytes
-  ) THEN RAISE(ABORT, 'openpool_object_capacity_underflow') END;
+  );
 END;
 
 CREATE TRIGGER upload_session_expiry_release_apply
@@ -138,7 +140,8 @@ CREATE TRIGGER object_deletion_release_guard
 BEFORE UPDATE OF status ON objects
 WHEN OLD.status = 'DELETING' AND NEW.status = 'DELETED'
 BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT, 'openpool_object_capacity_underflow')
+  WHERE NOT EXISTS (
     SELECT 1
     FROM object_locations AS location
     JOIN storage_shards AS shard
@@ -154,7 +157,7 @@ BEGIN
         FROM upload_sessions
         WHERE object_id = OLD.id AND status = 'COMPLETED'
       ) = 1
-  ) THEN RAISE(ABORT, 'openpool_object_capacity_underflow') END;
+  );
 END;
 
 CREATE TRIGGER object_deletion_release_apply

@@ -26,3 +26,8 @@ Wrangler 按 migration history 依次应用尚未执行的文件；单个 migrat
 通过新的补偿迁移前滚。不要用回滚 SQL 或手工删除 migration history 降级。数据恢复需所有者批准，
 并使用受保护的 export 或 D1 Time Travel；这可能丢失恢复点之后的数据，完整 runbook 见
 [Cloudflare 部署](../docs/operations/cloudflare.md)和[V1 验收清单](../docs/development/v1-acceptance.md)。
+
+Migration SQL 由 `.gitattributes` 强制为 LF。包含 trigger 的 migration 不要在 trigger body 内使用
+以 `END;` 结尾的 `CASE` 表达式；当前 D1 remote migration splitter 可能把它误判为 trigger 结束。
+优先使用等价的 `SELECT RAISE(...) WHERE ...` 形式，并同时通过本地 runtime 测试和 staging remote
+migration 验证。

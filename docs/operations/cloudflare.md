@@ -3,8 +3,8 @@
 OpenPool 由一个 Worker 同时提供 API 和构建后的 SPA，D1 保存 metadata，Secret 保存加密密钥。
 本地默认 binding 保留占位数据库 ID；已创建的 staging D1 只配置在 `env.staging`。production 尚未
 创建，正式部署前必须新增独立 production environment 和数据库，不能复用 staging ID。
-本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对与 APAC staging
-D1 创建；尚未写入 Secret、执行远端 migration 或部署 Worker。
+本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对、APAC staging
+D1 创建及 0001→0003 staging migration；尚未写入 Secret 或部署 Worker。
 
 Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 的 direct-upload session：原子
 释放预留、保留 `PENDING` object tombstone，并重试 Provider 残留清理；成功后 upload session 变为

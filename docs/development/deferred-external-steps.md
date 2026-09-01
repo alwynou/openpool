@@ -13,7 +13,8 @@
   只保存在 Wrangler 配置所需位置）。
 - [ ] 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员 bootstrap secret；
   记录/保管 `CREDENTIAL_MASTER_KEY_ID`（默认 `primary-v1`），不要在 V1 期间更换已有 vault key。
-- [ ] 明确授权后执行 `npm run db:migrate:staging`；仓库目前没有 production migration 命令。
+- [x] 已获授权并执行 `npm run db:migrate:staging`；0001→0003 均已应用，migration history 无待办
+  （2026-09-01）。仓库目前没有 production migration 命令。
 - [ ] 明确授权后运行 `npm run deploy:staging`，将独立 Worker 发布到 staging `workers.dev`。只有
   同时授权 staging migration 和部署时才使用 `npm run deploy:staging:with-migrations`。
 - [ ] 部署后确认 `*/5 * * * *` Cron Trigger 已创建，并在 Cloudflare 日志/metrics 看到 scheduled

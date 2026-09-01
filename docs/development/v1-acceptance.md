@@ -124,9 +124,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 ### 前滚与发布
 
-- [ ] 先执行 `npm run verify`，再明确批准 `npm run db:migrate:staging`；确认目标为独立 staging D1，
+- [x] 已执行 `npm run verify` 并获准运行 `npm run db:migrate:staging`；目标为独立 staging D1，
   且只前滚
-  0001→0002→0003 的未应用迁移。
+  0001→0002→0003，随后 migrations list 显示无待办（2026-09-01）。新库迁移前为空，无用户数据
+  可备份。
 - [ ] 迁移成功后检查 migration history、健康接口、D1 关键约束和已有 credential 解密，再部署
   Worker；生产覆盖 `APP_ENV`，不使用 `development`。
 - [ ] 迁移确认完成后，运行根目录 `npm run deploy:staging` 构建 Web 并部署
