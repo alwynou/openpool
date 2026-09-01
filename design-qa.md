@@ -7,6 +7,9 @@
 - Desktop capture: `docs/design/qa/openpool-accounts-desktop.jpg` at 1440 × 1024
 - Mobile capture: `docs/design/qa/openpool-accounts-mobile.jpg` at 390 × 844
 - Side-by-side comparison: `docs/design/qa/openpool-accounts-comparison.png` (reference left, implementation right)
+- Logo source: `docs/design/openpool-logo-source.png`
+- Logo integration capture: `docs/design/qa/openpool-logo-integration.jpg`
+- Logo comparison: `docs/design/qa/openpool-logo-comparison.png` (processed source left, rendered 28px mark right)
 
 ## Comparison passes
 
@@ -28,6 +31,13 @@ Corrections were made in `apps/web/src/components/app-shell.tsx` and `apps/web/s
 - Dynamic differences: account identifiers, timestamps, priorities, and status sublabels come from live API data. The reference's open action menu, verification error, and toast are interaction states rather than persistent page chrome; the implementation exposes equivalent working states.
 
 No P0, P1, or P2 visual findings remain.
+
+### Logo integration
+
+- The latest selected OpenPool mark is preserved as the source asset and post-processed into a transparent 1024px application asset.
+- The sidebar, mobile header, and authentication brand lockup all consume the same `/openpool-logo.png` asset at 28px without stretching or clipping.
+- Dedicated 32px favicon and 180px Apple touch icon variants are generated from the same mark.
+- Browser verification confirmed the application asset loads at its native 1024 × 1024 dimensions, renders at 28 × 28, and both icon links are present. The fresh-page console has no warnings or errors.
 
 ## Behavior and accessibility checks
 

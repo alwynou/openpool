@@ -1,4 +1,3 @@
-import { ApertureIcon } from '@phosphor-icons/react/dist/csr/Aperture';
 import { BellIcon } from '@phosphor-icons/react/dist/csr/Bell';
 import { CaretDownIcon } from '@phosphor-icons/react/dist/csr/CaretDown';
 import { FileIcon } from '@phosphor-icons/react/dist/csr/File';
@@ -28,7 +27,7 @@ const navigation = [
 export function Brand() {
   return (
     <NavLink to="/overview" className="inline-flex items-center gap-2.5 text-lg font-semibold tracking-[-0.035em] text-zinc-950">
-      <ApertureIcon className="size-7" weight="bold" aria-hidden />
+      <img src="/openpool-logo.png" alt="" className="size-7 object-contain" aria-hidden />
       <span>OpenPool</span>
     </NavLink>
   );
