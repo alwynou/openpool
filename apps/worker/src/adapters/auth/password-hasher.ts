@@ -14,8 +14,11 @@ export interface PasswordHasherOptions {
 
 const FORMAT = 'pbkdf2-sha256';
 const VERSION = 'v=1';
-const DEFAULT_ITERATIONS = 600_000;
-const MAX_ACCEPTED_ITERATIONS = 2_000_000;
+// Cloudflare Workers rejects PBKDF2 operations above 100,000 iterations.
+// Keep generated administrator passwords high entropy and fail closed on
+// encoded hashes this runtime cannot verify.
+const DEFAULT_ITERATIONS = 100_000;
+const MAX_ACCEPTED_ITERATIONS = 100_000;
 const DERIVED_BITS = 256;
 const DUMMY_SALT = new TextEncoder().encode('openpool-auth-v1');
 

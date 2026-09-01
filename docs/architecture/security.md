@@ -17,7 +17,9 @@ IV，并把 `version`、`algorithm` 和 `keyId` 作为 additional authenticated 
 - API Key 使用高熵随机值，数据库只保存 prefix 和带服务端 pepper 的哈希。
 - 管理员初始化要求 Worker Secret `ADMIN_BOOTSTRAP_TOKEN`，并使用常量时间比较；该 token 不写入
   D1 或浏览器存储。
-- 管理员密码使用带随机 salt 的 PBKDF2-SHA256 哈希；登录对未知用户执行等价的 dummy derivation，
+- 管理员密码使用带 16 字节随机 salt、100,000 次迭代的 PBKDF2-SHA256 哈希；这是 Cloudflare
+  Workers Web Crypto 当前允许的最大 PBKDF2 迭代次数。部署初始化应使用密码管理器生成并保存的
+  高熵随机密码，不应使用短密码补偿平台 KDF 上限。登录对未知用户执行等价的 dummy derivation，
   避免通过响应内容区分用户名是否存在。
 - session token 使用 32 字节 CSPRNG 随机值，D1 只保存 SHA-256 哈希。默认 8 小时过期，Cookie
   使用 `HttpOnly`、`SameSite=Strict`，非本地开发环境同时使用 `Secure`。

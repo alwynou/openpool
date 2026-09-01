@@ -20,6 +20,7 @@ smoke。勾选项代表项目所有者或验收者实际取得证据后才可勾
 - [ ] `GET /api/v1/setup/status` 初始返回 `initialized: false`。
 - [ ] 用 `x-openpool-bootstrap-token` 调用 `POST /api/v1/setup`，验证只成功一次；错误 token 为
   `403 INVALID_BOOTSTRAP_TOKEN`，重复初始化为 `409 ALREADY_INITIALIZED`，密码长度限制为 12–256。
+  真实环境使用密码管理器生成的高熵随机密码，以配合 Workers 允许的 100,000 次 PBKDF2 上限。
 - [ ] `POST /api/v1/auth/login` 设置 `openpool_session` HttpOnly、SameSite=Strict Cookie；错误
   用户名与错误密码都返回 `401 INVALID_CREDENTIALS`，不泄漏用户存在性。
 - [ ] `GET /api/v1/auth/session` 可读取当前 session；`DELETE /api/v1/auth/session` 撤销并清除

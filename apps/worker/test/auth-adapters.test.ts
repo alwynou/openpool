@@ -16,6 +16,17 @@ describe('authentication crypto adapters', () => {
     expect(await hasher.verify('correct horse battery staple', `${first}x`)).toBe(false);
   });
 
+  it('uses the maximum PBKDF2 iteration count supported by Workers', async () => {
+    const encoded = await new WebCryptoPasswordHasher().hash(
+      'correct horse battery staple',
+    );
+
+    expect(encoded).toContain('$i=100000$');
+    expect(() => new WebCryptoPasswordHasher({ iterations: 100_001 })).toThrow(
+      'Invalid PBKDF2 iterations',
+    );
+  });
+
   it('generates opaque high-entropy tokens and only hashes them', async () => {
     const generator = new WebCryptoSessionTokenGenerator();
     const token = generator.generate();
