@@ -96,8 +96,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 以下步骤必须由项目所有者提供隔离资源和凭证，执行后才可声称真实联调通过：
 
-- [ ] R2：已创建 APAC 隔离测试 bucket `openpool-staging-smoke` 并设置 staging-only CORS；仍需创建
-  bucket-scoped S3 credentials，并执行 `HEAD Bucket` 验证以及 PUT/HEAD/GET/DELETE object smoke。
+- [x] R2：APAC 隔离测试 bucket `openpool-staging-smoke` 使用 bucket-scoped Object Read & Write
+  credentials，通过 `HEAD Bucket` 验证、逻辑 Bucket/ACTIVE shard、签名 PUT、complete/HEAD、签名
+  GET 字节比对及 DELETE smoke；删除后容量归零且 R2 bucket 为空（2026-09-01）。
 - [ ] Backblaze B2：隔离测试 bucket、受限 application key；用正确 region 执行同一组 S3-compatible
   smoke。
 - [ ] Generic S3：提供 HTTPS endpoint、region、validation bucket、addressing style 和受限凭证；
@@ -141,8 +142,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 部署后健康接口、静态控制台和初始 `initialized: false` 已验证；使用钥匙串中的高熵随机密码
   初始化 `admin` 后，登录、session、管理员 audit 查询、登出和撤销后 session 均通过远端检查。
   删除 bootstrap secret 后再次验证健康、`initialized: true`、登录和登出（2026-09-01）。
-- [ ] staging 控制面流程、真实 Provider signed PUT/GET/CORS smoke 与 observability 敏感值检查仍待
-  完成。
+- [ ] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard 和非浏览器 signed PUT/GET/DELETE smoke 已完成；
+  浏览器 CORS、B2/Generic S3 联调与 observability 敏感值检查仍待完成。
 - [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
   看到至少一次 scheduled maintenance 运行记录；确认失败清理会留待下次重试。
 

@@ -30,8 +30,10 @@
 - [x] 已在当前 staging Cloudflare account 创建 APAC 的独立空 bucket `openpool-staging-smoke`，并配置
   只允许 staging `workers.dev` origin 的 `PUT`/`GET`/`HEAD`/`DELETE`、`Content-Type` 和 `ETag`
   CORS policy（2026-09-01）。
-- [ ] 为 `openpool-staging-smoke` 创建只授权该 bucket 的 Object Read & Write S3 API credentials，
-  再通过 OpenPool 执行 PUT/HEAD/GET/DELETE smoke test；credential 不经过仓库或聊天。
+- [x] 已为 `openpool-staging-smoke` 创建只授权该 bucket 的 Object Read & Write S3 API credentials，
+  并通过 OpenPool 完成账号验证、逻辑 Bucket/ACTIVE shard、签名 PUT、complete/HEAD、签名 GET 字节
+  比对及 DELETE smoke；删除后账号与 shard 用量均回到 0，R2 bucket 为空，审计事件完整
+  （2026-09-01）。credential 未经过仓库或聊天。
 - [ ] 为 Backblaze B2 创建独立测试 bucket 和受限 application key，执行 S3-compatible smoke test。
 - [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
 - [ ] 在浏览器中实际验证 R2 CORS；后续 B2/Generic S3 bucket 也必须配置最小化 CORS：仅允许管理后台
