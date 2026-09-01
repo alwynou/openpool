@@ -2,7 +2,7 @@
 
 ## Phase 0：Foundation（当前）
 
-- workspace、严格 TypeScript、lint/format/test/build；
+- workspace、严格 TypeScript、Oxlint、test/build；
 - Worker + Static Assets + D1；
 - domain/application/adapters 分层；
 - 初始 schema、Placement 规则与文档。

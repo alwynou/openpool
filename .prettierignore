@@ -1,7 +1,0 @@
-dist
-coverage
-node_modules
-.wrangler
-package-lock.json
-apps/worker/src/generated
-

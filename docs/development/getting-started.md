@@ -28,10 +28,11 @@ npm run test
 npm run test:watch
 npm run typecheck
 npm run lint
-npm run format
 npm run build
 npm run verify
 ```
+
+代码检查由 Oxlint 执行；仓库不依赖 ESLint 或 Prettier。
 
 新增或修改 `wrangler.jsonc` binding 后运行 `npm run cf:typegen`。生成文件不手工编辑。
 
