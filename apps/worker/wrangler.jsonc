@@ -33,6 +33,7 @@
       "vars": {
         "APP_ENV": "staging",
         "APP_VERSION": "0.1.0",
+        "CREDENTIAL_MASTER_KEY_ID": "primary-v1",
       },
       "d1_databases": [
         {

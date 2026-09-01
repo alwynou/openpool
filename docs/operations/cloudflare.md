@@ -34,6 +34,8 @@ npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging --config apps/worker
 manager 注入。`CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER` 必须是各自独立、恰好 32 字节的
 canonical base64；`ADMIN_BOOTSTRAP_TOKEN` 也必须是高熵随机值。`CREDENTIAL_MASTER_KEY_ID` 不是
 Secret，V1 默认值是 `primary-v1`；部署配置若显式设置它，首次写入后必须保持不变。
+staging 的三项 Secret 还应备份在受保护的密码管理器或操作系统钥匙串中，因为 Cloudflare 不提供
+Secret 明文回读；不得使用 staging 值创建 production 环境。
 
 初始化成功后可删除 `ADMIN_BOOTSTRAP_TOKEN` 以缩小暴露面；系统已经初始化时不再接受 bootstrap
 请求。只有重建一个全新的 D1/实例并重新执行初始化时，才需要为该实例生成新的 token。
