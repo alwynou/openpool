@@ -27,4 +27,21 @@
       "migrations_dir": "../../database/migrations",
     },
   ],
+  "env": {
+    "staging": {
+      "workers_dev": true,
+      "vars": {
+        "APP_ENV": "staging",
+        "APP_VERSION": "0.1.0",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "openpool-staging",
+          "database_id": "da285616-0bb8-47a9-b67e-7fcfde8f7b83",
+          "migrations_dir": "../../database/migrations",
+        },
+      ],
+    },
+  },
 }

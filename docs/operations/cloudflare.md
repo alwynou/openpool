@@ -1,9 +1,10 @@
 # Cloudflare 部署
 
 OpenPool 由一个 Worker 同时提供 API 和构建后的 SPA，D1 保存 metadata，Secret 保存加密密钥。
-正式部署前需要把 `apps/worker/wrangler.jsonc` 中的占位数据库 ID 换成目标账号中的真实值。
-本页命令是可执行的发布 runbook；本次文档更新没有登录 Cloudflare、创建 D1、写入 Secret、远端迁移
-或部署。
+本地默认 binding 保留占位数据库 ID；已创建的 staging D1 只配置在 `env.staging`。production 尚未
+创建，正式部署前必须新增独立 production environment 和数据库，不能复用 staging ID。
+本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对与 APAC staging
+D1 创建；尚未写入 Secret、执行远端 migration 或部署 Worker。
 
 Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 的 direct-upload session：原子
 释放预留、保留 `PENDING` object tombstone，并重试 Provider 残留清理；成功后 upload session 变为
@@ -13,21 +14,20 @@ Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 
 
 ```bash
 npx wrangler login
-npx wrangler d1 create openpool
+npx wrangler d1 create openpool-staging --location apac
 ```
 
-`wrangler login`、Cloudflare account 选择和 D1 location/jurisdiction 都需要项目所有者参与。复制
-`d1 create` 返回的 `database_id` 到 `apps/worker/wrangler.jsonc`，确认 `database_name`、账号和
-环境无误；如需位置提示可在 create 命令增加 `--location apac`（或按合规要求使用
-`--jurisdiction eu|fedramp|us`）；不要把占位 UUID 部署到生产。然后为目标 Worker 配置三个 Secrets：
+`wrangler login`、Cloudflare account 选择和 D1 location/jurisdiction 都需要项目所有者参与。staging
+使用独立 `openpool-staging` D1 和 `env.staging`；不要把本地占位 UUID 或 staging UUID 部署到
+production。然后为 staging Worker 配置三个独立 Secrets：
 
 ```bash
 openssl rand -base64 32 # CREDENTIAL_MASTER_KEY；把输出交给下一条交互命令
-npx wrangler secret put CREDENTIAL_MASTER_KEY --config apps/worker/wrangler.jsonc
+npx wrangler secret put CREDENTIAL_MASTER_KEY --env staging --config apps/worker/wrangler.jsonc
 openssl rand -base64 32 # API_KEY_PEPPER；必须与 master key 分开生成
-npx wrangler secret put API_KEY_PEPPER --config apps/worker/wrangler.jsonc
+npx wrangler secret put API_KEY_PEPPER --env staging --config apps/worker/wrangler.jsonc
 openssl rand -base64 32 # ADMIN_BOOTSTRAP_TOKEN
-npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --config apps/worker/wrangler.jsonc
+npx wrangler secret put ADMIN_BOOTSTRAP_TOKEN --env staging --config apps/worker/wrangler.jsonc
 ```
 
 上述 `openssl` 输出不可作为命令参数复制进 shell history；应在交互提示中粘贴，或由外部 secret
@@ -56,9 +56,9 @@ D1 database ID、当前版本和维护窗口，保存受保护的 D1 export（�
 
 ```bash
 npx wrangler whoami --json
-npx wrangler d1 info openpool --config apps/worker/wrangler.jsonc
-npx wrangler d1 migrations list openpool --config apps/worker/wrangler.jsonc
-npx wrangler d1 export openpool --remote --output <secure-path>/openpool-before-0003.sql --config apps/worker/wrangler.jsonc
+npx wrangler d1 info DB --env staging --config apps/worker/wrangler.jsonc
+npx wrangler d1 migrations list DB --remote --env staging --config apps/worker/wrangler.jsonc
+npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-0003.sql --config apps/worker/wrangler.jsonc
 ```
 
 `<secure-path>` 必须是仓库外、访问受限且有保留策略的位置；不要把导出文件提交或粘贴到聊天。需要
@@ -67,7 +67,7 @@ npx wrangler d1 export openpool --remote --output <secure-path>/openpool-before-
 ```bash
 npm install
 npm run verify
-npm run db:migrate:remote
+npm run db:migrate:staging
 ```
 
 迁移命令只应用尚未应用的 migration；若任一 migration 失败，按 Wrangler 语义该次迁移会回滚，
@@ -77,14 +77,15 @@ npm run db:migrate:remote
 
 ### 发布命令
 
-仓库根目录的 `npm run deploy` 只构建 Web 并部署 Worker，不会隐式修改 D1。它不是 dry-run，仍有
-远端发布副作用；只有在完成登录、账号/D1/Secrets 核对并得到明确授权后才能执行。远端 migration
-始终使用独立的 `npm run db:migrate:remote`，以便先完成备份和 migration history 核对。
+仓库根目录的 `npm run deploy:staging` 只构建 Web 并部署 `openpool-staging` Worker，不会隐式修改
+D1。它不是 dry-run，仍有远端发布副作用；只有在完成登录、账号/D1/Secrets 核对并得到明确授权后
+才能执行。staging migration 始终使用独立的 `npm run db:migrate:staging`，以便先完成备份和
+migration history 核对。仓库目前不提供 production migration/deploy 命令。
 
-`npm run deploy:with-migrations` 是明确选择“先远端 migration、再部署”的便利命令，同时具有两类
-远端副作用；只允许在首次安装或升级维护窗口中，经项目所有者确认目标账号、D1、备份和授权后使用。
-只构建或只发布 Worker 时，分别使用 `npm run build` 或
-`npm run deploy --workspace=@openpool/worker`。
+`npm run deploy:staging:with-migrations` 是明确选择“先 staging migration、再部署”的便利命令，
+同时具有两类远端副作用；只允许在首次安装或升级维护窗口中，经项目所有者确认目标账号、D1、备份
+和授权后使用。只构建或只发布 staging Worker 时，分别使用 `npm run build` 或
+`npm run deploy:staging --workspace=@openpool/worker`。
 
 当前仓库没有可用于 Cloudflare Deploy Button 的公开 git remote URL，因此按钮尚未发布，也不应在
 这里声称“一键按钮”可用。未来若发布公开仓库，可按

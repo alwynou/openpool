@@ -7,14 +7,15 @@
 
 - [x] 使用 `wrangler login` 完成交互式 Cloudflare 登录，并通过 `wrangler whoami --json` 确认唯一
   可见的 Cloudflare account（2026-09-01；账号 ID 与登录邮箱不写入仓库）。
-- [ ] 决定 test/production 是否使用独立 Cloudflare account 或至少独立资源与环境。
-- [ ] 确认 D1 location 或 jurisdiction，再创建远端 D1 并替换 `wrangler.jsonc` 中的占位 ID。
+- [x] staging 使用当前 Cloudflare account 的独立 Worker、D1、Secrets 和 Provider 资源；production
+  暂不创建，正式上线前再决定是否使用独立 account（2026-09-01）。
+- [x] 在 APAC 创建独立的 `openpool-staging` D1，并绑定到 `env.staging`（2026-09-01；database ID
+  只保存在 Wrangler 配置所需位置）。
 - [ ] 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员 bootstrap secret；
   记录/保管 `CREDENTIAL_MASTER_KEY_ID`（默认 `primary-v1`），不要在 V1 期间更换已有 vault key。
-- [ ] 明确授权后执行远端 D1 migration。
-- [ ] 明确授权后部署 Worker（根目录 `npm run deploy` 只构建 Web 并发布，不隐式迁移 D1），并决定
-  使用 `workers.dev` 还是自定义域名。只有同时授权远端迁移和部署时才使用
-  `npm run deploy:with-migrations`。
+- [ ] 明确授权后执行 `npm run db:migrate:staging`；仓库目前没有 production migration 命令。
+- [ ] 明确授权后运行 `npm run deploy:staging`，将独立 Worker 发布到 staging `workers.dev`。只有
+  同时授权 staging migration 和部署时才使用 `npm run deploy:staging:with-migrations`。
 - [ ] 部署后确认 `*/5 * * * *` Cron Trigger 已创建，并在 Cloudflare 日志/metrics 看到 scheduled
   maintenance 运行记录。
 - [ ] 如启用 CI/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入。

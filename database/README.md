@@ -8,16 +8,17 @@
 
 ```bash
 npm run db:migrate:local
-npm run db:migrate:remote
+npm run db:migrate:staging
 ```
 
-`db:migrate:local` 只操作 Wrangler 本地持久化 D1；`db:migrate:remote` 会改变远端 D1，必须由用户
-明确授权。执行前确认 `apps/worker/wrangler.jsonc` 的 database ID、当前 Cloudflare account、目标
-环境，并在仓库外安全位置导出备份：
+`db:migrate:local` 只操作 Wrangler 本地持久化 D1；`db:migrate:staging` 显式改变 staging D1，必须
+由用户明确授权。仓库目前不提供 production migration 命令。执行前确认
+`apps/worker/wrangler.jsonc` 的 database ID、当前 Cloudflare account、目标环境，并在仓库外安全
+位置导出备份：
 
 ```bash
-npx wrangler d1 migrations list openpool --config apps/worker/wrangler.jsonc
-npx wrangler d1 export openpool --remote --output <secure-path>/openpool-before-migration.sql --config apps/worker/wrangler.jsonc
+npx wrangler d1 migrations list DB --remote --env staging --config apps/worker/wrangler.jsonc
+npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-migration.sql --config apps/worker/wrangler.jsonc
 ```
 
 Wrangler 按 migration history 依次应用尚未执行的文件；单个 migration 失败时该次迁移保持回滚，

@@ -110,8 +110,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 ### 升级前
 
-- [ ] `npx wrangler login` 成功，确认目标 account；确认 test/production 隔离、D1 location/
-  jurisdiction 和 `wrangler.jsonc` 的真实 `database_id`。
+- [x] `npx wrangler login` 成功并确认唯一可见 account；staging 使用 APAC 的独立 D1 与
+  `env.staging`（2026-09-01）。production 尚未创建，不能复用 staging database ID。
 - [ ] 配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、`ADMIN_BOOTSTRAP_TOKEN`；保管
   `CREDENTIAL_MASTER_KEY_ID`，V1 期间不更换已有 key/ID。
 - [ ] 运行 `npx wrangler whoami --json`、`npx wrangler d1 info openpool --config apps/worker/wrangler.jsonc`
@@ -119,19 +119,20 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [ ] 用仓库外受限路径保存迁移前 D1 export（包含 metadata、audit 和加密 credential envelope）：
 
   ```bash
-  npx wrangler d1 export openpool --remote --output <secure-path>/openpool-before-v1.sql --config apps/worker/wrangler.jsonc
+  npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-v1.sql --config apps/worker/wrangler.jsonc
   ```
 
 ### 前滚与发布
 
-- [ ] 先执行 `npm run verify`，再在维护窗口明确批准 `npm run db:migrate:remote`；确认只前滚
+- [ ] 先执行 `npm run verify`，再明确批准 `npm run db:migrate:staging`；确认目标为独立 staging D1，
+  且只前滚
   0001→0002→0003 的未应用迁移。
 - [ ] 迁移成功后检查 migration history、健康接口、D1 关键约束和已有 credential 解密，再部署
   Worker；生产覆盖 `APP_ENV`，不使用 `development`。
-- [ ] 迁移确认完成后，运行根目录 `npm run deploy` 构建 Web 并部署 Worker；该命令不会隐式迁移
-  D1，但不是 dry-run，必须视为有远端发布副作用的命令。
+- [ ] 迁移确认完成后，运行根目录 `npm run deploy:staging` 构建 Web 并部署
+  `openpool-staging`；该命令不会隐式迁移 D1，但不是 dry-run，必须视为有远端发布副作用的命令。
 - [ ] 仅在明确需要把两个远端步骤合并且已再次确认账号、D1、备份和授权时，才使用
-  `npm run deploy:with-migrations`；该命令会先远端迁移再部署。
+  `npm run deploy:staging:with-migrations`；该命令会先迁移 staging D1 再部署 staging Worker。
 - [ ] 部署后执行健康、认证、控制面流程，并重复真实 Provider signed PUT/GET/CORS smoke；确认
   observability 日志无敏感值。
 - [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
