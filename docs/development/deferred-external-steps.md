@@ -15,8 +15,11 @@
   bootstrap secret，并备份到 macOS 登录钥匙串；`CREDENTIAL_MASTER_KEY_ID` 固定为 `primary-v1`
   （2026-09-01）。`admin` 初始化后已从 Worker 删除一次性 bootstrap secret，远端只保留 master
   key 和 pepper；不要在 V1 期间更换已有 vault key。
-- [x] 已获授权并执行 `npm run db:migrate:staging`；0001→0003 均已应用，migration history 无待办
-  （2026-09-01）。仓库目前没有 production migration 命令。
+- [x] 已获授权并执行 V1 `npm run db:migrate:staging`；0001→0003 均已应用（2026-09-01）。仓库目前
+  没有 production migration 命令。
+- [ ] Phase 2 的 `0004_shard_migrations.sql` 尚未应用到 staging，相关 Worker/Web 也尚未部署。执行前
+  需项目所有者指定受限 D1 export 保存位置，并分别明确授权 remote migration 与 staging deploy；
+  不得用当前对话中的开发授权推定远端变更授权。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration
@@ -54,6 +57,12 @@
   的临时全账户 application key 已立即撤销（2026-09-01）。
 - [ ] Generic S3 bucket 仍需配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/直取所需
   method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
+- [ ] 在 staging 0004/deploy 完成后，用独立 R2/B2 测试 shard 执行一次真实 drain → migration：确认
+  CLI 流式传输、目标 HEAD、primary 切换、源删除、容量计数、scheduled cleanup 和源 shard retirement。
+  该验收会改变远端 D1 与 Provider 对象，必须单独授权。
+- [ ] B2 smoke 的 S3 DELETE 已留下一个 52 B 对象的历史 upload version 与 hide marker；用户已确认
+  永久删除，但 Backblaze 浏览器会话在操作前过期。需重新登录 Backblaze 后删除全部两个版本，或为
+  测试 bucket 配置合适的 lifecycle；这不影响 OpenPool 中已完成的逻辑删除。
 
 所有 secret 都只能通过本地忽略文件、交互式命令、Cloudflare Secret 或外部 secret manager 注入，不能写入
 仓库、测试快照、日志或聊天记录。

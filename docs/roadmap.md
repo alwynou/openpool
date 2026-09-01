@@ -29,8 +29,9 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 
 ## Phase 2
 
-- account drain 与 shard migration（按
-  [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)使用持久化任务和客户端直传）；
+- account drain 与 shard migration（本地实现完成：持久化任务、原子 cutover、双重容量预留、管理
+  界面、流式 CLI 和 scheduled source cleanup；staging 0004 migration/deploy 与真实跨 Provider smoke
+  待项目所有者授权，设计见 [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)）；
 - 业务写入与审计事件的事务 outbox/强一致 append；
 - GitHub/static tier；
 - replication 与校验修复；

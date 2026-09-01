@@ -24,6 +24,7 @@
 - [审计日志 API](api/audit-logs.md)：管理员只读查询、过滤和游标分页。
 - [Storage Account API](api/storage-accounts.md)：Provider 账号、验证、健康与生命周期。
 - [Bucket 与 Shard API](api/buckets.md)：逻辑命名空间和物理 Bucket 映射。
+- [Shard Migration API 与搬运器](api/shard-migrations.md)：account drain、持久化迁移和流式 CLI。
 - [对象 API](api/objects.md)：reserve、complete、签名下载和幂等删除。
 - [Provider 指南](providers/README.md)：Provider 端口、能力和实现顺序。
 - [Cloudflare 运维](operations/cloudflare.md)：D1、Secret、部署与回滚。

@@ -3,6 +3,8 @@ import type {
   ObjectLocation,
   ProviderConfig,
   ProviderCapabilities,
+  ShardMigration,
+  ShardMigrationObject,
   StorageAccount,
   StorageHealthStatus,
   StoredObject,
@@ -80,6 +82,102 @@ export interface StorageShardRepository {
     expectedUpdatedAt: string,
   ): Promise<boolean>;
 }
+
+export interface ShardMigrationRepository {
+  createAndCutover(
+    migration: ShardMigration,
+    expectedSourceUpdatedAt: string,
+    expectedTargetUpdatedAt: string,
+  ): Promise<CreateShardMigrationPersistenceResult>;
+  findById(id: string): Promise<ShardMigration | undefined>;
+  listByLogicalBucketId(
+    logicalBucketId: string,
+  ): Promise<readonly ShardMigration[]>;
+  progress(id: string): Promise<ShardMigrationProgress | undefined>;
+  claimTransfer(
+    input: ClaimShardMigrationTransferInput,
+  ): Promise<ClaimShardMigrationTransferPersistenceResult>;
+  findTransfer(
+    taskId: string,
+    leaseToken: string,
+  ): Promise<ShardMigrationTransferAggregate | undefined>;
+  /** Bounded tasks whose primary switched but source provider cleanup remains. */
+  listSourceCleanupCandidates(
+    limit: number,
+  ): Promise<readonly ShardMigrationTransferAggregate[]>;
+  switchPrimary(
+    taskId: string,
+    leaseToken: string,
+    etag: string | null,
+    updatedAt: string,
+  ): Promise<SwitchShardMigrationPrimaryResult>;
+  finishSourceCleanup(
+    taskId: string,
+    updatedAt: string,
+  ): Promise<FinishShardMigrationCleanupResult>;
+  completeIfReady(
+    migrationId: string,
+    completedAt: string,
+  ): Promise<CompleteShardMigrationResult>;
+}
+
+export type CreateShardMigrationPersistenceResult =
+  | 'CREATED'
+  | 'ALREADY_RUNNING'
+  | 'CONFLICT';
+
+export interface ShardMigrationProgress {
+  readonly reserved: number;
+  readonly switched: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly remainingReady: number;
+  readonly blocking: number;
+}
+
+export interface ClaimShardMigrationTransferInput {
+  readonly migrationId: string;
+  readonly taskId: string;
+  readonly targetLocationId: string;
+  readonly targetPhysicalKeyPrefix: string;
+  readonly leaseToken: string;
+  readonly leasedAt: string;
+  readonly leaseExpiresAt: string;
+}
+
+export type ClaimShardMigrationTransferPersistenceResult =
+  | { readonly outcome: 'CLAIMED'; readonly transfer: ShardMigrationTransferAggregate }
+  | { readonly outcome: 'NONE' }
+  | { readonly outcome: 'CAPACITY_UNAVAILABLE' }
+  | { readonly outcome: 'CONFLICT' };
+
+export interface ShardMigrationTransferAggregate {
+  readonly migration: ShardMigration;
+  readonly task: ShardMigrationObject;
+  readonly object: StoredObject;
+  readonly sourceLocation: ObjectLocation | null;
+  readonly targetLocation: ObjectLocation;
+}
+
+export type SwitchShardMigrationPrimaryResult =
+  | 'SWITCHED'
+  | 'ALREADY_SWITCHED'
+  | 'ALREADY_COMPLETED'
+  | 'NOT_FOUND'
+  | 'CONFLICT';
+
+export type FinishShardMigrationCleanupResult =
+  | 'COMPLETED'
+  | 'ALREADY_COMPLETED'
+  | 'NOT_FOUND'
+  | 'CONFLICT';
+
+export type CompleteShardMigrationResult =
+  | 'COMPLETED'
+  | 'ALREADY_COMPLETED'
+  | 'BLOCKED'
+  | 'NOT_FOUND'
+  | 'CONFLICT';
 
 export interface ObjectRepository {
   /**

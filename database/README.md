@@ -4,7 +4,8 @@
 
 1. `0001_initial.sql`：基础表，以及 API key/audit log 表；
 2. `0002_storage_account_metadata.sql`：Storage Account capabilities、容量准确性；
-3. `0003_object_capacity_reservations.sql`：upload session 唯一约束、D1 断言和容量预留/释放触发器。
+3. `0003_object_capacity_reservations.sql`：upload session 唯一约束、D1 断言和容量预留/释放触发器；
+4. `0004_shard_migrations.sql`：durable shard migration、对象任务、租约、目标双重容量预留与条件断言。
 
 ```bash
 npm run db:migrate:local

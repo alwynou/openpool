@@ -41,7 +41,8 @@ export interface StorageShardResponse {
 }
 
 export interface UpdateStorageShardStatusRequest {
-  readonly status: StorageShardStatus;
+  /** MIGRATING is entered only by the durable shard migration workflow. */
+  readonly status: 'ACTIVE' | 'READ_ONLY' | 'RETIRED';
 }
 
 /** Stable errors shared by the logical bucket and storage shard endpoints. */

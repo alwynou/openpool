@@ -29,6 +29,10 @@ import {
   registerStorageAccountRoutes,
   type StorageAccountRouteDependencies,
 } from './storage-account-routes';
+import {
+  registerShardMigrationRoutes,
+  type ShardMigrationRouteDependencies,
+} from './shard-migration-routes';
 import type { AppEnvironment } from './types';
 
 const CLIENT_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -45,7 +49,8 @@ export type HttpAppDependencies = AuthRouteDependencies &
   AuditRouteDependencies &
   StorageAccountRouteDependencies &
   BucketRouteDependencies &
-  ObjectRouteDependencies;
+  ObjectRouteDependencies &
+  ShardMigrationRouteDependencies;
 
 export function createHttpApp(
   dependencies: HttpAppDependencies,
@@ -80,6 +85,7 @@ export function createHttpApp(
   registerStorageAccountRoutes(app, dependencies);
   registerBucketRoutes(app, dependencies);
   registerObjectRoutes(app, dependencies);
+  registerShardMigrationRoutes(app, dependencies);
 
   app.notFound((context) => {
     const response: ApiError = {

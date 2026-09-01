@@ -24,9 +24,10 @@ const allowedTransitions: Readonly<
   Record<StorageShardStatus, readonly StorageShardStatus[]>
 > = {
   STANDBY: ['ACTIVE', 'RETIRED'],
-  ACTIVE: ['READ_ONLY', 'MIGRATING'],
+  ACTIVE: ['READ_ONLY'],
   READ_ONLY: ['RETIRED'],
-  MIGRATING: ['ACTIVE', 'READ_ONLY', 'RETIRED'],
+  // MIGRATING is owned by the durable migration workflow, not manual status APIs.
+  MIGRATING: [],
   RETIRED: [],
 };
 

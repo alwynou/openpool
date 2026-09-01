@@ -71,6 +71,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
+    testEnv.DB.prepare('DELETE FROM shard_migration_objects'),
+    testEnv.DB.prepare('DELETE FROM shard_migrations'),
     testEnv.DB.prepare('DELETE FROM upload_sessions'),
     testEnv.DB.prepare('DELETE FROM object_locations'),
     testEnv.DB.prepare('DELETE FROM objects'),
@@ -131,6 +133,112 @@ async function seedExpiredUpload(): Promise<void> {
   ]);
 }
 
+async function seedSwitchedMigrationCleanup(): Promise<void> {
+  const capabilityJson =
+    '{"presignedUpload":true,"presignedDownload":true,"headObject":true,"deleteObject":true,"bucketProbe":true,"usageProbe":false}';
+  await testEnv.DB.batch([
+    testEnv.DB
+      .prepare(
+        `INSERT INTO storage_accounts
+         (id, name, provider, status, priority, write_enabled, capacity_bytes,
+          used_bytes, provider_config, credential_envelope,
+          last_health_status, capabilities, capacity_accuracy, created_at,
+          updated_at)
+         VALUES ('source-account', 'Source', 'r2', 'ACTIVE', 0, 1, 1000,
+                 0, '{}', ?, 'HEALTHY', ?, 'CONFIGURED', ?, ?),
+                ('target-account', 'Target', 'r2', 'ACTIVE', 0, 1, 1000,
+                 0, '{}', ?, 'HEALTHY', ?, 'CONFIGURED', ?, ?)`,
+      )
+      .bind(
+        credentialEnvelope,
+        capabilityJson,
+        now,
+        now,
+        credentialEnvelope,
+        capabilityJson,
+        now,
+        now,
+      ),
+    testEnv.DB.prepare(
+      `INSERT INTO logical_buckets
+       (id, name, description, created_at, updated_at)
+       VALUES ('migration-bucket', 'migration', NULL, ?, ?)`,
+    ).bind(now, now),
+    testEnv.DB.prepare(
+      `INSERT INTO storage_shards
+       (id, logical_bucket_id, storage_account_id, physical_bucket, status,
+        capacity_bytes, used_bytes, created_at, updated_at)
+       VALUES ('source-shard', 'migration-bucket', 'source-account',
+               'source-physical', 'ACTIVE', 1000, 0, ?, ?),
+              ('target-shard', 'migration-bucket', 'target-account',
+               'target-physical', 'STANDBY', 1000, 0, ?, ?)`,
+    ).bind(now, now, now, now),
+    testEnv.DB.prepare(
+      `INSERT INTO objects
+       (id, logical_bucket_id, logical_key, size_bytes, content_type, checksum,
+        status, created_at, updated_at)
+       VALUES ('migration-object', 'migration-bucket', 'object.txt', 50,
+               'text/plain', NULL, 'PENDING', ?, ?)`,
+    ).bind(now, now),
+    testEnv.DB.prepare(
+      `INSERT INTO object_locations
+       (id, object_id, storage_account_id, storage_shard_id, physical_bucket,
+        physical_key, etag, is_primary, created_at, updated_at)
+       VALUES ('source-location', 'migration-object', 'source-account',
+               'source-shard', 'source-physical', 'objects/migration-object',
+               'source-etag', 1, ?, ?),
+              ('target-location', 'migration-object', 'target-account',
+               'target-shard', 'target-physical', 'objects/migration-object',
+               'target-etag', 0, ?, ?)`,
+    ).bind(now, now, now, now),
+    testEnv.DB.prepare(
+      `UPDATE objects SET status = 'READY' WHERE id = 'migration-object'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE storage_accounts
+       SET status = 'DRAINING', write_enabled = 0
+       WHERE id = 'source-account'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE storage_accounts SET used_bytes = 50
+       WHERE id = 'target-account'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE storage_shards SET status = 'MIGRATING'
+       WHERE id = 'source-shard'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE storage_shards SET status = 'ACTIVE', used_bytes = 50
+       WHERE id = 'target-shard'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE object_locations SET is_primary = 0
+       WHERE id = 'source-location'`,
+    ),
+    testEnv.DB.prepare(
+      `UPDATE object_locations SET is_primary = 1
+       WHERE id = 'target-location'`,
+    ),
+    testEnv.DB.prepare(
+      `INSERT INTO shard_migrations
+       (id, source_shard_id, target_shard_id, status, created_at, updated_at,
+        completed_at)
+       VALUES ('migration-1', 'source-shard', 'target-shard', 'RUNNING', ?, ?,
+               NULL)`,
+    ).bind(now, now),
+    testEnv.DB.prepare(
+      `INSERT INTO shard_migration_objects
+       (id, migration_id, object_id, source_location_id, target_location_id,
+        target_physical_key, status, lease_token, lease_expires_at,
+        attempt_count, last_error_code, created_at, updated_at, completed_at)
+       VALUES ('migration-task', 'migration-1', 'migration-object',
+               'source-location', 'target-location', 'objects/migration-object',
+               'SWITCHED', 'lease-secret', '2026-09-01T00:15:00.000Z', 1,
+               NULL, ?, ?, NULL)`,
+    ).bind(now, now),
+  ]);
+}
+
 describe('scheduled maintenance composition', () => {
   it('sweeps expired uploads through local D1 and injected provider ports', async () => {
     await seedExpiredUpload();
@@ -149,6 +257,10 @@ describe('scheduled maintenance composition', () => {
       cleanupCandidates: 1,
       cleaned: 1,
       failed: 0,
+      migrationCleanupCandidates: 0,
+      migrationsCleaned: 0,
+      migrationsCompleted: 0,
+      migrationCleanupFailed: 0,
     });
 
     expect(provider.deleteObject).toHaveBeenCalledOnce();
@@ -160,6 +272,48 @@ describe('scheduled maintenance composition', () => {
         .bind('session-1')
         .first<{ status: string }>(),
     ).resolves.toEqual({ status: 'ABORTED' });
+  });
+
+  it('recovers switched shard migration source cleanup', async () => {
+    await seedSwitchedMigrationCleanup();
+    let maintenanceId = 0;
+
+    await expect(
+      runScheduledMaintenance(testEnv, {
+        clock: { now: () => new Date(now) },
+        providerRegistry: providers,
+        credentialVault: vault,
+        idGenerator: { next: () => `maintenance-id-${maintenanceId++}` },
+      }),
+    ).resolves.toEqual({
+      pendingCandidates: 0,
+      expired: 0,
+      cleanupCandidates: 0,
+      cleaned: 0,
+      failed: 0,
+      migrationCleanupCandidates: 1,
+      migrationsCleaned: 1,
+      migrationsCompleted: 1,
+      migrationCleanupFailed: 0,
+    });
+
+    expect(provider.deleteObject).toHaveBeenCalledOnce();
+    expect(vault.decrypt).toHaveBeenCalledOnce();
+    await expect(
+      testEnv.DB.prepare(
+        `SELECT migration.status AS migration_status,
+                task.status AS task_status, source.status AS source_status
+         FROM shard_migrations AS migration
+         JOIN shard_migration_objects AS task
+           ON task.migration_id = migration.id
+         JOIN storage_shards AS source ON source.id = migration.source_shard_id
+         WHERE migration.id = 'migration-1'`,
+      ).first(),
+    ).resolves.toEqual({
+      migration_status: 'COMPLETED',
+      task_status: 'COMPLETED',
+      source_status: 'RETIRED',
+    });
   });
 });
 

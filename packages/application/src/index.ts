@@ -7,6 +7,7 @@ export * from './use-cases/auth';
 export * from './ports/credential-vault';
 export * from './use-cases/storage-accounts';
 export * from './use-cases/logical-buckets';
+export * from './use-cases/shard-migrations';
 export * from './use-cases/storage-shards';
 export * from './ports/api-key';
 export * from './use-cases/api-keys';

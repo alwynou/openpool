@@ -14,6 +14,10 @@ erDiagram
   STORAGE_ACCOUNTS ||--o{ OBJECT_LOCATIONS : stores
   STORAGE_SHARDS o|--o{ OBJECT_LOCATIONS : groups
   OBJECTS ||--o{ UPLOAD_SESSIONS : uploads
+  STORAGE_SHARDS ||--o{ SHARD_MIGRATIONS : source
+  STORAGE_SHARDS ||--o{ SHARD_MIGRATIONS : target
+  SHARD_MIGRATIONS ||--o{ SHARD_MIGRATION_OBJECTS : schedules
+  OBJECTS ||--o{ SHARD_MIGRATION_OBJECTS : moves
   LOGICAL_BUCKETS o|--o{ API_KEYS : scopes
 ```
 
@@ -22,6 +26,9 @@ erDiagram
 - `(logical_bucket_id, logical_key)` 唯一，保持统一命名空间稳定。
 - 一个逻辑 Bucket 同时最多一个 `ACTIVE` shard。
 - 一个对象同时最多一个 primary location；未来副本使用 non-primary location。
+- 一个源 shard 同时最多一个 `RUNNING` migration；每个 migration/object 最多一个任务。
+- migration target reservation 创建 non-primary location，并同时增加目标 shard/account 用量；只有
+  primary 切换且源 Provider 清理成功后才释放源计数。
 - storage account 使用状态机，不物理删除历史引用中的账号。
 - `credential_envelope` 只保存版本化加密信封，永不保存明文 secret。
 - `key_hash`、`token_hash` 只保存不可逆摘要，明文只在创建时返回一次。
@@ -47,6 +54,19 @@ PENDING → COMPLETED
         → EXPIRED
         → ABORTED
 ```
+
+Shard migration 与对象任务：
+
+```text
+RUNNING → COMPLETED | FAILED
+
+RESERVED → SWITCHED → COMPLETED
+        └→ FAILED → RESERVED
+```
+
+`MIGRATING` shard 状态只能由 durable migration 条件事务进入；通用 shard status API 不能绕过
+migration 任务。`SWITCHED` 表示目标已经是 primary，但源清理仍可由原搬运器或 scheduled
+maintenance 幂等重试。
 
 状态转换必须由用例显式完成，并写 audit log。数据库 CHECK 约束只负责拒绝非法值。
 

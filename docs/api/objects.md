@@ -57,5 +57,9 @@ Provider 残留，成功后标为 `ABORTED`。Provider 删除失败时保留 `EX
 - `DELETE /api/v1/objects/:id`：先持久化 `READY → DELETING`，再删除 Provider 对象，最后原子进入
   `DELETED` 并释放容量。
 
+对象已有 `RESERVED` 或 `SWITCHED` shard migration task 时，删除返回 `409 OBJECT_CONFLICT`，避免
+普通删除与 primary 切换/双重容量预留并发；migration 完成后可重试。先进入 `DELETING` 的对象不会
+被 migration claim，而会显示在 migration 的 `blocking` 进度中直到删除收敛。
+
 删除可安全重试：Provider 返回 404 表示目标状态已经达到；D1 只在第一次
 `DELETING → DELETED` 时释放容量。签名 URL 不写入 D1、audit metadata 或日志。

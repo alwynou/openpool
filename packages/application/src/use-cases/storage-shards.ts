@@ -232,6 +232,23 @@ export class TransitionStorageShard {
         'Storage shard state transition is not allowed',
       );
     }
+    if (current.status === 'ACTIVE' && shard.status === 'READ_ONLY') {
+      const account = await this.dependencies.accounts.findById(
+        shard.storageAccountId,
+      );
+      if (!account) {
+        throw new StorageShardApplicationError(
+          'STORAGE_SHARD_ACCOUNT_NOT_FOUND',
+          'Storage account was not found',
+        );
+      }
+      if (account.status !== 'ACTIVE') {
+        throw new StorageShardApplicationError(
+          'STORAGE_SHARD_INVALID_STATE_TRANSITION',
+          'A shard on a draining account must be retired through migration',
+        );
+      }
+    }
     if (isWritableStorageShard(shard)) {
       const account = await this.dependencies.accounts.findById(
         shard.storageAccountId,

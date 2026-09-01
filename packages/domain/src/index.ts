@@ -5,4 +5,5 @@ export * from './provider';
 export * from './auth';
 export * from './logical-bucket';
 export * from './storage-shard';
+export * from './shard-migration';
 export * from './api-key';

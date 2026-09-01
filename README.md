@@ -8,8 +8,9 @@ OpenPool 把用户合法拥有的多个 Cloudflare R2、Backblaze B2 和 S3-comp
 当前仓库是持续实现中的 V1 控制面：Worker 健康接口、单管理员初始化与 session、AES-GCM
 credential vault、Storage Account 生命周期、R2/B2/Generic S3 验证与签名、D1 模型、Placement
 Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管理与 audit-log 查询 API
-以及覆盖这些管理面的 Web 控制台已经实现。独立 Cloudflare staging、D1、Secret、部署及真实 R2
-直传 smoke 已验收；B2、Generic S3、production 和 CI/CD 仍需要项目所有者提供外部资源或授权。
+以及覆盖这些管理面的 Web 控制台已经实现。Phase 2 的 account drain/shard migration 控制面、流式
+搬运 CLI 与恢复清理已在本地实现。独立 Cloudflare staging、D1、Secret、部署及真实 R2/B2 直传
+smoke 已验收；Generic S3、production、CI/CD 和 migration 的远端验收仍需项目所有者授权。
 
 ## 架构原则
 
@@ -53,6 +54,7 @@ npm run verify
 ```text
 apps/worker/          Cloudflare Worker、HTTP 适配器、组合根
 apps/web/             React 管理控制台
+apps/migrator/        Shard migration 流式数据搬运 CLI
 packages/domain/      纯领域模型与 Placement 规则
 packages/application/ 用例与端口（接口）
 packages/contracts/   Worker 与 Web 共用的 API 契约
@@ -74,8 +76,9 @@ V1 控制面支持单管理员、R2/B2/Generic S3、逻辑 Bucket、文件元数
 V1。
 
 V1 的已知限制：过期 `PENDING` tombstone 会保留以供审计，因此同一 logical key 不能立即复用；
-后续需要 retry/version namespace design。V1 没有无人值守的自动 migration、自动 replication 或
-gateway（发布命令虽可串联迁移，但必须由用户明确授权），对象字节也不会经 Worker 代理。
+后续需要 retry/version namespace design。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
+只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
+对象字节始终不会经过 Worker。
 
 ## License
 

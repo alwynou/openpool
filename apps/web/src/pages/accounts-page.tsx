@@ -722,6 +722,6 @@ function transitionLabel(status: PendingTransition['status']): string {
 
 function transitionDescription(status: PendingTransition['status']): string {
   if (status === 'DRAINING') return 'New placements will stop while existing objects remain available.';
-  if (status === 'READ_ONLY') return 'The account will remain readable, but OpenPool will not write new objects to it.';
+  if (status === 'READ_ONLY') return 'This succeeds only after shard migrations clear all live references and used capacity.';
   return 'Removal succeeds only after all live shards, object locations, and reserved capacity are cleared.';
 }

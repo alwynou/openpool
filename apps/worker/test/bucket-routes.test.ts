@@ -312,6 +312,12 @@ describe('logical bucket and storage shard HTTP adapter', () => {
       jsonInit('PATCH', { status: 'BROKEN', unexpected: true }),
     );
     expect(transitionResponse.status).toBe(400);
+    const migrationBypass = await request(
+      app,
+      `/api/v1/shards/${shard.id}/status`,
+      jsonInit('PATCH', { status: 'MIGRATING' }),
+    );
+    expect(migrationBypass.status).toBe(400);
     expect(createShard).not.toHaveBeenCalled();
     expect(transitionShard).not.toHaveBeenCalled();
   });

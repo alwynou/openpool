@@ -3,5 +3,6 @@ export * from './audit-query-repository';
 export * from './auth-repository';
 export * from './logical-bucket-repository';
 export * from './object-repository';
+export * from './shard-migration-repository';
 export * from './storage-account-repository';
 export * from './storage-shard-repository';

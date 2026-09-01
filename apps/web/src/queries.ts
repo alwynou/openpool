@@ -8,6 +8,7 @@ export const queryKeys = {
   accounts: ['storage-accounts'] as const,
   buckets: ['logical-buckets'] as const,
   shards: (bucketId: string) => ['storage-shards', bucketId] as const,
+  migrations: (bucketId: string) => ['shard-migrations', bucketId] as const,
   objects: (bucketId: string) => ['objects', bucketId] as const,
   apiKeys: ['api-keys'] as const,
   audit: (actorType: string) => ['audit-logs', actorType] as const,

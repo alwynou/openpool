@@ -7,6 +7,7 @@ export * from './api-keys';
 export * from './audit-logs';
 export * from './buckets';
 export * from './objects';
+export * from './shard-migrations';
 export * from './storage-accounts';
 
 export interface ApiError<TCode extends string = string> {

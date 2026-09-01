@@ -33,6 +33,12 @@ import {
   type ApiKeyHasher,
   RefreshStorageAccountHealth,
   RevokeApiKey,
+  ClaimShardMigrationTransfer,
+  CompleteShardMigrationTransfer,
+  GetShardMigration,
+  ListShardMigrations,
+  StartShardMigration,
+  SweepShardMigrationCleanup,
   SweepExpiredUploads,
   type ProviderRegistry,
   type TokenGenerator,
@@ -58,6 +64,7 @@ import {
   D1AuditQueryRepository,
   D1LogicalBucketRepository,
   D1ObjectRepository,
+  D1ShardMigrationRepository,
   D1StorageAccountRepository,
   D1StorageShardRepository,
 } from '../adapters/d1';
@@ -221,6 +228,45 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     };
   };
 
+  const createMigrationUseCases = (env: Env, requestId: string) => {
+    const accounts = new D1StorageAccountRepository(env.DB);
+    const buckets = new D1LogicalBucketRepository(env.DB);
+    const shards = new D1StorageShardRepository(env.DB);
+    const migrations = new D1ShardMigrationRepository(env.DB);
+    const audit = new D1AuthRepository(env.DB, {
+      requestId,
+      auditIdGenerator: () => ids.next(),
+    });
+    const transferDependencies = {
+      migrations,
+      accounts,
+      providers,
+      vault: credentialVaultFor(env, overrides.credentialVault),
+      ids,
+      clock,
+      audit,
+    };
+
+    return {
+      startMigration: new StartShardMigration({
+        migrations,
+        shards,
+        accounts,
+        ids,
+        clock,
+        audit,
+      }),
+      getMigration: new GetShardMigration(migrations),
+      listMigrations: new ListShardMigrations(buckets, migrations),
+      claimMigrationTransfer: new ClaimShardMigrationTransfer(
+        transferDependencies,
+      ),
+      completeMigrationTransfer: new CompleteShardMigrationTransfer(
+        transferDependencies,
+      ),
+    };
+  };
+
   const createApiKeyHasher = (env: Env): ApiKeyHasher =>
     overrides.apiKeyHasher ?? {
       hash: (rawToken) =>
@@ -341,10 +387,11 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     },
     createUseCases,
     createObjectUseCases,
+    createMigrationUseCases,
   });
 }
 
-export function runScheduledMaintenance(
+export async function runScheduledMaintenance(
   env: Env,
   overrides: WorkerCompositionOverrides = {},
 ) {
@@ -356,13 +403,31 @@ export function runScheduledMaintenance(
     requestId,
     auditIdGenerator: () => ids.next(),
   });
-  return new SweepExpiredUploads({
-    accounts: new D1StorageAccountRepository(env.DB),
+  const accounts = new D1StorageAccountRepository(env.DB);
+  const providers =
+    overrides.providerRegistry ?? createStorageProviderRegistry();
+  const vault = credentialVaultFor(env, overrides.credentialVault);
+  const uploadCleanup = await new SweepExpiredUploads({
+    accounts,
     objects,
-    providers:
-      overrides.providerRegistry ?? createStorageProviderRegistry(),
-    vault: credentialVaultFor(env, overrides.credentialVault),
+    providers,
+    vault,
     clock,
     audit,
   }).execute();
+  const migrationCleanup = await new SweepShardMigrationCleanup({
+    migrations: new D1ShardMigrationRepository(env.DB),
+    accounts,
+    providers,
+    vault,
+    clock,
+    audit,
+  }).execute();
+  return {
+    ...uploadCleanup,
+    migrationCleanupCandidates: migrationCleanup.candidates,
+    migrationsCleaned: migrationCleanup.cleaned,
+    migrationsCompleted: migrationCleanup.completedMigrations,
+    migrationCleanupFailed: migrationCleanup.failed,
+  };
 }

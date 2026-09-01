@@ -16,7 +16,6 @@ import type {
   CreateStorageShardRequest,
   LogicalBucketResponse,
   StorageShardResponse,
-  StorageShardStatus,
   UpdateStorageShardStatusRequest,
 } from '@openpool/contracts';
 import type {
@@ -32,11 +31,11 @@ import { readJsonBody } from './json-body';
 import type { AppEnvironment } from './types';
 
 const SESSION_COOKIE = 'openpool_session';
-const SHARD_STATUSES = new Set<StorageShardStatus>([
-  'STANDBY',
+const TRANSITION_SHARD_STATUSES = new Set<
+  UpdateStorageShardStatusRequest['status']
+>([
   'ACTIVE',
   'READ_ONLY',
-  'MIGRATING',
   'RETIRED',
 ]);
 const CREATE_SHARD_STATUSES = new Set<
@@ -117,8 +116,15 @@ function parseCreateBucketRequest(
   };
 }
 
-function isShardStatus(value: unknown): value is StorageShardStatus {
-  return typeof value === 'string' && SHARD_STATUSES.has(value as StorageShardStatus);
+function isTransitionShardStatus(
+  value: unknown,
+): value is UpdateStorageShardStatusRequest['status'] {
+  return (
+    typeof value === 'string' &&
+    TRANSITION_SHARD_STATUSES.has(
+      value as UpdateStorageShardStatusRequest['status'],
+    )
+  );
 }
 
 function isCreateShardStatus(
@@ -188,7 +194,7 @@ function parseShardStatusRequest(
   if (
     !isPlainObject(value) ||
     !hasExactKeys(value, ['status']) ||
-    !isShardStatus(value.status)
+    !isTransitionShardStatus(value.status)
   ) {
     return undefined;
   }

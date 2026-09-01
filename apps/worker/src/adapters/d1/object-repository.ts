@@ -654,6 +654,11 @@ export class D1ObjectRepository implements ObjectRepository {
         `UPDATE objects
          SET status = 'DELETING', updated_at = ?
          WHERE id = ? AND status = 'READY'
+           AND NOT EXISTS (
+             SELECT 1 FROM shard_migration_objects AS migration_task
+             WHERE migration_task.object_id = objects.id
+               AND migration_task.status IN ('RESERVED', 'SWITCHED')
+           )
          RETURNING id`,
       )
       .bind(updatedAt, objectId)
@@ -663,6 +668,7 @@ export class D1ObjectRepository implements ObjectRepository {
     if (status === null) return 'NOT_FOUND';
     if (status === 'DELETING') return 'ALREADY_DELETING';
     if (status === 'DELETED') return 'ALREADY_DELETED';
+    if (status === 'READY') return 'CONFLICT';
     return 'INVALID_STATE';
   }
 

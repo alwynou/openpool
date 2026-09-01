@@ -11,9 +11,10 @@ VERIFYING → ACTIVE → DRAINING → READ_ONLY → REMOVED
 
 创建账号只保存加密 credential，并保持 `VERIFYING`。只有显式验证成功后才能进入 `ACTIVE`；后续
 状态只能沿上图前进，不能恢复或跳级。并发修改使用条件更新，冲突返回
-`409 STORAGE_ACCOUNT_CONFLICT`。进入 `REMOVED` 前必须没有非 `RETIRED` shard、未删除 object
-location 或非零已用容量；仍有引用时返回 `409 STORAGE_ACCOUNT_HAS_REFERENCES`，避免对象或后台
-清理任务失去 Provider 访问路径。
+`409 STORAGE_ACCOUNT_CONFLICT`。`DRAINING → READ_ONLY` 是 drain 完成边界：必须先通过 shard
+migration 清空非 `RETIRED` shard、源 object location 和已用容量。进入 `READ_ONLY` 或 `REMOVED`
+时仍有引用会返回 `409 STORAGE_ACCOUNT_HAS_REFERENCES`，避免对象或后台清理任务失去 Provider
+访问路径。
 
 ## 创建与查询
 

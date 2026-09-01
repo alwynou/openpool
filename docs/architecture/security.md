@@ -37,6 +37,12 @@ write-only credential。省略 credential 时保留原加密信封；替换值�
 - 完成上传时通过 Provider `HEAD` 校验大小、ETag/checksum，再把对象置为 `READY`。
 - API 响应和日志不持久化完整签名 URL。
 
+Shard migration claim 同样只返回 15 分钟的一次性源 `GET` 和目标 `PUT`。目标签名绑定精确大小与
+content type；搬运器流式转发字节，Worker 不读取对象内容。claim/complete 只接受管理员 session，
+短期 lease token 还必须与 task 匹配；signed URL、lease token 和 session Cookie 不进入 audit、日志、
+Web query cache 或命令行参数。CLI 仅从 `OPENPOOL_SESSION_COOKIE` 环境变量读取单个
+`openpool_session=...` Cookie，并要求远端 control-plane URL 使用 HTTPS。
+
 ## HTTP 与审计边界
 
 - 有 JSON body 的控制面写请求只接受未压缩的 `application/json`（UTF-8），并在流式读取时限制为

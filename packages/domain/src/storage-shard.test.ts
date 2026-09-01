@@ -25,9 +25,18 @@ describe('storage shard domain rules', () => {
     expect(
       transitionStorageShardStatus(
         transitionStorageShardStatus(shard, 'ACTIVE'),
-        'MIGRATING',
+        'READ_ONLY',
       ).status,
-    ).toBe('MIGRATING');
+    ).toBe('READ_ONLY');
+    expect(() =>
+      transitionStorageShardStatus(
+        transitionStorageShardStatus(shard, 'ACTIVE'),
+        'MIGRATING',
+      ),
+    ).toThrow('Cannot transition storage shard');
+    expect(() =>
+      transitionStorageShardStatus({ ...shard, status: 'MIGRATING' }, 'RETIRED'),
+    ).toThrow('Cannot transition storage shard');
     expect(() => transitionStorageShardStatus(shard, 'READ_ONLY')).toThrow(
       'Cannot transition storage shard',
     );

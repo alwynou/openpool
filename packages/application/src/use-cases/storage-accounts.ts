@@ -428,13 +428,13 @@ export class TransitionStorageAccount {
       );
     }
     if (
-      command.status === 'REMOVED' &&
+      (command.status === 'READ_ONLY' || command.status === 'REMOVED') &&
       (record.usedBytes !== 0 ||
         (await this.dependencies.accounts.hasBlockingReferences(record.id)))
     ) {
       throw new StorageAccountApplicationError(
         'STORAGE_ACCOUNT_HAS_REFERENCES',
-        'Storage account still has live shards or objects',
+        'Storage account drain has not cleared live shards or objects',
       );
     }
     const now = this.dependencies.clock.now().toISOString();

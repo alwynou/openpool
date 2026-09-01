@@ -13,7 +13,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker",
+    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker && npm run build --workspace=@openpool/migrator",
     "cf:typegen": "npm run cf:typegen --workspace=@openpool/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace=@openpool/worker",
     "db:migrate:staging": "npm run db:migrate:staging --workspace=@openpool/worker",
@@ -25,7 +25,8 @@
     "dev:worker": "npm run dev --workspace=@openpool/worker",
     "dev:worker:scheduled": "npm run dev:scheduled --workspace=@openpool/worker",
     "lint": "oxlint .",
-    "test": "vitest run && npm run test --workspace=@openpool/worker",
+    "migrate:shard": "npm run build --workspace=@openpool/migrator && node apps/migrator/dist/cli.js",
+    "test": "vitest run && npm run test --workspace=@openpool/worker && npm run test --workspace=@openpool/migrator",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"

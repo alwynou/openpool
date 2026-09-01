@@ -1,0 +1,363 @@
+import { env } from 'cloudflare:workers';
+import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import type { CredentialEnvelope } from '@openpool/application';
+import type {
+  LogicalBucket,
+  ShardMigration,
+  StorageAccount,
+  StorageShard,
+  StoredObject,
+  ObjectLocation,
+  UploadSession,
+} from '@openpool/domain';
+
+import {
+  D1LogicalBucketRepository,
+  D1ObjectRepository,
+  D1ShardMigrationRepository,
+  D1StorageAccountRepository,
+  D1StorageShardRepository,
+} from '../src/adapters/d1';
+import type { Env } from '../src/env';
+
+interface TestEnv extends Env {
+  readonly TEST_MIGRATIONS: D1Migration[];
+}
+
+const testEnv = env as unknown as TestEnv;
+const accounts = new D1StorageAccountRepository(testEnv.DB);
+const buckets = new D1LogicalBucketRepository(testEnv.DB);
+const shards = new D1StorageShardRepository(testEnv.DB);
+const objects = new D1ObjectRepository(testEnv.DB);
+const migrations = new D1ShardMigrationRepository(testEnv.DB);
+
+const envelope: CredentialEnvelope = {
+  version: 1,
+  algorithm: 'AES-256-GCM',
+  keyId: 'test-key',
+  iv: 'AAAAAAAAAAAAAAAA',
+  ciphertext: 'encrypted',
+};
+
+const capabilities = {
+  presignedUpload: true,
+  presignedDownload: true,
+  headObject: true,
+  deleteObject: true,
+  bucketProbe: true,
+  usageProbe: true,
+};
+
+function account(id: string, name: string): StorageAccount {
+  return {
+    id,
+    name,
+    provider: 'r2',
+    providerConfig: {},
+    status: 'ACTIVE',
+    priority: 100,
+    writeEnabled: true,
+    capacityBytes: 10_000,
+    usedBytes: 0,
+    healthStatus: 'HEALTHY',
+    capacityAccuracy: 'CONFIGURED',
+    capabilities,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    lastHealthCheckedAt: '2026-09-01T00:00:00.000Z',
+  };
+}
+
+const bucket: LogicalBucket = {
+  id: 'bucket-1',
+  name: 'documents',
+  description: null,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+};
+
+function shard(
+  id: string,
+  storageAccountId: string,
+  status: StorageShard['status'],
+): StorageShard {
+  return {
+    id,
+    logicalBucketId: bucket.id,
+    storageAccountId,
+    physicalBucket: `${id}-physical`,
+    status,
+    capacityBytes: 10_000,
+    usedBytes: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  };
+}
+
+beforeEach(async () => {
+  await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('DELETE FROM shard_migration_objects'),
+    testEnv.DB.prepare('DELETE FROM shard_migrations'),
+    testEnv.DB.prepare('DELETE FROM upload_sessions'),
+    testEnv.DB.prepare('DELETE FROM object_locations'),
+    testEnv.DB.prepare('DELETE FROM objects'),
+    testEnv.DB.prepare('DELETE FROM storage_shards'),
+    testEnv.DB.prepare('DELETE FROM logical_buckets'),
+    testEnv.DB.prepare('DELETE FROM storage_accounts'),
+  ]);
+});
+
+async function setupReadyObject(): Promise<{
+  readonly source: StorageShard;
+  readonly target: StorageShard;
+  readonly migration: ShardMigration;
+}> {
+  const sourceAccount = account('account-source', 'Source');
+  const targetAccount = account('account-target', 'Target');
+  expect(await accounts.create(sourceAccount, envelope)).toBe(true);
+  expect(await accounts.create(targetAccount, envelope)).toBe(true);
+  expect(await buckets.create(bucket)).toBe(true);
+  const source = shard('shard-source', sourceAccount.id, 'ACTIVE');
+  const target = shard('shard-target', targetAccount.id, 'STANDBY');
+  expect(await shards.create(source)).toBe(true);
+  expect(await shards.create(target)).toBe(true);
+
+  const object: StoredObject = {
+    id: 'object-1',
+    logicalBucketId: bucket.id,
+    logicalKey: 'reports/one.txt',
+    sizeBytes: 100,
+    contentType: 'text/plain',
+    checksum: null,
+    status: 'PENDING',
+    createdAt: '2026-09-01T00:01:00.000Z',
+    updatedAt: '2026-09-01T00:01:00.000Z',
+  };
+  const location: ObjectLocation = {
+    id: 'location-source',
+    objectId: object.id,
+    storageAccountId: sourceAccount.id,
+    storageShardId: source.id,
+    physicalBucket: source.physicalBucket,
+    physicalKey: 'objects/ob/object-1',
+    etag: null,
+    isPrimary: true,
+    createdAt: object.createdAt,
+    updatedAt: object.updatedAt,
+  };
+  const session: UploadSession = {
+    id: 'upload-1',
+    objectId: object.id,
+    status: 'PENDING',
+    expiresAt: '2026-09-01T00:15:00.000Z',
+    createdAt: object.createdAt,
+    completedAt: null,
+  };
+  expect(
+    await objects.reserveUploadAndCapacity(object, location, session),
+  ).toBe('RESERVED');
+  expect(
+    await objects.completeUpload(
+      object.id,
+      session.id,
+      '2026-09-01T00:02:00.000Z',
+      'source-etag',
+      null,
+    ),
+  ).toBe('COMPLETED');
+  await testEnv.DB.prepare(
+    `UPDATE storage_accounts
+     SET status = 'DRAINING', write_enabled = 0,
+         updated_at = '2026-09-01T00:03:00.000Z'
+     WHERE id = ?`,
+  )
+    .bind(sourceAccount.id)
+    .run();
+
+  return {
+    source: { ...source, usedBytes: 100, updatedAt: object.updatedAt },
+    target,
+    migration: {
+      id: 'migration-1',
+      sourceShardId: source.id,
+      targetShardId: target.id,
+      status: 'RUNNING',
+      createdAt: '2026-09-01T00:04:00.000Z',
+      updatedAt: '2026-09-01T00:04:00.000Z',
+      completedAt: null,
+    },
+  };
+}
+
+describe('shard migration D1 repository', () => {
+  it('cuts over shards, reserves a target copy, switches primary, and cleans source', async () => {
+    const fixture = await setupReadyObject();
+    expect(
+      await migrations.createAndCutover(
+        fixture.migration,
+        fixture.source.updatedAt,
+        fixture.target.updatedAt,
+      ),
+    ).toBe('CREATED');
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      status: 'MIGRATING',
+    });
+    expect(await shards.findById(fixture.target.id)).toMatchObject({
+      status: 'ACTIVE',
+    });
+    expect(await migrations.listByLogicalBucketId(bucket.id)).toEqual([
+      fixture.migration,
+    ]);
+
+    const claimed = await migrations.claimTransfer({
+      migrationId: fixture.migration.id,
+      taskId: 'task-1',
+      targetLocationId: 'location-target',
+      targetPhysicalKeyPrefix: 'objects/',
+      leaseToken: 'lease-1',
+      leasedAt: '2026-09-01T00:05:00.000Z',
+      leaseExpiresAt: '2026-09-01T00:20:00.000Z',
+    });
+    expect(claimed.outcome).toBe('CLAIMED');
+    if (claimed.outcome !== 'CLAIMED') throw new Error('Missing transfer');
+    expect(claimed.transfer).toMatchObject({
+      object: { id: 'object-1', sizeBytes: 100 },
+      sourceLocation: { id: 'location-source', isPrimary: true },
+      targetLocation: {
+        id: 'location-target',
+        isPrimary: false,
+        physicalKey: 'objects/ob/object-1',
+      },
+    });
+    expect(await accounts.findById('account-target')).toMatchObject({
+      usedBytes: 100,
+    });
+    expect(await shards.findById('shard-target')).toMatchObject({
+      usedBytes: 100,
+    });
+    expect(
+      await objects.beginDelete(
+        'object-1',
+        '2026-09-01T00:06:00.000Z',
+      ),
+    ).toBe('CONFLICT');
+
+    expect(
+      await migrations.switchPrimary(
+        'task-1',
+        'lease-1',
+        'target-etag',
+        '2026-09-01T00:10:00.000Z',
+      ),
+    ).toBe('SWITCHED');
+    const switched = await migrations.findTransfer('task-1', 'lease-1');
+    expect(switched).toMatchObject({
+      task: { status: 'SWITCHED' },
+      sourceLocation: { isPrimary: false },
+      targetLocation: { isPrimary: true, etag: 'target-etag' },
+    });
+    expect(await migrations.listSourceCleanupCandidates(100)).toEqual([
+      switched,
+    ]);
+
+    expect(
+      await migrations.finishSourceCleanup(
+        'task-1',
+        '2026-09-01T00:11:00.000Z',
+      ),
+    ).toBe('COMPLETED');
+    expect(await accounts.findById('account-source')).toMatchObject({
+      usedBytes: 0,
+    });
+    expect(await accounts.findById('account-target')).toMatchObject({
+      usedBytes: 100,
+    });
+    expect(await migrations.progress(fixture.migration.id)).toEqual({
+      reserved: 0,
+      switched: 0,
+      completed: 1,
+      failed: 0,
+      remainingReady: 0,
+      blocking: 0,
+    });
+    expect(await migrations.listSourceCleanupCandidates(100)).toEqual([]);
+
+    expect(
+      await migrations.completeIfReady(
+        fixture.migration.id,
+        '2026-09-01T00:12:00.000Z',
+      ),
+    ).toBe('COMPLETED');
+    expect(await migrations.findById(fixture.migration.id)).toMatchObject({
+      status: 'COMPLETED',
+      completedAt: '2026-09-01T00:12:00.000Z',
+    });
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      status: 'RETIRED',
+      usedBytes: 0,
+    });
+  });
+
+  it('rejects stale cutover and reclaims only expired transfer leases', async () => {
+    const fixture = await setupReadyObject();
+    expect(
+      await migrations.createAndCutover(
+        fixture.migration,
+        '2026-09-01T00:00:00.000Z',
+        fixture.target.updatedAt,
+      ),
+    ).toBe('CONFLICT');
+
+    expect(
+      await migrations.createAndCutover(
+        fixture.migration,
+        fixture.source.updatedAt,
+        fixture.target.updatedAt,
+      ),
+    ).toBe('CREATED');
+    expect(
+      (
+        await migrations.claimTransfer({
+          migrationId: fixture.migration.id,
+          taskId: 'task-1',
+          targetLocationId: 'location-target',
+          targetPhysicalKeyPrefix: 'objects/',
+          leaseToken: 'lease-1',
+          leasedAt: '2026-09-01T00:05:00.000Z',
+          leaseExpiresAt: '2026-09-01T00:20:00.000Z',
+        })
+      ).outcome,
+    ).toBe('CLAIMED');
+    expect(
+      (
+        await migrations.claimTransfer({
+          migrationId: fixture.migration.id,
+          taskId: 'task-2',
+          targetLocationId: 'location-target-2',
+          targetPhysicalKeyPrefix: 'objects/',
+          leaseToken: 'lease-too-early',
+          leasedAt: '2026-09-01T00:10:00.000Z',
+          leaseExpiresAt: '2026-09-01T00:25:00.000Z',
+        })
+      ).outcome,
+    ).toBe('NONE');
+    const reclaimed = await migrations.claimTransfer({
+      migrationId: fixture.migration.id,
+      taskId: 'unused',
+      targetLocationId: 'unused-location',
+      targetPhysicalKeyPrefix: 'objects/',
+      leaseToken: 'lease-2',
+      leasedAt: '2026-09-01T00:21:00.000Z',
+      leaseExpiresAt: '2026-09-01T00:36:00.000Z',
+    });
+    expect(reclaimed).toMatchObject({
+      outcome: 'CLAIMED',
+      transfer: {
+        task: { id: 'task-1', leaseToken: 'lease-2', attemptCount: 2 },
+      },
+    });
+  });
+});

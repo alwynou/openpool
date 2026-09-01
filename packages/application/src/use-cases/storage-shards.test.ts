@@ -79,20 +79,22 @@ class FakeBuckets implements LogicalBucketRepository {
 }
 
 class FakeAccounts implements ManagedStorageAccountRepository {
+  record: StorageAccountRecord = account;
+
   async create(): Promise<boolean> {
     return true;
   }
 
   async findById(id: string): Promise<StorageAccountRecord | undefined> {
-    return id === account.id ? account : undefined;
+    return id === this.record.id ? this.record : undefined;
   }
 
   async list() {
-    return [account];
+    return [this.record];
   }
 
   async listWritable() {
-    return [account];
+    return [this.record];
   }
 
   async update(): Promise<boolean> {
@@ -286,6 +288,38 @@ describe('storage shard use cases', () => {
         status: 'ACTIVE',
       }),
     ).rejects.toMatchObject({ code: 'STORAGE_SHARD_CONFLICT' });
+    expect(deps.audit.actions).toEqual(['STORAGE_SHARD_CREATED']);
+  });
+
+  it('requires migration instead of manually disabling a draining active shard', async () => {
+    const deps = setup();
+    const shard = await deps.create.execute({
+      actorId: 'admin-1',
+      logicalBucketId: 'bucket-1',
+      storageAccountId: 'account-1',
+      physicalBucket: 'physical-one',
+      status: 'ACTIVE',
+      capacityBytes: 10_000,
+      usedBytes: 100,
+    });
+    deps.accounts.record = {
+      ...deps.accounts.record,
+      status: 'DRAINING',
+      writeEnabled: false,
+    };
+
+    await expect(
+      new TransitionStorageShard(deps).execute({
+        actorId: 'admin-1',
+        shardId: shard.id,
+        status: 'READ_ONLY',
+      }),
+    ).rejects.toMatchObject({
+      code: 'STORAGE_SHARD_INVALID_STATE_TRANSITION',
+    });
+    expect(await deps.shards.findById(shard.id)).toMatchObject({
+      status: 'ACTIVE',
+    });
     expect(deps.audit.actions).toEqual(['STORAGE_SHARD_CREATED']);
   });
 

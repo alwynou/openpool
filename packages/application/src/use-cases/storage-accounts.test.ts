@@ -547,7 +547,7 @@ describe('storage account use cases', () => {
     expect(JSON.stringify(deps.audit.actions)).not.toContain('secret');
   });
 
-  it('does not remove an account while live shards or objects reference it', async () => {
+  it('does not finish draining or remove while live references remain', async () => {
     const deps = dependencies();
     await create(deps).execute({
       actorId: 'admin-1',
@@ -563,14 +563,23 @@ describe('storage account use cases', () => {
       accountId: 'account-1',
       status: 'DRAINING',
     });
+    deps.accounts.blockingReferences = true;
+    await expect(
+      transition.execute({
+        actorId: 'admin-1',
+        accountId: 'account-1',
+        status: 'READ_ONLY',
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_ACCOUNT_HAS_REFERENCES' });
+    const draining = deps.accounts.records.get('account-1');
+    if (!draining) throw new Error('Missing account fixture');
+    deps.accounts.records.set('account-1', { ...draining, usedBytes: 0 });
+    deps.accounts.blockingReferences = false;
     await transition.execute({
       actorId: 'admin-1',
       accountId: 'account-1',
       status: 'READ_ONLY',
     });
-    const current = deps.accounts.records.get('account-1');
-    if (!current) throw new Error('Missing account fixture');
-    deps.accounts.records.set('account-1', { ...current, usedBytes: 0 });
     deps.accounts.blockingReferences = true;
 
     await expect(

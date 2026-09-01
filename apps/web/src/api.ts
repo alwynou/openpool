@@ -15,6 +15,8 @@ import type {
   LogicalBucketResponse,
   ObjectMetadataResponse,
   SessionResponse,
+  ShardMigrationResponse,
+  StartShardMigrationRequest,
   SetupStatusResponse,
   StorageAccountResponse,
   StorageShardResponse,
@@ -122,6 +124,9 @@ export const api = {
   listShards: (bucketId: string) => request<readonly StorageShardResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shards`),
   createShard: (bucketId: string, input: CreateStorageShardRequest) => request<StorageShardResponse>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shards`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
   updateShardStatus: (id: string, input: UpdateStorageShardStatusRequest) => request<StorageShardResponse>(`/api/v1/shards/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(input) }),
+  listShardMigrations: (bucketId: string) => request<readonly ShardMigrationResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shard-migrations`),
+  startShardMigration: (input: StartShardMigrationRequest) => request<ShardMigrationResponse>('/api/v1/shard-migrations', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
+  getShardMigration: (id: string) => request<ShardMigrationResponse>(`/api/v1/shard-migrations/${encodeURIComponent(id)}`),
 
   listObjects: (bucketId: string) => request<readonly ObjectMetadataResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/objects?limit=1000`),
   createUpload: (bucketId: string, logicalKey: string, file: File) => request<CreateUploadResponse>('/api/v1/uploads', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ bucketId, logicalKey, sizeBytes: file.size, contentType: file.type || 'application/octet-stream' }) }),

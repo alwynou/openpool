@@ -33,9 +33,14 @@ Logical Bucket 映射到已验证 Storage Account 上的物理 Bucket。管理 A
 
 ```text
 STANDBY → ACTIVE → READ_ONLY → RETIRED
-    │         └→ MIGRATING → ACTIVE | READ_ONLY | RETIRED
     └──────────────────────────────────────────→ RETIRED
 ```
+
+`MIGRATING` 不能通过通用 status endpoint 手工进入或退出。手工 `ACTIVE → READ_ONLY` 仅允许 shard
+所属 Account 仍为 `ACTIVE` 时执行；Account 进入 `DRAINING` 后必须调用 shard migration API。该工作流
+在同一条件事务中把源 `ACTIVE → MIGRATING`、目标 `STANDBY → ACTIVE`，完成所有对象校验和源清理后
+再把源设为 `RETIRED`。这避免绕过任务租约、双重容量预留和 primary location 切换，也不会把 drain
+流程留在无法继续迁移的状态。
 
 一个 Logical Bucket 同时最多一个 `ACTIVE` shard；应用层先检查，D1 partial unique index 负责并发
 最终约束。激活 shard 时 Storage Account 必须仍为 `ACTIVE`、允许写入、健康、容量已知，并具备 V1
