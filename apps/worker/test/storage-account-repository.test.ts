@@ -22,6 +22,12 @@ const envelope: CredentialEnvelope = {
   ciphertext: 'c2VjcmV0',
 };
 
+const replacementEnvelope: CredentialEnvelope = {
+  ...envelope,
+  keyId: 'key-2',
+  ciphertext: 'bmV3LXNlY3JldA==',
+};
+
 function account(overrides: Partial<StorageAccount> = {}): StorageAccount {
   return {
     id: 'account-1',
@@ -142,6 +148,57 @@ describe('managed storage account D1 repository', () => {
       status: 'ACTIVE',
       usedBytes: 125,
       updatedAt: '2026-09-01T00:30:00.000Z',
+    });
+  });
+
+  it('atomically corrects configuration and credentials only while verifying', async () => {
+    const original = account({
+      healthStatus: 'DEGRADED',
+      lastHealthCheckedAt: '2026-09-01T00:10:00.000Z',
+    });
+    expect(await repository.create(original, envelope)).toBe(true);
+    const corrected = account({
+      providerConfig: {
+        endpoint: 'https://corrected.example.test',
+        region: 'auto',
+      },
+      updatedAt: '2026-09-01T00:00:00.001Z',
+    });
+
+    expect(
+      await repository.updateVerifyingConfiguration(
+        corrected,
+        replacementEnvelope,
+        original.updatedAt,
+      ),
+    ).toBe(true);
+    expect(await repository.findById(original.id)).toMatchObject({
+      providerConfig: {
+        endpoint: 'https://corrected.example.test',
+        region: 'auto',
+      },
+      credentialEnvelope: replacementEnvelope,
+      healthStatus: 'UNKNOWN',
+      lastHealthCheckedAt: null,
+      updatedAt: '2026-09-01T00:00:00.001Z',
+    });
+
+    expect(
+      await repository.updateVerifyingConfiguration(
+        account({
+          providerConfig: { endpoint: 'https://stale.example.test' },
+          updatedAt: '2026-09-01T00:00:00.002Z',
+        }),
+        envelope,
+        original.updatedAt,
+      ),
+    ).toBe(false);
+    expect(await repository.findById(original.id)).toMatchObject({
+      providerConfig: {
+        endpoint: 'https://corrected.example.test',
+        region: 'auto',
+      },
+      credentialEnvelope: replacementEnvelope,
     });
   });
 

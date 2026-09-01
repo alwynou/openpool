@@ -15,6 +15,7 @@ import type {
   ManagedStorageAccountRepository,
   ProviderRegistry,
   ProviderValidationResult,
+  StorageAccountConfigurationRepository,
   StorageAccountRecord,
   StorageAccountReferenceRepository,
 } from '../ports/storage';
@@ -144,6 +145,104 @@ export class CreateStorageAccount {
         accountId: account.id,
       });
     }
+    return { account };
+  }
+}
+
+export interface UpdateStorageAccountConfigurationCommand {
+  readonly actorId: string;
+  readonly accountId: string;
+  readonly providerConfig?: StorageAccount['providerConfig'];
+  readonly credentials?: CredentialPayload;
+  readonly expectedUpdatedAt: string;
+}
+
+export interface UpdateStorageAccountConfigurationDependencies {
+  readonly accounts: ManagedStorageAccountRepository &
+    StorageAccountConfigurationRepository;
+  readonly vault: CredentialVault;
+  readonly clock: Clock;
+  readonly audit: AuditLog;
+}
+
+function nextUpdatedAt(current: string, now: Date): string {
+  const currentMilliseconds = Date.parse(current);
+  if (Number.isNaN(currentMilliseconds)) return now.toISOString();
+  return new Date(
+    Math.max(now.getTime(), currentMilliseconds + 1),
+  ).toISOString();
+}
+
+export class UpdateStorageAccountConfiguration {
+  constructor(
+    private readonly dependencies: UpdateStorageAccountConfigurationDependencies,
+  ) {}
+
+  async execute(
+    command: UpdateStorageAccountConfigurationCommand,
+  ): Promise<StorageAccountResult> {
+    if (command.providerConfig === undefined && command.credentials === undefined) {
+      throw new StorageAccountApplicationError(
+        'INVALID_STORAGE_ACCOUNT_INPUT',
+        'Provider configuration or credentials must be supplied',
+      );
+    }
+    const record = await this.dependencies.accounts.findById(command.accountId);
+    if (!record) throw accountNotFound();
+    if (record.status !== 'VERIFYING') {
+      throw new StorageAccountApplicationError(
+        'STORAGE_ACCOUNT_NOT_VERIFYING',
+        'Only a verifying storage account can be corrected',
+      );
+    }
+    if (record.updatedAt !== command.expectedUpdatedAt) {
+      throw new StorageAccountApplicationError(
+        'STORAGE_ACCOUNT_CONFLICT',
+        'Storage account changed while the operation was in progress',
+      );
+    }
+
+    const credentialEnvelope = command.credentials
+      ? await this.dependencies.vault.encrypt(command.credentials)
+      : record.credentialEnvelope;
+    const changedAt = nextUpdatedAt(
+      record.updatedAt,
+      this.dependencies.clock.now(),
+    );
+    const { credentialEnvelope: _credentialEnvelope, ...safeRecord } = record;
+    const account: StorageAccount = {
+      ...safeRecord,
+      providerConfig: command.providerConfig ?? record.providerConfig,
+      writeEnabled: false,
+      healthStatus: 'UNKNOWN',
+      capabilities: emptyProviderCapabilities,
+      lastHealthCheckedAt: null,
+      updatedAt: changedAt,
+    };
+    if (
+      !(await this.dependencies.accounts.updateVerifyingConfiguration(
+        account,
+        credentialEnvelope,
+        command.expectedUpdatedAt,
+      ))
+    ) {
+      throw new StorageAccountApplicationError(
+        'STORAGE_ACCOUNT_CONFLICT',
+        'Storage account changed while the operation was in progress',
+      );
+    }
+    await this.dependencies.audit.record({
+      actorType: 'ADMIN',
+      actorId: command.actorId,
+      action: 'STORAGE_ACCOUNT_CONFIGURATION_UPDATED',
+      resourceType: 'STORAGE_ACCOUNT',
+      resourceId: account.id,
+      createdAt: changedAt,
+      metadata: {
+        providerConfigChanged: String(command.providerConfig !== undefined),
+        credentialsChanged: String(command.credentials !== undefined),
+      },
+    });
     return { account };
   }
 }

@@ -39,6 +39,7 @@ import {
   type TokenHasher,
   TransitionStorageAccount,
   TransitionStorageShard,
+  UpdateStorageAccountConfiguration,
   VerifyStorageAccount,
 } from '@openpool/application';
 
@@ -174,6 +175,12 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
 
     return {
       create: new CreateStorageAccount({ ...common, ids }),
+      updateConfiguration: new UpdateStorageAccountConfiguration({
+        accounts,
+        vault,
+        clock,
+        audit,
+      }),
       list: new ListStorageAccounts(accounts),
       verify: new VerifyStorageAccount(common),
       transition: new TransitionStorageAccount({ accounts, clock, audit }),

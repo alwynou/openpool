@@ -31,11 +31,7 @@ const capabilities = {
 } as const;
 
 const validate = vi.fn(
-  async (credentials: CredentialPayload): Promise<{ capabilities: typeof capabilities }> => {
-    expect(credentials).toEqual({
-      accessKeyId: 'r2-access-key',
-      secretAccessKey: 'r2-secret-key',
-    });
+  async (_credentials: CredentialPayload): Promise<{ capabilities: typeof capabilities }> => {
     return { capabilities };
   },
 );
@@ -180,6 +176,16 @@ describe('storage account composition', () => {
       },
     });
     expect(validate).toHaveBeenCalledOnce();
+    expect(validate).toHaveBeenCalledWith(
+      {
+        accessKeyId: 'r2-access-key',
+        secretAccessKey: 'r2-secret-key',
+      },
+      {
+        accountId: 'account-123',
+        validationBucket: 'validation-bucket',
+      },
+    );
 
     const listed = await dispatch('/api/v1/storage-accounts', {
       headers: { cookie },
@@ -210,6 +216,105 @@ describe('storage account composition', () => {
       'STORAGE_ACCOUNT_CREATED',
       'STORAGE_ACCOUNT_VERIFIED',
       'STORAGE_ACCOUNT_STATUS_CHANGED',
+    ]);
+  });
+
+  it('corrects encrypted credentials and provider configuration before verification', async () => {
+    const cookie = await administratorCookie();
+    const created = await jsonRequest(
+      '/api/v1/storage-accounts',
+      'POST',
+      {
+        name: 'Correctable R2',
+        provider: 'r2',
+        providerConfig: {
+          accountId: 'wrong-account',
+          validationBucket: 'wrong-bucket',
+        },
+        credentials: {
+          accessKeyId: 'wrong-access-key',
+          secretAccessKey: 'wrong-secret-key',
+        },
+        capacityBytes: 1_000,
+      },
+      cookie,
+    );
+    expect(created.status).toBe(201);
+    const createdBody = await created.json<{
+      data: { id: string; updatedAt: string };
+    }>();
+
+    const corrected = await jsonRequest(
+      `/api/v1/storage-accounts/${createdBody.data.id}/configuration`,
+      'PATCH',
+      {
+        providerConfig: {
+          accountId: 'correct-account',
+          validationBucket: 'correct-bucket',
+        },
+        credentials: {
+          accessKeyId: 'correct-access-key',
+          secretAccessKey: 'correct-secret-key',
+        },
+        expectedUpdatedAt: createdBody.data.updatedAt,
+      },
+      cookie,
+    );
+    expect(corrected.status).toBe(200);
+    const correctedBody = await corrected.json<{
+      data: { updatedAt: string; providerConfig: Record<string, string> };
+    }>();
+    expect(correctedBody.data.providerConfig).toEqual({
+      accountId: 'correct-account',
+      validationBucket: 'correct-bucket',
+    });
+    expect(correctedBody.data.updatedAt).not.toBe(createdBody.data.updatedAt);
+    expect(JSON.stringify(correctedBody)).not.toContain('correct-secret-key');
+
+    const stored = await testEnv.DB.prepare(
+      'SELECT credential_envelope FROM storage_accounts WHERE id = ?',
+    )
+      .bind(createdBody.data.id)
+      .first<{ credential_envelope: string }>();
+    expect(stored?.credential_envelope).not.toContain('wrong-secret-key');
+    expect(stored?.credential_envelope).not.toContain('correct-secret-key');
+
+    const stale = await jsonRequest(
+      `/api/v1/storage-accounts/${createdBody.data.id}/configuration`,
+      'PATCH',
+      {
+        providerConfig: { validationBucket: 'stale-bucket' },
+        expectedUpdatedAt: createdBody.data.updatedAt,
+      },
+      cookie,
+    );
+    expect(stale.status).toBe(409);
+
+    const verified = await dispatch(
+      `/api/v1/storage-accounts/${createdBody.data.id}/verify`,
+      { method: 'POST', headers: { cookie } },
+    );
+    expect(verified.status).toBe(200);
+    expect(validate).toHaveBeenCalledWith(
+      {
+        accessKeyId: 'correct-access-key',
+        secretAccessKey: 'correct-secret-key',
+      },
+      {
+        accountId: 'correct-account',
+        validationBucket: 'correct-bucket',
+      },
+    );
+
+    const audits = await testEnv.DB.prepare(
+      `SELECT action FROM audit_logs
+       WHERE resource_type = 'STORAGE_ACCOUNT'
+       ORDER BY created_at, rowid`,
+    ).all<{ action: string }>();
+    expect(audits.results.map(({ action }) => action)).toEqual([
+      'STORAGE_ACCOUNT_CREATED',
+      'STORAGE_ACCOUNT_CONFIGURATION_UPDATED',
+      'STORAGE_ACCOUNT_VERIFIED',
     ]);
   });
 });

@@ -41,6 +41,17 @@ export interface CreateStorageAccountRequest {
   readonly capacityBytes?: number;
 }
 
+/**
+ * Corrects an account that has not passed verification yet. Provider kind and
+ * placement metadata are immutable; omitted credentials retain the encrypted
+ * credentials already stored by the control plane.
+ */
+export interface UpdateStorageAccountConfigurationRequest {
+  readonly providerConfig?: ProviderConfigRequest;
+  readonly credentials?: StorageCredentialsRequest;
+  readonly expectedUpdatedAt: string;
+}
+
 export interface ProviderCapabilitiesResponse {
   readonly presignedUpload: boolean;
   readonly presignedDownload: boolean;

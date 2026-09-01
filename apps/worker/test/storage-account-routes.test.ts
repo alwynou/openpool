@@ -53,6 +53,7 @@ function createTestApp(
   overrides: Partial<StorageAccountRouteDependencies> = {},
 ) {
   const create = vi.fn(async () => ({ account }));
+  const updateConfiguration = vi.fn(async () => ({ account }));
   const list = vi.fn(async () => [account]);
   const verify = vi.fn(async () => ({ account: { ...account, status: 'ACTIVE' as const } }));
   const transition = vi.fn(async () => ({ ...account, status: 'DRAINING' as const }));
@@ -63,6 +64,7 @@ function createTestApp(
     ),
     createUseCases: vi.fn(() => ({
       create: { execute: create },
+      updateConfiguration: { execute: updateConfiguration },
       list: { execute: list },
       verify: { execute: verify },
       transition: { execute: transition },
@@ -76,7 +78,16 @@ function createTestApp(
     await next();
   });
   registerStorageAccountRoutes(app, dependencies);
-  return { app, dependencies, create, list, verify, transition, refresh };
+  return {
+    app,
+    dependencies,
+    create,
+    updateConfiguration,
+    list,
+    verify,
+    transition,
+    refresh,
+  };
 }
 
 async function request(
@@ -136,10 +147,100 @@ describe('storage account HTTP adapter', () => {
     expect(list).toHaveBeenCalledOnce();
   });
 
+  it('updates a verifying account without returning write-only credentials', async () => {
+    const { app, updateConfiguration } = createTestApp();
+    const body = {
+      providerConfig: { accountId: 'corrected', validationBucket: 'check' },
+      credentials: {
+        accessKeyId: 'new-access',
+        secretAccessKey: 'new-super-secret',
+      },
+      expectedUpdatedAt: account.updatedAt,
+    };
+
+    const response = await request(
+      app,
+      '/api/v1/storage-accounts/account-1/configuration',
+      jsonInit('PATCH', body),
+    );
+
+    expect(response.status).toBe(200);
+    const responseBody = await response.json();
+    expect(responseBody).toMatchObject({
+      requestId: 'request-1',
+      data: { id: account.id, availableBytes: 750 },
+    });
+    expect(JSON.stringify(responseBody)).not.toContain('new-super-secret');
+    expect(updateConfiguration).toHaveBeenCalledWith({
+      ...body,
+      actorId: administrator.id,
+      accountId: account.id,
+    });
+  });
+
+  it('rejects incomplete or unknown configuration updates', async () => {
+    const { app, updateConfiguration } = createTestApp();
+    const path = '/api/v1/storage-accounts/account-1/configuration';
+
+    expect(
+      (await request(app, path, jsonInit('PATCH', {
+        expectedUpdatedAt: account.updatedAt,
+      }))).status,
+    ).toBe(400);
+    expect(
+      (await request(app, path, jsonInit('PATCH', {
+        credentials: { accessKeyId: 'only-one-field' },
+        expectedUpdatedAt: account.updatedAt,
+      }))).status,
+    ).toBe(400);
+    expect(
+      (await request(app, path, jsonInit('PATCH', {
+        providerConfig: {},
+        expectedUpdatedAt: account.updatedAt,
+        unexpected: true,
+      }))).status,
+    ).toBe(400);
+    expect(updateConfiguration).not.toHaveBeenCalled();
+  });
+
+  it('maps concurrent configuration updates to a stable conflict', async () => {
+    const fixture = createTestApp({
+      createUseCases: () => ({
+        create: { execute: vi.fn(async () => ({ account })) },
+        updateConfiguration: {
+          execute: vi.fn(async () => {
+            throw new StorageAccountApplicationError(
+              'STORAGE_ACCOUNT_CONFLICT',
+              'internal conflict details',
+            );
+          }),
+        },
+        list: { execute: vi.fn(async () => []) },
+        verify: { execute: vi.fn(async () => ({ account })) },
+        transition: { execute: vi.fn(async () => account) },
+        refresh: { execute: vi.fn(async () => account) },
+      }),
+    });
+
+    const response = await request(
+      fixture.app,
+      '/api/v1/storage-accounts/account-1/configuration',
+      jsonInit('PATCH', {
+        providerConfig: {},
+        expectedUpdatedAt: account.updatedAt,
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'STORAGE_ACCOUNT_CONFLICT' },
+    });
+  });
+
   it('maps duplicate creation to a conflict without exposing internal text', async () => {
     const app = createTestApp({
       createUseCases: () => ({
         create: { execute: vi.fn(async () => { throw new StorageAccountApplicationError('STORAGE_ACCOUNT_ALREADY_EXISTS', 'database details'); }) },
+        updateConfiguration: { execute: vi.fn(async () => ({ account })) },
         list: { execute: vi.fn(async () => []) },
         verify: { execute: vi.fn(async () => ({ account })) },
         transition: { execute: vi.fn(async () => account) },
@@ -178,6 +279,7 @@ describe('storage account HTTP adapter', () => {
     const provider = createTestApp({
       createUseCases: () => ({
         create: { execute: vi.fn(async () => { throw new ProviderError('INVALID_CREDENTIALS', 'secret'); }) },
+        updateConfiguration: { execute: vi.fn(async () => ({ account })) },
         list: { execute: vi.fn(async () => []) },
         verify: { execute: vi.fn(async () => { throw new StorageAccountStateError('ACTIVE', 'ACTIVE'); }) },
         transition: { execute: vi.fn(async () => { throw new StorageAccountApplicationError('STORAGE_ACCOUNT_NOT_FOUND', 'internal'); }) },
@@ -203,6 +305,7 @@ describe('storage account HTTP adapter', () => {
     const blocked = createTestApp({
       createUseCases: () => ({
         create: { execute: vi.fn(async () => ({ account })) },
+        updateConfiguration: { execute: vi.fn(async () => ({ account })) },
         list: { execute: vi.fn(async () => []) },
         verify: { execute: vi.fn(async () => ({ account })) },
         transition: {

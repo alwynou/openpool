@@ -13,7 +13,7 @@
 2. AES-GCM credential vault（本地完成）；
 3. R2 Provider 验证与签名上传/下载（本地及真实 staging R2 smoke 完成）；
 4. logical bucket、对象 reserve/complete/delete（本地完成；对象字节直传 Provider）；
-5. Storage Account、容量、健康检查和简单 Placement（本地完成）；
+5. Storage Account、验证失败配置/credential 纠错、容量、健康检查和简单 Placement（本地完成）；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron

@@ -12,6 +12,11 @@ tag 随 Web Crypto ciphertext 保存。V1 vault 使用 32 字节 master key、�
 IV，并把 `version`、`algorithm` 和 `keyId` 作为 additional authenticated data；未知版本、错误 key、
 字段篡改或非 JSON credential payload 一律 fail closed。
 
+尚处于 `VERIFYING` 的 Storage Account 可通过管理员接口纠正 Provider 配置，并按需整体替换
+write-only credential。省略 credential 时保留原加密信封；替换值不会进入响应、query cache、toast、
+错误或 audit metadata。该纠错路径使用账号 `updatedAt` 条件写入，并与配置、信封一起原子更新，
+防止并发验证覆盖新 credential；V1 不把它扩展为已激活账号的通用 credential rotation。
+
 ## API Key 与会话
 
 - API Key 使用高熵随机值，数据库只保存 prefix 和带服务端 pepper 的哈希。

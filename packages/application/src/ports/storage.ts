@@ -41,6 +41,15 @@ export interface ManagedStorageAccountRepository
   ): Promise<boolean>;
 }
 
+/** Atomic write boundary for correcting an account before verification. */
+export interface StorageAccountConfigurationRepository {
+  updateVerifyingConfiguration(
+    account: StorageAccount,
+    credentialEnvelope: CredentialEnvelope,
+    expectedUpdatedAt: string,
+  ): Promise<boolean>;
+}
+
 export interface StorageAccountReferenceRepository {
   /** True while removal would strand a live shard or non-deleted object. */
   hasBlockingReferences(storageAccountId: string): Promise<boolean>;

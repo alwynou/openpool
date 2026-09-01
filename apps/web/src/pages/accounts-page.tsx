@@ -7,6 +7,7 @@ import {
   HardDrivesIcon,
   HeartbeatIcon,
   MagnifyingGlassIcon,
+  PencilSimpleIcon,
   PlusIcon,
   ProhibitIcon,
   ShieldWarningIcon,
@@ -14,7 +15,13 @@ import {
 } from '@phosphor-icons/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { CreateStorageAccountRequest, StorageAccountResponse, StorageProviderKind } from '@openpool/contracts';
+import type {
+  CreateStorageAccountRequest,
+  ProviderConfigRequest,
+  StorageAccountResponse,
+  StorageProviderKind,
+  UpdateStorageAccountConfigurationRequest,
+} from '@openpool/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -96,6 +103,73 @@ const defaultAccountValues: AccountFormValues = {
   capacityBytes: '',
 };
 
+const editAccountSchema = z.object({
+  provider: z.enum(['r2', 'b2', 's3']),
+  accountId: z.string(),
+  region: z.string(),
+  endpoint: z.string(),
+  jurisdiction: z.string(),
+  validationBucket: z.string().trim().min(1, 'Enter the existing physical bucket name.'),
+  accessKeyId: z.string(),
+  secretAccessKey: z.string(),
+  sessionToken: z.string(),
+}).superRefine((value, context) => {
+  if (value.provider === 'r2' && !value.accountId.trim()) {
+    context.addIssue({ code: 'custom', path: ['accountId'], message: 'Enter the Cloudflare account ID.' });
+  }
+  if (value.provider !== 'r2' && !value.region.trim()) {
+    context.addIssue({ code: 'custom', path: ['region'], message: 'Enter the provider region.' });
+  }
+  if (value.provider === 's3') {
+    try {
+      const endpoint = new URL(value.endpoint);
+      if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
+    } catch {
+      context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Enter a valid HTTPS endpoint.' });
+    }
+  }
+  const replacesCredentials = Boolean(
+    value.accessKeyId.trim() ||
+    value.secretAccessKey ||
+    value.sessionToken,
+  );
+  if (replacesCredentials && !value.accessKeyId.trim()) {
+    context.addIssue({ code: 'custom', path: ['accessKeyId'], message: 'Enter the replacement access key ID.' });
+  }
+  if (replacesCredentials && !value.secretAccessKey) {
+    context.addIssue({ code: 'custom', path: ['secretAccessKey'], message: 'Enter the replacement secret access key.' });
+  }
+});
+
+type EditAccountFormValues = z.input<typeof editAccountSchema>;
+
+function configString(
+  config: ProviderConfigRequest,
+  key: string,
+): string {
+  const value = config[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function editAccountValues(
+  account: StorageAccountResponse,
+): EditAccountFormValues {
+  return {
+    provider: account.provider,
+    accountId: configString(account.providerConfig, 'accountId'),
+    region: configString(account.providerConfig, 'region'),
+    endpoint: configString(account.providerConfig, 'endpoint'),
+    jurisdiction: configString(account.providerConfig, 'jurisdiction'),
+    validationBucket: configString(
+      account.providerConfig,
+      'validationBucket',
+    ),
+    accessKeyId: '',
+    secretAccessKey: '',
+    sessionToken: '',
+  };
+}
+
 interface PendingTransition {
   readonly account: StorageAccountResponse;
   readonly status: 'DRAINING' | 'READ_ONLY' | 'REMOVED';
@@ -110,6 +184,7 @@ export function AccountsPage() {
   const [status, setStatus] = useState('all');
   const [health, setHealth] = useState('all');
   const [actionFailure, setActionFailure] = useState<{ accountId: string; error: unknown } | null>(null);
+  const [editingAccount, setEditingAccount] = useState<StorageAccountResponse | null>(null);
   const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null);
 
   const refresh = async () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts });
@@ -175,11 +250,29 @@ export function AccountsPage() {
           total={accounts.length}
           actionFailure={actionFailure}
           actionMutation={actionMutation}
+          onEdit={setEditingAccount}
           onTransition={setPendingTransition}
         />
       ) : null}
 
       <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={refresh} />
+      {editingAccount ? (
+        <EditAccountDialog
+          key={editingAccount.id}
+          account={editingAccount}
+          onAccountUpdated={(updated) => {
+            setEditingAccount(updated);
+            setActionFailure(null);
+          }}
+          onVerificationFailed={(error) => {
+            setActionFailure({ accountId: editingAccount.id, error });
+          }}
+          onChanged={refresh}
+          onOpenChange={(open) => {
+            if (!open) setEditingAccount(null);
+          }}
+        />
+      ) : null}
       <ConfirmDialog
         open={pendingTransition !== null}
         onOpenChange={(open) => { if (!open) setPendingTransition(null); }}
@@ -219,12 +312,14 @@ function AccountsTable({
   total,
   actionFailure,
   actionMutation,
+  onEdit,
   onTransition,
 }: {
   readonly accounts: StorageAccountResponse[];
   readonly total: number;
   readonly actionFailure: { accountId: string; error: unknown } | null;
   readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
   return (
@@ -249,6 +344,7 @@ function AccountsTable({
                 account={account}
                 failure={actionFailure?.accountId === account.id ? actionFailure.error : null}
                 actionMutation={actionMutation}
+                onEdit={onEdit}
                 onTransition={onTransition}
               />
             ))}
@@ -264,11 +360,13 @@ function AccountRows({
   account,
   failure,
   actionMutation,
+  onEdit,
   onTransition,
 }: {
   readonly account: StorageAccountResponse;
   readonly failure: unknown;
   readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
   const percentage = capacityPercent(account.usedBytes, account.capacityBytes);
@@ -296,7 +394,7 @@ function AccountRows({
           <p className="mt-1.5 text-xs text-zinc-500">{Math.round(percentage)}% used · {account.capacityAccuracy.toLowerCase()}</p>
         </td>
         <td className="px-5 py-5"><p className="text-sm text-zinc-800">{relativeDate(account.lastHealthCheckedAt)}</p><p className="mt-1.5 text-xs text-zinc-500">{formatDate(account.lastHealthCheckedAt)}</p></td>
-        <td className="px-5 py-5"><AccountMenu account={account} actionMutation={actionMutation} onTransition={onTransition} /></td>
+        <td className="px-5 py-5"><AccountMenu account={account} actionMutation={actionMutation} onEdit={onEdit} onTransition={onTransition} /></td>
       </tr>
       {failure ? (
         <tr className="border-b border-zinc-100">
@@ -304,7 +402,10 @@ function AccountRows({
             <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <ShieldWarningIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
               <div className="min-w-0 flex-1"><p>{errorText(failure)}</p>{errorRequestId(failure) ? <p className="mt-1 font-mono text-[11px] text-amber-700">Request ID: {errorRequestId(failure)}</p> : null}</div>
-              <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>Retry</Button>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" onClick={() => onEdit(account)}>Edit &amp; retry</Button> : null}
+                <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>Retry</Button>
+              </div>
             </div>
           </td>
         </tr>
@@ -316,10 +417,12 @@ function AccountRows({
 function AccountMenu({
   account,
   actionMutation,
+  onEdit,
   onTransition,
 }: {
   readonly account: StorageAccountResponse;
   readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
   return (
@@ -330,6 +433,7 @@ function AccountMenu({
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-48 rounded-md border border-zinc-200 bg-white p-1 shadow-lg outline-none data-[state=open]:animate-enter">
           {account.status === 'VERIFYING' ? <MenuItem icon={CheckCircleIcon} onSelect={() => actionMutation.mutate({ account, action: 'verify' })}>Verify account</MenuItem> : null}
+          {account.status === 'VERIFYING' ? <MenuItem icon={PencilSimpleIcon} onSelect={() => onEdit(account)}>Edit configuration</MenuItem> : null}
           {account.status !== 'REMOVED' ? <MenuItem icon={HeartbeatIcon} onSelect={() => actionMutation.mutate({ account, action: 'health' })}>Run health check</MenuItem> : null}
           {account.status === 'ACTIVE' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'DRAINING' })}>Begin draining</MenuItem> : null}
           {account.status === 'DRAINING' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'READ_ONLY' })}>Make read only</MenuItem> : null}
@@ -404,6 +508,206 @@ function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open:
         <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5 sm:col-span-2">
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
           <Button type="submit" busy={mutation.isPending}>Create account</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function EditAccountDialog({
+  account,
+  onAccountUpdated,
+  onVerificationFailed,
+  onChanged,
+  onOpenChange,
+}: {
+  readonly account: StorageAccountResponse;
+  readonly onAccountUpdated: (account: StorageAccountResponse) => void;
+  readonly onVerificationFailed: (error: unknown) => void;
+  readonly onChanged: () => Promise<unknown>;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const form = useForm<EditAccountFormValues>({
+    resolver: zodResolver(editAccountSchema),
+    defaultValues: editAccountValues(account),
+  });
+  const mutation = useMutation({
+    mutationFn: async (input: UpdateStorageAccountConfigurationRequest) => {
+      const updated = await api.updateAccountConfiguration(account.id, input);
+      onAccountUpdated(updated);
+      try {
+        return await api.verifyAccount(updated.id);
+      } catch (error) {
+        onVerificationFailed(error);
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      await onChanged();
+      onOpenChange(false);
+      toast.success('Account configuration saved and verified');
+    },
+    onError: async () => {
+      await onChanged();
+    },
+  });
+
+  const submit = form.handleSubmit((values) => {
+    const providerConfig: Record<
+      string,
+      string | number | boolean | null
+    > = { ...account.providerConfig };
+    providerConfig.validationBucket = values.validationBucket.trim();
+    if (values.provider === 'r2') {
+      providerConfig.accountId = values.accountId.trim();
+      if (values.jurisdiction) {
+        providerConfig.jurisdiction = values.jurisdiction;
+      } else {
+        delete providerConfig.jurisdiction;
+      }
+    }
+    if (values.provider === 'b2') {
+      providerConfig.region = values.region.trim();
+    }
+    if (values.provider === 's3') {
+      providerConfig.endpoint = values.endpoint.trim();
+      providerConfig.region = values.region.trim();
+    }
+    const replacesCredentials = Boolean(
+      values.accessKeyId.trim() ||
+      values.secretAccessKey ||
+      values.sessionToken,
+    );
+    mutation.mutate({
+      providerConfig,
+      expectedUpdatedAt: account.updatedAt,
+      ...(replacesCredentials
+        ? {
+            credentials: {
+              accessKeyId: values.accessKeyId.trim(),
+              secretAccessKey: values.secretAccessKey,
+              ...(values.sessionToken
+                ? { sessionToken: values.sessionToken }
+                : {}),
+            },
+          }
+        : {}),
+    });
+  });
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!mutation.isPending) onOpenChange(open);
+      }}
+      title={`Edit ${account.name}`}
+      description="Correct the provider settings, optionally replace the write-only credentials, and retry verification. This is available only before activation."
+    >
+      <form
+        className="grid gap-4 sm:grid-cols-2"
+        onSubmit={(event) => void submit(event)}
+      >
+        <input type="hidden" {...form.register('provider')} />
+        {mutation.error ? (
+          <div className="sm:col-span-2">
+            <ErrorNotice
+              error={errorText(mutation.error)}
+              requestId={errorRequestId(mutation.error)}
+            />
+          </div>
+        ) : null}
+        <Field label="Provider" hint="Provider type cannot change after creation.">
+          <Input value={providerLabel(account.provider)} disabled readOnly />
+        </Field>
+        {account.provider === 'r2' ? (
+          <Field
+            label="Cloudflare account ID"
+            error={form.formState.errors.accountId?.message}
+          >
+            <Input autoComplete="off" {...form.register('accountId')} />
+          </Field>
+        ) : null}
+        {account.provider === 's3' ? (
+          <Field
+            label="HTTPS endpoint"
+            error={form.formState.errors.endpoint?.message}
+          >
+            <Input type="url" {...form.register('endpoint')} />
+          </Field>
+        ) : null}
+        {account.provider !== 'r2' ? (
+          <Field
+            label="Region"
+            error={form.formState.errors.region?.message}
+          >
+            <Input {...form.register('region')} />
+          </Field>
+        ) : (
+          <Field label="Jurisdiction">
+            <select
+              className={selectClassName}
+              {...form.register('jurisdiction')}
+            >
+              <option value="">Default</option>
+              <option value="eu">EU</option>
+              <option value="fedramp">FedRAMP</option>
+            </select>
+          </Field>
+        )}
+        <Field
+          label="Validation bucket"
+          hint="An existing physical bucket this key can access."
+          error={form.formState.errors.validationBucket?.message}
+        >
+          <Input {...form.register('validationBucket')} />
+        </Field>
+        <div className="border-t border-zinc-100 pt-4 sm:col-span-2">
+          <p className="text-sm font-medium text-zinc-900">
+            Replace credentials (optional)
+          </p>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">
+            Leave all three fields blank to keep the encrypted credentials already saved.
+          </p>
+        </div>
+        <Field
+          label={account.provider === 'b2' ? 'Key ID' : 'Access key ID'}
+          error={form.formState.errors.accessKeyId?.message}
+        >
+          <Input autoComplete="off" {...form.register('accessKeyId')} />
+        </Field>
+        <Field
+          label={account.provider === 'b2' ? 'Application key' : 'Secret access key'}
+          error={form.formState.errors.secretAccessKey?.message}
+        >
+          <Input
+            type="password"
+            autoComplete="new-password"
+            {...form.register('secretAccessKey')}
+          />
+        </Field>
+        <Field
+          label="Session token"
+          hint="Optional; leaving it blank clears it when replacing the other credentials."
+        >
+          <Input
+            type="password"
+            autoComplete="off"
+            {...form.register('sessionToken')}
+          />
+        </Field>
+        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5 sm:col-span-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" busy={mutation.isPending}>
+            Save and retry verification
+          </Button>
         </div>
       </form>
     </Dialog>

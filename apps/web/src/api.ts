@@ -18,6 +18,7 @@ import type {
   SetupStatusResponse,
   StorageAccountResponse,
   StorageShardResponse,
+  UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
 } from '@openpool/contracts';
@@ -99,6 +100,18 @@ export const api = {
     request<StorageAccountResponse>('/api/v1/storage-accounts', {
       method: 'POST', headers: jsonHeaders, body: JSON.stringify(input),
     }),
+  updateAccountConfiguration: (
+    id: string,
+    input: UpdateStorageAccountConfigurationRequest,
+  ) =>
+    request<StorageAccountResponse>(
+      `/api/v1/storage-accounts/${encodeURIComponent(id)}/configuration`,
+      {
+        method: 'PATCH',
+        headers: jsonHeaders,
+        body: JSON.stringify(input),
+      },
+    ),
   verifyAccount: (id: string) => request<StorageAccountResponse>(`/api/v1/storage-accounts/${encodeURIComponent(id)}/verify`, { method: 'POST' }),
   healthAccount: (id: string) => request<StorageAccountResponse>(`/api/v1/storage-accounts/${encodeURIComponent(id)}/health`, { method: 'POST' }),
   updateAccountStatus: (id: string, input: UpdateStorageAccountStatusRequest) =>

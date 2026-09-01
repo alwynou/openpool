@@ -128,8 +128,9 @@ migration history 核对。仓库目前不提供 production migration/deploy 命
   npx wrangler d1 time-travel restore openpool --timestamp <RFC3339-or-unix-seconds> --config apps/worker/wrangler.jsonc
   ```
 
-- Provider credential rotation 与代码回滚分开操作；V1 没有 credential re-encryption workflow，
-  不得仅为回滚更改 `CREDENTIAL_MASTER_KEY` 或 `CREDENTIAL_MASTER_KEY_ID`。
+- Provider credential rotation 与代码回滚分开操作；V1 只允许尚未激活的 `VERIFYING` 账号纠正
+  credential，没有 `ACTIVE` 账号 rotation 或批量 credential re-encryption workflow，不得仅为回滚
+  更改 `CREDENTIAL_MASTER_KEY` 或 `CREDENTIAL_MASTER_KEY_ID`。
 - 任何回滚都不得让已签发上传写入一个 D1 不再认识的位置。恢复后重新检查 migration history、
   health、账号状态、容量计数和签名 URL，再恢复流量。
 

@@ -1,6 +1,7 @@
 import type {
   CredentialEnvelope,
   ManagedStorageAccountRepository,
+  StorageAccountConfigurationRepository,
   StorageAccountReferenceRepository,
   StorageAccountRecord,
 } from '@openpool/application';
@@ -297,7 +298,10 @@ function accountBindings(account: StorageAccount): readonly unknown[] {
 
 /** D1 adapter for managed storage account metadata and encrypted credentials. */
 export class D1StorageAccountRepository
-  implements ManagedStorageAccountRepository, StorageAccountReferenceRepository
+  implements
+    ManagedStorageAccountRepository,
+    StorageAccountConfigurationRepository,
+    StorageAccountReferenceRepository
 {
   constructor(private readonly db: D1Database) {}
 
@@ -414,6 +418,42 @@ export class D1StorageAccountRepository
         account.updatedAt,
         account.id,
         expectedStatus,
+        expectedUpdatedAt,
+      )
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  async updateVerifyingConfiguration(
+    account: StorageAccount,
+    credentialEnvelope: CredentialEnvelope,
+    expectedUpdatedAt: string,
+  ): Promise<boolean> {
+    validateProviderConfig(account.providerConfig);
+    validateEnvelope(credentialEnvelope);
+    validateCapabilities(account.capabilities);
+    if (
+      account.status !== 'VERIFYING' ||
+      account.writeEnabled ||
+      account.healthStatus !== 'UNKNOWN' ||
+      account.lastHealthCheckedAt !== null
+    ) {
+      failClosed('configuration state');
+    }
+    const result = await this.db
+      .prepare(
+        `UPDATE storage_accounts
+         SET provider_config = ?, credential_envelope = ?,
+             write_enabled = 0, last_health_status = 'UNKNOWN',
+             last_health_checked_at = NULL, capabilities = ?, updated_at = ?
+         WHERE id = ? AND status = 'VERIFYING' AND updated_at = ?`,
+      )
+      .bind(
+        JSON.stringify(account.providerConfig),
+        JSON.stringify(credentialEnvelope),
+        JSON.stringify(account.capabilities),
+        account.updatedAt,
+        account.id,
         expectedUpdatedAt,
       )
       .run();

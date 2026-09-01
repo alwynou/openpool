@@ -23,6 +23,7 @@ import {
   RefreshStorageAccountHealth,
   StorageAccountApplicationError,
   TransitionStorageAccount,
+  UpdateStorageAccountConfiguration,
   VerifyStorageAccount,
 } from './storage-accounts';
 
@@ -136,6 +137,25 @@ class FakeAccounts implements ManagedStorageAccountRepository {
     return true;
   }
 
+  async updateVerifyingConfiguration(
+    account: StorageAccount,
+    credentialEnvelope: CredentialEnvelope,
+    expectedUpdatedAt: string,
+  ): Promise<boolean> {
+    this.updates += 1;
+    if (this.forceConflict) return false;
+    const record = this.records.get(account.id);
+    if (
+      !record ||
+      record.status !== 'VERIFYING' ||
+      record.updatedAt !== expectedUpdatedAt
+    ) {
+      return false;
+    }
+    this.records.set(account.id, { ...account, credentialEnvelope });
+    return true;
+  }
+
   async listWritable(): Promise<readonly StorageAccountRecord[]> {
     return [...this.records.values()].filter((account) => account.writeEnabled);
   }
@@ -220,6 +240,147 @@ describe('storage account use cases', () => {
     });
     expect(deps.accounts.records).toHaveLength(1);
     expect(deps.audit.actions).toEqual(['STORAGE_ACCOUNT_CREATED']);
+  });
+
+  it('updates verifying provider configuration while retaining credentials', async () => {
+    const deps = dependencies();
+    await create(deps).execute({
+      actorId: 'admin-1',
+      name: 'R2 primary',
+      provider: 'r2',
+      providerConfig: { validationBucket: 'old-bucket' },
+      credentials: { accessKeyId: 'old-access', secretAccessKey: 'old-secret' },
+    });
+    delete deps.vault.encrypted;
+
+    const result = await new UpdateStorageAccountConfiguration(deps).execute({
+      actorId: 'admin-1',
+      accountId: 'account-1',
+      providerConfig: { validationBucket: 'new-bucket' },
+      expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(result.account).toMatchObject({
+      status: 'VERIFYING',
+      writeEnabled: false,
+      providerConfig: { validationBucket: 'new-bucket' },
+      healthStatus: 'UNKNOWN',
+      lastHealthCheckedAt: null,
+      updatedAt: '2026-01-01T00:00:00.001Z',
+    });
+    expect(deps.vault.encrypted).toBeUndefined();
+    expect(deps.accounts.records.get('account-1')?.credentialEnvelope).toBe(
+      envelope,
+    );
+    expect(deps.audit.actions).toEqual([
+      'STORAGE_ACCOUNT_CREATED',
+      'STORAGE_ACCOUNT_CONFIGURATION_UPDATED',
+    ]);
+  });
+
+  it('replaces verifying credentials while retaining provider configuration', async () => {
+    const deps = dependencies();
+    await create(deps).execute({
+      actorId: 'admin-1',
+      name: 'R2 primary',
+      provider: 'r2',
+      providerConfig: { validationBucket: 'unchanged' },
+      credentials: { accessKeyId: 'old-access', secretAccessKey: 'old-secret' },
+    });
+    const credentials = {
+      accessKeyId: 'new-access',
+      secretAccessKey: 'new-secret',
+    };
+
+    const result = await new UpdateStorageAccountConfiguration(deps).execute({
+      actorId: 'admin-1',
+      accountId: 'account-1',
+      credentials,
+      expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    expect(result.account.providerConfig).toEqual({
+      validationBucket: 'unchanged',
+    });
+    expect(deps.vault.encrypted).toEqual(credentials);
+    expect(JSON.stringify(result)).not.toContain('new-secret');
+  });
+
+  it('rejects stale or active configuration updates before encrypting', async () => {
+    const deps = dependencies();
+    await create(deps).execute({
+      actorId: 'admin-1',
+      name: 'R2 primary',
+      provider: 'r2',
+      providerConfig: {},
+      credentials: {},
+    });
+    delete deps.vault.encrypted;
+    const update = new UpdateStorageAccountConfiguration(deps);
+
+    await expect(
+      update.execute({
+        actorId: 'admin-1',
+        accountId: 'account-1',
+        credentials: { accessKeyId: 'new', secretAccessKey: 'secret' },
+        expectedUpdatedAt: '2025-12-31T23:59:59.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_ACCOUNT_CONFLICT' });
+    expect(deps.vault.encrypted).toBeUndefined();
+
+    const record = deps.accounts.records.get('account-1');
+    if (!record) throw new Error('Missing account fixture');
+    deps.accounts.records.set('account-1', {
+      ...record,
+      status: 'ACTIVE',
+      writeEnabled: true,
+    });
+    await expect(
+      update.execute({
+        actorId: 'admin-1',
+        accountId: 'account-1',
+        providerConfig: {},
+        expectedUpdatedAt: record.updatedAt,
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_ACCOUNT_NOT_VERIFYING' });
+    expect(deps.vault.encrypted).toBeUndefined();
+    expect(deps.audit.actions).toEqual(['STORAGE_ACCOUNT_CREATED']);
+  });
+
+  it('does not audit a configuration update that loses its atomic write', async () => {
+    const deps = dependencies();
+    await create(deps).execute({
+      actorId: 'admin-1',
+      name: 'R2 primary',
+      provider: 'r2',
+      providerConfig: {},
+      credentials: {},
+    });
+    deps.accounts.forceConflict = true;
+
+    await expect(
+      new UpdateStorageAccountConfiguration(deps).execute({
+        actorId: 'admin-1',
+        accountId: 'account-1',
+        providerConfig: { validationBucket: 'new-bucket' },
+        expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'STORAGE_ACCOUNT_CONFLICT' });
+    expect(deps.audit.actions).toEqual(['STORAGE_ACCOUNT_CREATED']);
+  });
+
+  it('requires configuration or credentials before reading an account', async () => {
+    const deps = dependencies();
+
+    await expect(
+      new UpdateStorageAccountConfiguration(deps).execute({
+        actorId: 'admin-1',
+        accountId: 'missing',
+        expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STORAGE_ACCOUNT_INPUT' });
+    expect(deps.accounts.updates).toBe(0);
+    expect(deps.audit.actions).toEqual([]);
   });
 
   it('validates credentials and activates only after provider validation', async () => {

@@ -53,6 +53,29 @@ Backblaze B2 使用 `provider: "b2"`，`providerConfig` 包含 `region`、`valid
 `GET /api/v1/storage-accounts` 返回安全的账号列表，其中包含状态、健康、容量准确性和验证得到的
 capabilities，但不包含 `credentials` 或 `credentialEnvelope`。
 
+验证尚未成功时，可用 `PATCH /api/v1/storage-accounts/:id/configuration` 纠正 Provider 配置或替换
+credential：
+
+```json
+{
+  "providerConfig": {
+    "accountId": "correct-cloudflare-account-id",
+    "validationBucket": "correct-bucket"
+  },
+  "credentials": {
+    "accessKeyId": "replacement-write-only",
+    "secretAccessKey": "replacement-write-only"
+  },
+  "expectedUpdatedAt": "2026-09-01T10:00:00.000Z"
+}
+```
+
+`providerConfig` 与 `credentials` 至少提供一项；省略 `credentials` 会保留现有加密信封，提供时则
+整体替换（省略 `sessionToken` 表示新 credential 不含 session token）。`expectedUpdatedAt` 必须来自
+最近一次安全响应，避免编辑与验证并发时覆盖新状态。该接口仅接受 `VERIFYING` 账号，不允许改变
+Provider 类型，也不是 `ACTIVE` 账号的通用 credential rotation；保存后仍需调用 verify 才能激活。
+成功响应继续只返回安全账号字段，不返回任何 credential 或信封。
+
 ## 验证、健康与状态
 
 - `POST /api/v1/storage-accounts/:id/verify`：解密一次 credential，签名并执行 `HEAD Bucket`，验证

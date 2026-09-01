@@ -4,6 +4,7 @@ import {
   type ListStorageAccounts,
   type RefreshStorageAccountHealth,
   type TransitionStorageAccount,
+  type UpdateStorageAccountConfiguration,
   type VerifyStorageAccount,
 } from '@openpool/application';
 import type {
@@ -14,6 +15,7 @@ import type {
   StorageAccountErrorCode,
   StorageAccountResponse,
   StorageCredentialsRequest,
+  UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
 } from '@openpool/contracts';
 import {
@@ -39,6 +41,7 @@ const STATUS_KEYS = ['status'] as const;
 
 type StorageAccountUseCases = {
   readonly create: Pick<CreateStorageAccount, 'execute'>;
+  readonly updateConfiguration: Pick<UpdateStorageAccountConfiguration, 'execute'>;
   readonly list: Pick<ListStorageAccounts, 'execute'>;
   readonly verify: Pick<VerifyStorageAccount, 'execute'>;
   readonly transition: Pick<TransitionStorageAccount, 'execute'>;
@@ -161,6 +164,46 @@ function parseCreateRequest(value: unknown): CreateStorageAccountRequest | undef
     credentials,
     ...(typeof priority === 'number' ? { priority } : {}),
     ...(typeof capacityBytes === 'number' ? { capacityBytes } : {}),
+  };
+}
+
+function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = new Date(value);
+  return !Number.isNaN(timestamp.getTime()) && timestamp.toISOString() === value;
+}
+
+function parseUpdateConfigurationRequest(
+  value: unknown,
+): UpdateStorageAccountConfigurationRequest | undefined {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ['expectedUpdatedAt'], [
+      'providerConfig',
+      'credentials',
+    ]) ||
+    !isCanonicalTimestamp(value.expectedUpdatedAt) ||
+    (!Object.hasOwn(value, 'providerConfig') &&
+      !Object.hasOwn(value, 'credentials'))
+  ) {
+    return undefined;
+  }
+  const providerConfig = Object.hasOwn(value, 'providerConfig')
+    ? parseProviderConfig(value.providerConfig)
+    : undefined;
+  const credentials = Object.hasOwn(value, 'credentials')
+    ? parseCredentials(value.credentials)
+    : undefined;
+  if (
+    (Object.hasOwn(value, 'providerConfig') && providerConfig === undefined) ||
+    (Object.hasOwn(value, 'credentials') && credentials === undefined)
+  ) {
+    return undefined;
+  }
+  return {
+    expectedUpdatedAt: value.expectedUpdatedAt,
+    ...(providerConfig === undefined ? {} : { providerConfig }),
+    ...(credentials === undefined ? {} : { credentials }),
   };
 }
 
@@ -354,6 +397,55 @@ export function registerStorageAccountRoutes(
       return result.account;
     });
   });
+
+  app.patch(
+    '/api/v1/storage-accounts/:id/configuration',
+    async (context) => {
+      const requestId = context.get('requestId');
+      const administrator = await requireAdministrator(
+        context,
+        dependencies,
+        requestId,
+      );
+      if (administrator instanceof Response) return administrator;
+      const input = parseUpdateConfigurationRequest(
+        await readJsonBody(context.req.raw),
+      );
+      if (!input) {
+        return jsonError(
+          context,
+          requestId,
+          'STORAGE_ACCOUNT_INVALID',
+          'The storage account configuration request is invalid.',
+          400,
+        );
+      }
+      try {
+        const result = await dependencies
+          .createUseCases(context.env, requestId)
+          .updateConfiguration.execute({
+            ...input,
+            actorId: administrator.id,
+            accountId: context.req.param('id') ?? '',
+          });
+        const response: ApiEnvelope<StorageAccountResponse> = {
+          data: storageAccountResponse(result.account),
+          requestId,
+        };
+        return context.json(response);
+      } catch (error) {
+        const details = errorDetails(error);
+        if (!details) throw error;
+        return jsonError(
+          context,
+          requestId,
+          details.code,
+          details.message,
+          details.status,
+        );
+      }
+    },
+  );
 
   app.post('/api/v1/storage-accounts/:id/health', async (context) => {
     return runAccountMutation(context, dependencies, async (useCases, administrator, id) =>

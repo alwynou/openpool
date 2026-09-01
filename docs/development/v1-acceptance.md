@@ -60,6 +60,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 - [x] 用 fake transport 创建并验证 R2、B2、Generic S3 Storage Account；验证成功才进入 `ACTIVE`，
   列表不返回 credential 或 envelope。
+- [x] `VERIFYING` Storage Account 可纠正 Provider 配置、按需替换加密 credential，并以
+  `updatedAt` 条件写入后重新验证；已激活账号不可使用该纠错路径，响应与 audit 不泄露敏感值。
 - [x] 创建 logical Bucket；为其创建 `STANDBY` shard 并激活；确认账号状态、健康、能力和容量门槛
   约束写入。
 - [x] Storage Account 仍有非 `RETIRED` shard、未删除 object location 或非零容量时，转为
