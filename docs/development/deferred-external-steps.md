@@ -5,8 +5,9 @@
 
 ## Cloudflare 平台
 
-- [ ] 使用 `wrangler login` 完成交互式 Cloudflare 登录，并确认登录到正确的 Cloudflare account。
-- [ ] 确认目标 Cloudflare account，以及 test/production 是否隔离。
+- [x] 使用 `wrangler login` 完成交互式 Cloudflare 登录，并通过 `wrangler whoami --json` 确认唯一
+  可见的 Cloudflare account（2026-09-01；账号 ID 与登录邮箱不写入仓库）。
+- [ ] 决定 test/production 是否使用独立 Cloudflare account 或至少独立资源与环境。
 - [ ] 确认 D1 location 或 jurisdiction，再创建远端 D1 并替换 `wrangler.jsonc` 中的占位 ID。
 - [ ] 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员 bootstrap secret；
   记录/保管 `CREDENTIAL_MASTER_KEY_ID`（默认 `primary-v1`），不要在 V1 期间更换已有 vault key。
