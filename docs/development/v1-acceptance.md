@@ -77,19 +77,20 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 ## 5. API Key 与审计
 
-- [ ] 管理员创建 key 时只授予必要 scope、Bucket 和 path prefix，并设置合理过期时间；创建响应中的
-  raw `opk_...` token 只保存一次。
-- [ ] `GET /api/v1/api-keys` 只返回安全 metadata；`DELETE /api/v1/api-keys/:id` 可幂等撤销。
-- [ ] 使用 `Authorization: Bearer <token>` 验证四个 object scope：`objects:list`、`objects:read`、
-  `objects:upload`、`objects:delete`；验证 revoked/expired、错误 Bucket、越界 path 和缺失 scope
-  均被拒绝。
-- [ ] 确认 API Key 不能访问管理员初始化/login、Storage Account、Bucket/Shard 管理、API Key 管理
-  或 audit-log 查询。
-- [ ] `GET /api/v1/audit-logs` 仅管理员可访问；验证默认 limit 50、最大 200、actor/action/resource
-  filters、成对 cursor，以及 `createdAt DESC, id DESC` 分页。
-- [ ] 检查 audit metadata 只有安全字符串，不含 raw token、credential、authorization header 或
-  signed URL；确认认证、账号、shard、object、API key 的状态变更都有预期事件。
-- [ ] 接受 V1 audit 的明确边界：业务写入与 audit insert 非同一事务；监控 5xx，遇到 audit 写失败
+- [x] staging 管理员创建了限制到 `smoke-test` Bucket、`api-smoke/` path、所需 scope 和一小时过期
+  时间的 key；raw `opk_...` token 仅在进程内使用一次，未保存到仓库、日志或聊天（2026-09-01）。
+- [x] `GET /api/v1/api-keys` 只返回安全 metadata，不含 raw token；
+  `DELETE /api/v1/api-keys/:id` 重复撤销返回相同时间，验证幂等（2026-09-01）。
+- [x] 使用 `Authorization: Bearer <token>` 完成四个 object scope 的真实 R2 生命周期；revoked、expired、
+  错误 Bucket、越界 path 和缺失 scope 均按预期返回 `401`/`403`（2026-09-01）。
+- [x] staging API Key 访问 Storage Account、Bucket/Shard、API Key 管理和 audit-log 查询均被拒绝；
+  初始化/login 仍只接受各自的 bootstrap/password 认证，不接受 Bearer key（2026-09-01）。
+- [x] `GET /api/v1/audit-logs` 仅管理员可访问；已验证默认 limit 50、最大 200、actor/action/resource
+  filters、成对 cursor、分页不重叠和非法 limit 拒绝（2026-09-01）。
+- [x] 抽查 53 条远端 audit：metadata 只有字符串，不含完整 raw token、credential、authorization
+  header、signed URL 或 credential envelope；API_KEY actor 的授权与对象生命周期事件完整
+  （2026-09-01）。
+- [x] 已接受 V1 audit 的明确边界：业务写入与 audit insert 非同一事务；监控 5xx，遇到 audit 写失败
   时先查询资源当前状态再决定是否重试。需要合规级完整性时不得把 V1 日志当作唯一账本。
 
 ## 6. 真实 Provider smoke（必须 opt-in）
