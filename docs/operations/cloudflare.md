@@ -4,8 +4,9 @@ OpenPool 由一个 Worker 同时提供 API 和构建后的 SPA，D1 保存 metad
 本地默认 binding 保留占位数据库 ID；已创建的 staging D1 只配置在 `env.staging`。production 尚未
 创建，正式部署前必须新增独立 production environment 和数据库，不能复用 staging ID。
 本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对、APAC staging
-D1 创建、0001→0003 migration、三个 staging Secrets 和 `workers.dev` 部署；健康接口与静态控制台
-已通过远端检查，单管理员尚未初始化。
+D1 创建、0001→0003 migration、首次部署所需的三个 staging Secrets 和 `workers.dev` 部署；健康接口、
+静态控制台、`admin` 初始化及登录/session/audit/logout 已通过远端检查。初始化后已从 Worker 删除一次性
+`ADMIN_BOOTSTRAP_TOKEN`，当前只保留 `CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER`。
 
 Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 的 direct-upload session：原子
 释放预留、保留 `PENDING` object tombstone，并重试 Provider 残留清理；成功后 upload session 变为
@@ -37,18 +38,20 @@ canonical base64；`ADMIN_BOOTSTRAP_TOKEN` 也必须是高熵随机值。`CREDEN
 Secret，V1 默认值是 `primary-v1`；部署配置若显式设置它，首次写入后必须保持不变。
 staging 的三项 Secret 还应备份在受保护的密码管理器或操作系统钥匙串中，因为 Cloudflare 不提供
 Secret 明文回读；不得使用 staging 值创建 production 环境。
-当前 staging 备份保存在 macOS 登录钥匙串，account 为 `openpool-staging`，service 分别为
+当前 staging Secret 备份保存在 macOS 登录钥匙串，account 为 `openpool-staging`，service 分别为
 `OpenPool Staging CREDENTIAL_MASTER_KEY`、`OpenPool Staging API_KEY_PEPPER` 和
-`OpenPool Staging ADMIN_BOOTSTRAP_TOKEN`。需要初始化管理员时可将 bootstrap token 直接送入剪贴板，
-避免显示在终端：
+`OpenPool Staging ADMIN_BOOTSTRAP_TOKEN`。最后一项仅作为重建全新 staging 实例时的灾备记录，当前
+Worker 已不再持有它。`admin` 的高熵随机密码另存于 account `admin`、service
+`OpenPool Staging Administrator Password`；需要人工登录时可直接送入剪贴板，避免显示在终端：
 
 ```bash
-security find-generic-password -a openpool-staging \
-  -s "OpenPool Staging ADMIN_BOOTSTRAP_TOKEN" -w | pbcopy
+security find-generic-password -a admin \
+  -s "OpenPool Staging Administrator Password" -w | pbcopy
 ```
 
-初始化成功后可删除 `ADMIN_BOOTSTRAP_TOKEN` 以缩小暴露面；系统已经初始化时不再接受 bootstrap
-请求。只有重建一个全新的 D1/实例并重新执行初始化时，才需要为该实例生成新的 token。
+初始化成功后必须删除 Worker 的 `ADMIN_BOOTSTRAP_TOKEN` 以缩小暴露面；可用
+`wrangler secret list --env staging` 确认它已不存在。系统已经初始化时不再接受 bootstrap 请求。
+只有重建一个全新的 D1/实例并重新执行初始化时，才需要为该实例生成新的 token。
 
 ## 迁移与部署
 

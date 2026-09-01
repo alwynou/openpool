@@ -1,7 +1,7 @@
 # V1 本地验收与发布清单
 
-这是一份可执行的 runbook，但本文更新期间没有执行其中的远端命令、迁移、部署或真实 Provider
-smoke。勾选项代表项目所有者或验收者实际取得证据后才可勾选；文档本身不构成远端验证声明。
+这是一份可执行的 runbook。勾选项代表项目所有者或验收者已经取得证据；2026-09-01 已完成的
+staging 远端操作记录在第 7 节，真实 Provider smoke 仍未执行。
 
 ## 1. 本地前置条件
 
@@ -113,9 +113,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 - [x] `npx wrangler login` 成功并确认唯一可见 account；staging 使用 APAC 的独立 D1 与
   `env.staging`（2026-09-01）。production 尚未创建，不能复用 staging database ID。
-- [x] staging 已配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、`ADMIN_BOOTSTRAP_TOKEN`，
-  并在 macOS 登录钥匙串备份；`CREDENTIAL_MASTER_KEY_ID=primary-v1`（2026-09-01）。V1 期间不更换
-  已有 key/ID。
+- [x] staging 首次部署已配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、
+  `ADMIN_BOOTSTRAP_TOKEN`，并在 macOS 登录钥匙串备份；`CREDENTIAL_MASTER_KEY_ID=primary-v1`
+  （2026-09-01）。管理员初始化后已从 Worker 删除一次性 bootstrap secret，当前远端 secret list
+  只保留 master key 和 pepper。V1 期间不更换已有 key/ID。
 - [ ] 运行 `npx wrangler whoami --json`、`npx wrangler d1 info openpool --config apps/worker/wrangler.jsonc`
   和 migrations list，确认目标无误。
 - [ ] 用仓库外受限路径保存迁移前 D1 export（包含 metadata、audit 和加密 credential envelope）：
@@ -136,9 +137,11 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   `openpool-staging`；该命令不会隐式迁移 D1，但不是 dry-run，必须视为有远端发布副作用的命令。
 - [ ] 仅在明确需要把两个远端步骤合并且已再次确认账号、D1、备份和授权时，才使用
   `npm run deploy:staging:with-migrations`；该命令会先迁移 staging D1 再部署 staging Worker。
-- [ ] 部署后健康接口、`initialized: false` setup 状态和静态控制台已验证；管理员初始化、认证、
-  控制面流程及真实 Provider signed PUT/GET/CORS smoke 仍待完成，并需确认 observability 日志无
-  敏感值。
+- [x] 部署后健康接口、静态控制台和初始 `initialized: false` 已验证；使用钥匙串中的高熵随机密码
+  初始化 `admin` 后，登录、session、管理员 audit 查询、登出和撤销后 session 均通过远端检查。
+  删除 bootstrap secret 后再次验证健康、`initialized: true`、登录和登出（2026-09-01）。
+- [ ] staging 控制面流程、真实 Provider signed PUT/GET/CORS smoke 与 observability 敏感值检查仍待
+  完成。
 - [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
   看到至少一次 scheduled maintenance 运行记录；确认失败清理会留待下次重试。
 
@@ -155,5 +158,5 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-在 owner 提供证据前，以下事项必须保持未勾选：Cloudflare login/account/D1 ID、三类 Secrets、
-远端 migration/deploy、真实 R2/B2/Generic S3 smoke、bucket CORS 和自定义域名。
+在 owner 提供证据前，以下剩余事项必须保持未勾选：Cron 实际运行记录、真实 R2/B2/Generic S3
+smoke、bucket CORS、自定义域名和 production 环境。
