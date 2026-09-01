@@ -7,24 +7,24 @@
 - domain/application/adapters 分层；
 - 初始 schema、Placement 规则与文档。
 
-## Phase 1：V1（核心控制面与 staging R2 验收完成）
+## Phase 1：V1（核心控制面与 staging R2/B2 验收完成）
 
 1. 单管理员初始化、登录与 session（本地完成）；
 2. AES-GCM credential vault（本地完成）；
 3. R2 Provider 验证与签名上传/下载（本地及真实 staging R2 smoke 完成）；
 4. logical bucket、对象 reserve/complete/delete（本地完成；对象字节直传 Provider）；
 5. Storage Account、容量、健康检查和简单 Placement（本地完成）；
-6. Generic S3 与 B2（本地完成，真实 Provider smoke 待项目所有者提供隔离资源和凭证）；
+6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
-   和浏览器 R2 直传均已验收，production 尚未创建）。
+   和浏览器 R2/B2 直传均已验收，production 尚未创建）。
 
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
-“staging 验收完成”仅覆盖当前隔离 Cloudflare staging 与 R2，不代表 B2、Generic S3 或 production。
+“staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 Generic S3 或 production。
 
 核心 V1 控制面退出条件已经达到：本地 `npm run verify` 通过；本地流程、独立 staging 部署、R2
-Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单](development/v1-acceptance.md)取得证据。
-完整的 V1 Provider 兼容性声明仍需 B2 与 Generic S3 的 opt-in smoke。production、CI/CD token、受保护
+R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单](development/v1-acceptance.md)取得证据。
+完整的 V1 Provider 兼容性声明仍需 Generic S3 的 opt-in smoke。production、CI/CD token、受保护
 备份位置和恢复演练也继续由项目所有者决定，不复用 staging 资源。
 
 ## Phase 2

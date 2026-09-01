@@ -42,12 +42,18 @@
   并通过 OpenPool 完成账号验证、逻辑 Bucket/ACTIVE shard、签名 PUT、complete/HEAD、签名 GET 字节
   比对及 DELETE smoke；删除后账号与 shard 用量均回到 0，R2 bucket 为空，审计事件完整
   （2026-09-01）。credential 未经过仓库或聊天。
-- [ ] 为 Backblaze B2 创建独立测试 bucket 和受限 application key，执行 S3-compatible smoke test。
+- [x] 已创建私有 B2 隔离 bucket `openpool-b2-staging-5dfebd7d02` 和 bucket-scoped Read & Write
+  application key；使用 `us-east-005` 完成账号验证、逻辑 Bucket/ACTIVE shard、浏览器签名 PUT、
+  complete、签名 GET 字节比对和 DELETE smoke，OpenPool 容量回到 0（2026-09-01）。B2 的
+  `Keep all versions` 会在 S3 DELETE 后保留历史版本，后续是否永久清除由 bucket lifecycle 决定。
 - [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
 - [x] 已从 staging 控制台浏览器实际完成 R2 文件上传、下载和删除，确认 signed PUT/GET 与最小化
   CORS policy 生效（2026-09-01）。
-- [ ] 后续 B2/Generic S3 bucket 也必须配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/
-  直取所需 method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
+- [x] B2 已写入只允许 staging `workers.dev` origin 的自定义 S3 CORS，覆盖 `PUT`/`GET`/`HEAD` 和
+  `Content-Type`/`Authorization`/`Range`；真实 `OPTIONS` 预检、浏览器上传和下载通过。用于写 CORS
+  的临时全账户 application key 已立即撤销（2026-09-01）。
+- [ ] Generic S3 bucket 仍需配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/直取所需
+  method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
 
 所有 secret 都只能通过本地忽略文件、交互式命令、Cloudflare Secret 或外部 secret manager 注入，不能写入
 仓库、测试快照、日志或聊天记录。

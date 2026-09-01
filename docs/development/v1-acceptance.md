@@ -106,14 +106,21 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] R2：APAC 隔离测试 bucket `openpool-staging-smoke` 使用 bucket-scoped Object Read & Write
   credentials，通过 `HEAD Bucket` 验证、逻辑 Bucket/ACTIVE shard、签名 PUT、complete/HEAD、签名
   GET 字节比对及 DELETE smoke；删除后容量归零且 R2 bucket 为空（2026-09-01）。
-- [ ] Backblaze B2：隔离测试 bucket、受限 application key；用正确 region 执行同一组 S3-compatible
-  smoke。
+- [x] Backblaze B2：私有隔离 bucket `openpool-b2-staging-5dfebd7d02`、bucket-scoped Read & Write
+  application key 和 `us-east-005` region，通过账号验证、逻辑 Bucket/ACTIVE shard、浏览器签名 PUT、
+  complete、签名 GET 字节比对及 DELETE smoke；删除后 OpenPool 账号容量归零（2026-09-01）。B2 bucket
+  使用 `Keep all versions`，因此 S3 DELETE 隐藏当前对象但保留历史版本；这是 Provider 生命周期策略，
+  不能把控制台仍显示历史字节误判为 OpenPool 删除失败。
 - [ ] Generic S3：提供 HTTPS endpoint、region、validation bucket、addressing style 和受限凭证；
   记录兼容性差异及错误分类。
 - [x] R2 bucket 使用最小化 CORS，只允许 staging 控制台 origin，以及 signed URL 所需的
   `PUT`、`GET`、`HEAD`、`DELETE`、`Content-Type` 和 `ETag`；已通过浏览器实际上传、下载和删除
   验收（2026-09-01）。
-- [ ] B2/Generic S3 bucket 仍需分别配置并实测最小化 CORS，不得开放不必要 origin/method/header。
+- [x] B2 bucket 使用自定义 CORS，只允许 staging `workers.dev` origin，以及 S3 `PUT`/`GET`/`HEAD`
+  所需的 `Content-Type`、`Authorization` 和 `Range`；真实浏览器预检、上传和下载均通过
+  （2026-09-01）。Backblaze Web Console 的标准“共享所有内容”预设只包含 S3 `GET`/`HEAD`，不能
+  用于 OpenPool 浏览器直传。
+- [ ] Generic S3 bucket 仍需配置并实测最小化 CORS，不得开放不必要 origin/method/header。
 
 ## 7. 远端升级与部署（必须由所有者明确授权）
 
@@ -154,7 +161,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] staging 的 R2 账号、逻辑 Bucket/ACTIVE shard、signed PUT/GET/DELETE 及浏览器 CORS smoke 已
   完成；live tail 抽样中的 Cookie/路径标识被标为 `REDACTED`，没有应用日志、异常、credential、token、
   signed URL 或响应正文。标准客户端网络/地理 metadata 仍要求受限访问和保留策略（2026-09-01）。
-- [ ] B2/Generic S3 真实联调仍待完成。
+- [x] B2 真实联调完成：验证、ACTIVE shard、浏览器直传/直取、删除、Cron 过期清理和精确 CORS
+  均取得 staging 证据；临时 CORS 管理 key 用后立即撤销（2026-09-01）。
+- [ ] Generic S3 真实联调仍待完成。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
@@ -172,5 +181,5 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前剩余外部事项是 B2/Generic S3 资源、相应 CORS、CI/CD token、production/自定义域名决策，以及
+当前剩余外部事项是 Generic S3 资源及其 CORS、CI/CD token、production/自定义域名决策，以及
 下一次有数据的 schema 升级所需受保护备份位置和恢复负责人；在 owner 提供证据前保持未勾选。
