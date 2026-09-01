@@ -10,7 +10,6 @@ import { ListChecksIcon } from '@phosphor-icons/react/dist/csr/ListChecks';
 import { SignOutIcon } from '@phosphor-icons/react/dist/csr/SignOut';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { AdministratorResponse, HealthResponse } from '@openpool/contracts';
-import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
@@ -109,14 +108,12 @@ export function AppShell({
         </nav>
 
         <main className="mx-auto w-full max-w-[1280px] px-4 py-8 sm:px-7 sm:py-10 lg:px-9 lg:py-12">
-          <motion.div
+          <div
             key={location.pathname}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="animate-enter"
           >
             {children}
-          </motion.div>
+          </div>
         </main>
       </div>
     </div>

@@ -6,9 +6,10 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { ConfirmDialog } from '../components/dialogs';
 import { errorRequestId, errorText, formatBytes, formatDate } from '../lib/utils';
 import { queryKeys, useBuckets } from '../queries';
-import { Button, ConfirmDialog, EmptyState, ErrorNotice, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+import { Button, EmptyState, ErrorNotice, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
 
 export function FilesPage() {
   const bucketsQuery = useBuckets();

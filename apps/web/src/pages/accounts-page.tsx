@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { api } from '../api';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
 import {
   capacityPercent,
   cn,
@@ -35,8 +36,6 @@ import {
 import { queryKeys, useAccounts } from '../queries';
 import {
   Button,
-  ConfirmDialog,
-  Dialog,
   EmptyState,
   ErrorNotice,
   Field,

@@ -5,9 +5,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
 import { errorRequestId, errorText, formatDate } from '../lib/utils';
 import { queryKeys, useApiKeys, useBuckets } from '../queries';
-import { Button, ConfirmDialog, Dialog, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+import { Button, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
 
 const scopes: ApiKeyScope[] = ['objects:list', 'objects:read', 'objects:upload', 'objects:delete'];
 

@@ -5,9 +5,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { Dialog } from '../components/dialogs';
 import { errorRequestId, errorText, formatBytes } from '../lib/utils';
 import { queryKeys, useAccounts, useBuckets } from '../queries';
-import { Button, Dialog, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+import { Button, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
 
 const shardTransitions: Record<StorageShardResponse['status'], StorageShardResponse['status'][]> = {
   STANDBY: ['ACTIVE', 'RETIRED'],
