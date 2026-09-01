@@ -19,6 +19,7 @@ erDiagram
   SHARD_MIGRATIONS ||--o{ SHARD_MIGRATION_OBJECTS : schedules
   OBJECTS ||--o{ SHARD_MIGRATION_OBJECTS : moves
   LOGICAL_BUCKETS o|--o{ API_KEYS : scopes
+  AUDIT_OUTBOX ||--o| AUDIT_LOGS : delivers
 ```
 
 ## 关键不变量
@@ -32,6 +33,9 @@ erDiagram
 - storage account 使用状态机，不物理删除历史引用中的账号。
 - `credential_envelope` 只保存版本化加密信封，永不保存明文 secret。
 - `key_hash`、`token_hash` 只保存不可逆摘要，明文只在创建时返回一次。
+- 已迁移的业务写入与对应 audit outbox append 同一 D1 batch/事务；outbox `id` 是全局唯一 event id。
+- `PENDING`/`PROCESSING` 事件由租约保护，成功投递后为 `DELIVERED`；失败按退避重试。查询 union 未
+  delivered outbox 与 `AUDIT_LOGS`，投递前后沿用同一公开 `id`。
 
 ## 状态机
 
@@ -67,6 +71,9 @@ RESERVED → SWITCHED → COMPLETED
 `MIGRATING` shard 状态只能由 durable migration 条件事务进入；通用 shard status API 不能绕过
 migration 任务。`SWITCHED` 表示目标已经是 primary，但源清理仍可由原搬运器或 scheduled
 maintenance 幂等重试。
+
+Audit outbox：`PENDING → PROCESSING → DELIVERED`；失败回到可重试状态，租约过期可接管。同一
+`event_id` 最多产生一条 delivered audit log。首个代码 slice 仅覆盖 Logical Bucket mutation。
 
 状态转换必须由用例显式完成，并写 audit log。数据库 CHECK 约束只负责拒绝非法值。
 

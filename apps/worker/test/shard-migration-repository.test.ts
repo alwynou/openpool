@@ -14,6 +14,7 @@ import type {
 } from '@openpool/domain';
 
 import {
+  D1AuditOutboxRepository,
   D1LogicalBucketRepository,
   D1ObjectRepository,
   D1ShardMigrationRepository,
@@ -28,7 +29,8 @@ interface TestEnv extends Env {
 
 const testEnv = env as unknown as TestEnv;
 const accounts = new D1StorageAccountRepository(testEnv.DB);
-const buckets = new D1LogicalBucketRepository(testEnv.DB);
+const auditOutbox = new D1AuditOutboxRepository(testEnv.DB);
+const buckets = new D1LogicalBucketRepository(testEnv.DB, auditOutbox);
 const shards = new D1StorageShardRepository(testEnv.DB);
 const objects = new D1ObjectRepository(testEnv.DB);
 const migrations = new D1ShardMigrationRepository(testEnv.DB);
@@ -101,6 +103,7 @@ beforeEach(async () => {
   await testEnv.DB.batch([
     testEnv.DB.prepare('DELETE FROM shard_migration_objects'),
     testEnv.DB.prepare('DELETE FROM shard_migrations'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM upload_sessions'),
     testEnv.DB.prepare('DELETE FROM object_locations'),
     testEnv.DB.prepare('DELETE FROM objects'),
@@ -119,7 +122,16 @@ async function setupReadyObject(): Promise<{
   const targetAccount = account('account-target', 'Target');
   expect(await accounts.create(sourceAccount, envelope)).toBe(true);
   expect(await accounts.create(targetAccount, envelope)).toBe(true);
-  expect(await buckets.create(bucket)).toBe(true);
+  expect(
+    await buckets.create(bucket, {
+      actorType: 'SYSTEM',
+      actorId: null,
+      action: 'LOGICAL_BUCKET_CREATED',
+      resourceType: 'LOGICAL_BUCKET',
+      resourceId: bucket.id,
+      createdAt: bucket.createdAt,
+    }),
+  ).toBe(true);
   const source = shard('shard-source', sourceAccount.id, 'ACTIVE');
   const target = shard('shard-target', targetAccount.id, 'STANDBY');
   expect(await shards.create(source)).toBe(true);

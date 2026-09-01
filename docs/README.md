@@ -9,6 +9,7 @@
 - [数据模型](architecture/data-model.md)：D1 实体、不变量与状态。
 - [安全模型](architecture/security.md)：凭证、API Key、上传与日志安全。
 - [架构决策记录](architecture/decisions/)：已经确定的重要取舍。
+  - [ADR 0004：事务审计 Outbox](architecture/decisions/0004-transactional-audit-outbox.md)
 
 ## 开发
 

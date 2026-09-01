@@ -12,4 +12,6 @@ export * from './use-cases/storage-shards';
 export * from './ports/api-key';
 export * from './use-cases/api-keys';
 export * from './ports/audit-query';
+export * from './ports/audit-outbox';
 export * from './use-cases/list-audit-logs';
+export * from './use-cases/audit-outbox';

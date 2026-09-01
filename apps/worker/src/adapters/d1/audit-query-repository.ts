@@ -128,7 +128,21 @@ export class D1AuditQueryRepository implements AuditQueryRepository {
       .prepare(
         `SELECT id, actor_type, actor_id, action, resource_type, resource_id,
                 request_id, metadata, created_at
-         FROM audit_logs
+         FROM (
+           SELECT id, actor_type, actor_id, action, resource_type, resource_id,
+                  request_id, metadata, created_at
+           FROM audit_logs
+           UNION ALL
+           SELECT id, actor_type, actor_id, action, resource_type, resource_id,
+                  request_id, metadata, created_at
+           FROM audit_outbox
+           WHERE status <> 'DELIVERED'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM audit_logs
+               WHERE audit_logs.event_id = audit_outbox.id
+             )
+         ) AS visible_audit_events
          ${where}
          ORDER BY created_at DESC, id DESC
          LIMIT ?`,

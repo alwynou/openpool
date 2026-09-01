@@ -3,6 +3,7 @@ import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { D1AuditQueryRepository } from '../src/adapters/d1/audit-query-repository';
+import { D1AuditOutboxRepository } from '../src/adapters/d1/audit-outbox-repository';
 import type { Env } from '../src/env';
 
 interface TestEnv extends Env {
@@ -47,7 +48,10 @@ async function insertAudit(fixture: AuditFixture): Promise<void> {
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
-  await testEnv.DB.prepare('DELETE FROM audit_logs').run();
+  await testEnv.DB.batch([
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
+    testEnv.DB.prepare('DELETE FROM audit_logs'),
+  ]);
 });
 
 describe('D1AuditQueryRepository', () => {
@@ -137,6 +141,51 @@ describe('D1AuditQueryRepository', () => {
       ],
       nextCursor: null,
     });
+  });
+
+  it('shows an outbox event immediately and exactly once after delivery', async () => {
+    const outbox = new D1AuditOutboxRepository(testEnv.DB, {
+      requestId: 'request-outbox',
+      idGenerator: () => 'audit-outbox',
+    });
+    await outbox.record({
+      actorType: 'ADMIN',
+      actorId: 'admin-1',
+      action: 'LOGICAL_BUCKET_CREATED',
+      resourceType: 'LOGICAL_BUCKET',
+      resourceId: 'bucket-1',
+      createdAt: '2026-09-01T04:00:00.000Z',
+      metadata: { name: 'Documents' },
+    });
+
+    expect((await repository.list({ limit: 20 })).items).toEqual([
+      {
+        id: 'audit-outbox',
+        actorType: 'ADMIN',
+        actorId: 'admin-1',
+        action: 'LOGICAL_BUCKET_CREATED',
+        resourceType: 'LOGICAL_BUCKET',
+        resourceId: 'bucket-1',
+        requestId: 'request-outbox',
+        metadata: { name: 'Documents' },
+        createdAt: '2026-09-01T04:00:00.000Z',
+      },
+    ]);
+
+    await outbox.claim({
+      leaseToken: 'lease-1',
+      claimedAt: '2026-09-01T04:00:00.000Z',
+      leaseExpiresAt: '2026-09-01T04:01:00.000Z',
+    });
+    await outbox.deliver(
+      'audit-outbox',
+      'lease-1',
+      '2026-09-01T04:00:30.000Z',
+    );
+
+    const delivered = await repository.list({ limit: 20 });
+    expect(delivered.items).toHaveLength(1);
+    expect(delivered.items[0]?.id).toBe('audit-outbox');
   });
 
   it.each(['not-json', '{"count":1}', '[]'])(

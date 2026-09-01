@@ -18,6 +18,7 @@ import type {
   CredentialEnvelope,
   CredentialPayload,
 } from './credential-vault';
+import type { AuditLogEntry } from './auth';
 
 export interface StorageAccountRepository {
   listWritable(): Promise<readonly StorageAccountRecord[]>;
@@ -59,7 +60,7 @@ export interface StorageAccountReferenceRepository {
 
 export interface LogicalBucketRepository {
   /** Returns false when the unique bucket name (or id) already exists. */
-  create(bucket: LogicalBucket): Promise<boolean>;
+  create(bucket: LogicalBucket, audit: AuditLogEntry): Promise<boolean>;
   findById(id: string): Promise<LogicalBucket | undefined>;
   list(): Promise<readonly LogicalBucket[]>;
 }

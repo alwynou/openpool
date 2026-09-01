@@ -20,6 +20,8 @@
 - [ ] Phase 2 的 `0004_shard_migrations.sql` 尚未应用到 staging，相关 Worker/Web 也尚未部署。执行前
   需项目所有者指定受限 D1 export 保存位置，并分别明确授权 remote migration 与 staging deploy；
   不得用当前对话中的开发授权推定远端变更授权。
+- [ ] Phase 2 `0005` transactional audit outbox 尚未在本地或远端执行；staging 迁移、Worker 部署及
+  含既有数据的验证需项目所有者分别明确授权，并在迁移前指定受限 D1 export 保存位置。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration

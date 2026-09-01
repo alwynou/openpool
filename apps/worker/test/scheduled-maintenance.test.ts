@@ -14,6 +14,7 @@ import type {
 } from '@openpool/application';
 
 import worker from '../src';
+import { D1AuditOutboxRepository } from '../src/adapters/d1';
 import { runScheduledMaintenance } from '../src/composition/root';
 import type { Env } from '../src/env';
 
@@ -73,6 +74,7 @@ beforeEach(async () => {
   await testEnv.DB.batch([
     testEnv.DB.prepare('DELETE FROM shard_migration_objects'),
     testEnv.DB.prepare('DELETE FROM shard_migrations'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM upload_sessions'),
     testEnv.DB.prepare('DELETE FROM object_locations'),
     testEnv.DB.prepare('DELETE FROM objects'),
@@ -261,6 +263,10 @@ describe('scheduled maintenance composition', () => {
       migrationsCleaned: 0,
       migrationsCompleted: 0,
       migrationCleanupFailed: 0,
+      auditOutboxClaimed: 0,
+      auditOutboxDelivered: 0,
+      auditOutboxRetried: 0,
+      auditOutboxFailed: 0,
     });
 
     expect(provider.deleteObject).toHaveBeenCalledOnce();
@@ -295,6 +301,10 @@ describe('scheduled maintenance composition', () => {
       migrationsCleaned: 1,
       migrationsCompleted: 1,
       migrationCleanupFailed: 0,
+      auditOutboxClaimed: 0,
+      auditOutboxDelivered: 0,
+      auditOutboxRetried: 0,
+      auditOutboxFailed: 0,
     });
 
     expect(provider.deleteObject).toHaveBeenCalledOnce();
@@ -313,6 +323,46 @@ describe('scheduled maintenance composition', () => {
       migration_status: 'COMPLETED',
       task_status: 'COMPLETED',
       source_status: 'RETIRED',
+    });
+  });
+
+  it('projects a pending audit outbox event during maintenance', async () => {
+    const outbox = new D1AuditOutboxRepository(testEnv.DB, {
+      requestId: 'request-1',
+      idGenerator: () => 'event-1',
+    });
+    await outbox.record({
+      actorType: 'ADMIN',
+      actorId: 'admin-1',
+      action: 'LOGICAL_BUCKET_CREATED',
+      resourceType: 'LOGICAL_BUCKET',
+      resourceId: 'bucket-1',
+      createdAt: now,
+    });
+    let maintenanceId = 0;
+
+    await expect(
+      runScheduledMaintenance(testEnv, {
+        clock: { now: () => new Date(now) },
+        providerRegistry: providers,
+        credentialVault: vault,
+        idGenerator: { next: () => `maintenance-id-${maintenanceId++}` },
+      }),
+    ).resolves.toMatchObject({
+      auditOutboxClaimed: 1,
+      auditOutboxDelivered: 1,
+      auditOutboxRetried: 0,
+      auditOutboxFailed: 0,
+    });
+    await expect(
+      testEnv.DB.prepare(
+        `SELECT event_id, action
+         FROM audit_logs
+         WHERE event_id = 'event-1'`,
+      ).first(),
+    ).resolves.toEqual({
+      event_id: 'event-1',
+      action: 'LOGICAL_BUCKET_CREATED',
     });
   });
 });

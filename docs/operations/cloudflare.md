@@ -9,9 +9,11 @@ D1 创建、0001→0003 migration、首次部署所需的三个 staging Secrets 
 `ADMIN_BOOTSTRAP_TOKEN`，当前只保留 `CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER`。同日通过 live
 tail 捕获到 `*/5 * * * *` scheduled event，outcome 为 `ok`，无 exception 或应用日志。
 
-Worker 的 `*/5 * * * *` cron 只负责扫描超过签名 expiry 5 分钟 grace 的 direct-upload session：原子
-释放预留、保留 `PENDING` object tombstone，并重试 Provider 残留清理；成功后 upload session 变为
-`ABORTED`，Provider 失败则保留 `EXPIRED` 等下一轮。它不是自动 migration、replication 或 gateway。
+Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
+shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
+tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留
+`EXPIRED` 等下一轮。审计事件以短 lease claim、稳定 event id 幂等写入 `audit_logs`，失败指数退避。
+Cron 不是自动 migration、replication 或 gateway。
 
 ## 首次配置
 

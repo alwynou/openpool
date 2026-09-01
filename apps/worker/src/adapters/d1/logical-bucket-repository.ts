@@ -1,9 +1,14 @@
-import type { LogicalBucketRepository } from '@openpool/application';
+import type {
+  AuditLogEntry,
+  LogicalBucketRepository,
+} from '@openpool/application';
 import {
   validateLogicalBucketDescription,
   validateLogicalBucketName,
   type LogicalBucket,
 } from '@openpool/domain';
+
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 
 interface LogicalBucketRow {
   readonly id: unknown;
@@ -58,25 +63,47 @@ function mapLogicalBucket(row: LogicalBucketRow): LogicalBucket {
 
 /** D1 adapter for logical namespaces, independent of physical providers. */
 export class D1LogicalBucketRepository implements LogicalBucketRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox: Pick<
+      D1AuditOutboxRepository,
+      'statement' | 'assertPreviousChanges'
+    >,
+  ) {}
 
-  async create(bucket: LogicalBucket): Promise<boolean> {
+  async create(
+    bucket: LogicalBucket,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
     validateBucket(bucket);
-    const result = await this.db
-      .prepare(
-        `INSERT OR IGNORE INTO logical_buckets
-         (id, name, description, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        bucket.id,
-        bucket.name,
-        bucket.description,
-        bucket.createdAt,
-        bucket.updatedAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+    try {
+      const results = await this.db.batch([
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO logical_buckets
+             (id, name, description, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            bucket.id,
+            bucket.name,
+            bucket.description,
+            bucket.createdAt,
+            bucket.updatedAt,
+          ),
+        this.auditOutbox.assertPreviousChanges(),
+        this.auditOutbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async findById(id: string): Promise<LogicalBucket | undefined> {

@@ -1,5 +1,6 @@
 export * from './api-key-repository';
 export * from './audit-query-repository';
+export * from './audit-outbox-repository';
 export * from './auth-repository';
 export * from './logical-bucket-repository';
 export * from './object-repository';

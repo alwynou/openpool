@@ -4,7 +4,6 @@ import {
   type LogicalBucket,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
 import type {
   Clock,
   IdGenerator,
@@ -36,7 +35,6 @@ export interface LogicalBucketMutationDependencies {
   readonly buckets: LogicalBucketRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function invalidInput(message: string): LogicalBucketApplicationError {
@@ -74,20 +72,21 @@ export class CreateLogicalBucket {
       createdAt: now,
       updatedAt: now,
     };
-    if (!(await this.dependencies.buckets.create(bucket))) {
+    if (
+      !(await this.dependencies.buckets.create(bucket, {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'LOGICAL_BUCKET_CREATED',
+        resourceType: 'LOGICAL_BUCKET',
+        resourceId: bucket.id,
+        createdAt: now,
+      }))
+    ) {
       throw new LogicalBucketApplicationError(
         'LOGICAL_BUCKET_ALREADY_EXISTS',
         'A logical bucket with this name already exists',
       );
     }
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'LOGICAL_BUCKET_CREATED',
-      resourceType: 'LOGICAL_BUCKET',
-      resourceId: bucket.id,
-      createdAt: now,
-    });
     return bucket;
   }
 }

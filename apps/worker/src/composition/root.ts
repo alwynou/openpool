@@ -12,6 +12,7 @@ import {
   CreateStorageShard,
   CreateUpload,
   DeleteObject,
+  DrainAuditOutbox,
   type AuthClock,
   type AuthIdGenerator,
   type CredentialPayload,
@@ -62,6 +63,7 @@ import {
   D1AuthRepository,
   D1ApiKeyRepository,
   D1AuditQueryRepository,
+  D1AuditOutboxRepository,
   D1LogicalBucketRepository,
   D1ObjectRepository,
   D1ShardMigrationRepository,
@@ -161,8 +163,12 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
   };
 
   const createUseCases = (env: Env, requestId: string) => {
+    const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+      requestId,
+      idGenerator: () => ids.next(),
+    });
     const accounts = new D1StorageAccountRepository(env.DB);
-    const buckets = new D1LogicalBucketRepository(env.DB);
+    const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
     const shards = new D1StorageShardRepository(env.DB);
     const audit = new D1AuthRepository(env.DB, {
       requestId,
@@ -192,7 +198,7 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       verify: new VerifyStorageAccount(common),
       transition: new TransitionStorageAccount({ accounts, clock, audit }),
       refresh: new RefreshStorageAccountHealth(common),
-      createBucket: new CreateLogicalBucket({ buckets, ids, clock, audit }),
+      createBucket: new CreateLogicalBucket({ buckets, ids, clock }),
       listBuckets: new ListLogicalBuckets(buckets),
       getBucket: new GetLogicalBucket(buckets),
       createShard: new CreateStorageShard(shardDependencies),
@@ -229,8 +235,12 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
   };
 
   const createMigrationUseCases = (env: Env, requestId: string) => {
+    const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+      requestId,
+      idGenerator: () => ids.next(),
+    });
     const accounts = new D1StorageAccountRepository(env.DB);
-    const buckets = new D1LogicalBucketRepository(env.DB);
+    const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
     const shards = new D1StorageShardRepository(env.DB);
     const migrations = new D1ShardMigrationRepository(env.DB);
     const audit = new D1AuthRepository(env.DB, {
@@ -276,8 +286,12 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     };
 
   const createApiKeyUseCases = (env: Env, requestId: string) => {
+    const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+      requestId,
+      idGenerator: () => ids.next(),
+    });
     const apiKeys = new D1ApiKeyRepository(env.DB);
-    const buckets = new D1LogicalBucketRepository(env.DB);
+    const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
     const audit = new D1AuthRepository(env.DB, {
       requestId,
       auditIdGenerator: () => ids.next(),
@@ -398,6 +412,10 @@ export async function runScheduledMaintenance(
   const ids = overrides.idGenerator ?? defaultIdGenerator;
   const clock = overrides.clock ?? defaultClock;
   const requestId = `scheduled:${ids.next()}`;
+  const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+    requestId,
+    idGenerator: () => ids.next(),
+  });
   const objects = new D1ObjectRepository(env.DB);
   const audit = new D1AuthRepository(env.DB, {
     requestId,
@@ -423,11 +441,20 @@ export async function runScheduledMaintenance(
     clock,
     audit,
   }).execute();
+  const auditDelivery = await new DrainAuditOutbox({
+    outbox: auditOutbox,
+    ids,
+    clock,
+  }).execute();
   return {
     ...uploadCleanup,
     migrationCleanupCandidates: migrationCleanup.candidates,
     migrationsCleaned: migrationCleanup.cleaned,
     migrationsCompleted: migrationCleanup.completedMigrations,
     migrationCleanupFailed: migrationCleanup.failed,
+    auditOutboxClaimed: auditDelivery.claimed,
+    auditOutboxDelivered: auditDelivery.delivered,
+    auditOutboxRetried: auditDelivery.retried,
+    auditOutboxFailed: auditDelivery.failed,
   };
 }

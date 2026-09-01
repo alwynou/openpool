@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { LogicalBucket, StorageShard } from '@openpool/domain';
 import {
+  D1AuditOutboxRepository,
   D1LogicalBucketRepository,
   D1StorageShardRepository,
 } from '../src/adapters/d1';
@@ -14,7 +15,8 @@ interface TestEnv extends Env {
 }
 
 const testEnv = env as unknown as TestEnv;
-const buckets = new D1LogicalBucketRepository(testEnv.DB);
+const auditOutbox = new D1AuditOutboxRepository(testEnv.DB);
+const buckets = new D1LogicalBucketRepository(testEnv.DB, auditOutbox);
 const shards = new D1StorageShardRepository(testEnv.DB);
 
 function bucket(overrides: Partial<LogicalBucket> = {}): LogicalBucket {
@@ -26,6 +28,17 @@ function bucket(overrides: Partial<LogicalBucket> = {}): LogicalBucket {
     updatedAt: '2026-09-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+function createBucket(value: LogicalBucket): Promise<boolean> {
+  return buckets.create(value, {
+    actorType: 'ADMIN',
+    actorId: 'admin-1',
+    action: 'LOGICAL_BUCKET_CREATED',
+    resourceType: 'LOGICAL_BUCKET',
+    resourceId: value.id,
+    createdAt: value.createdAt,
+  });
 }
 
 function shard(overrides: Partial<StorageShard> = {}): StorageShard {
@@ -69,6 +82,7 @@ async function insertStorageAccount(): Promise<void> {
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
+  await testEnv.DB.prepare('DELETE FROM audit_outbox').run();
   await testEnv.DB.prepare('DELETE FROM storage_shards').run();
   await testEnv.DB.prepare('DELETE FROM logical_buckets').run();
   await testEnv.DB.prepare('DELETE FROM storage_accounts').run();
@@ -85,9 +99,9 @@ describe('logical bucket D1 repository', () => {
     const firstAtSameTime = bucket({ id: 'bucket-a', name: 'first' });
     const secondAtSameTime = bucket({ id: 'bucket-b', name: 'second' });
 
-    expect(await buckets.create(later)).toBe(true);
-    expect(await buckets.create(secondAtSameTime)).toBe(true);
-    expect(await buckets.create(firstAtSameTime)).toBe(true);
+    expect(await createBucket(later)).toBe(true);
+    expect(await createBucket(secondAtSameTime)).toBe(true);
+    expect(await createBucket(firstAtSameTime)).toBe(true);
     expect(await buckets.findById(firstAtSameTime.id)).toEqual(firstAtSameTime);
     expect((await buckets.list()).map(({ id }) => id)).toEqual([
       'bucket-a',
@@ -97,18 +111,50 @@ describe('logical bucket D1 repository', () => {
   });
 
   it('returns false for duplicate names or ids', async () => {
-    expect(await buckets.create(bucket())).toBe(true);
+    expect(await createBucket(bucket())).toBe(true);
     expect(
-      await buckets.create(bucket({ id: 'bucket-2', name: 'documents' })),
+      await createBucket(bucket({ id: 'bucket-2', name: 'documents' })),
     ).toBe(false);
     expect(
-      await buckets.create(bucket({ id: 'bucket-1', name: 'pictures' })),
+      await createBucket(bucket({ id: 'bucket-1', name: 'pictures' })),
     ).toBe(false);
     expect(await buckets.list()).toHaveLength(1);
+    expect(
+      await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM audit_outbox').first<{
+        count: number;
+      }>(),
+    ).toEqual({ count: 1 });
+  });
+
+  it('rolls back the bucket when its transactional outbox append fails', async () => {
+    const eventIds = ['event-1', 'event-1'];
+    const deterministicOutbox = new D1AuditOutboxRepository(testEnv.DB, {
+      idGenerator: () => eventIds.shift() ?? 'event-fallback',
+    });
+    const repository = new D1LogicalBucketRepository(
+      testEnv.DB,
+      deterministicOutbox,
+    );
+    const first = bucket();
+    const second = bucket({ id: 'bucket-2', name: 'pictures' });
+    const audit = (value: LogicalBucket) => ({
+      actorType: 'ADMIN' as const,
+      actorId: 'admin-1',
+      action: 'LOGICAL_BUCKET_CREATED',
+      resourceType: 'LOGICAL_BUCKET',
+      resourceId: value.id,
+      createdAt: value.createdAt,
+    });
+
+    await expect(repository.create(first, audit(first))).resolves.toBe(true);
+    await expect(repository.create(second, audit(second))).rejects.toThrow();
+    expect((await repository.list()).map(({ id }) => id)).toEqual([
+      'bucket-1',
+    ]);
   });
 
   it('fails closed when a persisted bucket row violates the domain', async () => {
-    expect(await buckets.create(bucket())).toBe(true);
+    expect(await createBucket(bucket())).toBe(true);
     await testEnv.DB.prepare("UPDATE logical_buckets SET name = '' WHERE id = ?")
       .bind('bucket-1')
       .run();
@@ -120,7 +166,7 @@ describe('logical bucket D1 repository', () => {
 
 describe('storage shard D1 repository', () => {
   beforeEach(async () => {
-    expect(await buckets.create(bucket())).toBe(true);
+    expect(await createBucket(bucket())).toBe(true);
     await insertStorageAccount();
   });
 

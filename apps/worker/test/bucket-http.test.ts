@@ -370,14 +370,20 @@ describe('bucket composition', () => {
     ).first<{ id: string }>();
     const audits = await testEnv.DB.prepare(
       `SELECT actor_id, action, resource_type, resource_id, request_id
-       FROM audit_logs
+       FROM (
+         SELECT actor_id, action, resource_type, resource_id, request_id
+         FROM audit_logs
+         UNION ALL
+         SELECT actor_id, action, resource_type, resource_id, request_id
+         FROM audit_outbox
+         WHERE status <> 'DELIVERED'
+       ) AS visible_audit_events
        WHERE action IN (
          'STORAGE_ACCOUNT_CREATED',
          'STORAGE_ACCOUNT_VERIFIED',
          'LOGICAL_BUCKET_CREATED',
          'STORAGE_SHARD_CREATED'
-       )
-       ORDER BY rowid`,
+       )`,
     ).all<{
       actor_id: string;
       action: string;
@@ -385,27 +391,38 @@ describe('bucket composition', () => {
       resource_id: string;
       request_id: string;
     }>();
-    expect(audits.results.map(({ action }) => action)).toEqual([
+    expect(audits.results.map(({ action }) => action).sort()).toEqual([
+      'LOGICAL_BUCKET_CREATED',
       'STORAGE_ACCOUNT_CREATED',
       'STORAGE_ACCOUNT_VERIFIED',
-      'LOGICAL_BUCKET_CREATED',
       'STORAGE_SHARD_CREATED',
-    ]);
-    expect(audits.results.map(({ resource_type }) => resource_type)).toEqual([
-      'STORAGE_ACCOUNT',
-      'STORAGE_ACCOUNT',
-      'LOGICAL_BUCKET',
-      'STORAGE_SHARD',
-    ]);
+    ].sort());
+    expect(
+      Object.fromEntries(
+        audits.results.map(({ action, resource_type }) => [
+          action,
+          resource_type,
+        ]),
+      ),
+    ).toEqual({
+      STORAGE_ACCOUNT_CREATED: 'STORAGE_ACCOUNT',
+      STORAGE_ACCOUNT_VERIFIED: 'STORAGE_ACCOUNT',
+      LOGICAL_BUCKET_CREATED: 'LOGICAL_BUCKET',
+      STORAGE_SHARD_CREATED: 'STORAGE_SHARD',
+    });
     expect(audits.results.every(({ actor_id }) => actor_id === administrator?.id))
       .toBe(true);
     expect(audits.results.every(({ request_id }) => request_id.length > 0))
       .toBe(true);
-    expect(audits.results.map(({ resource_id }) => resource_id)).toEqual([
-      account.data.id,
-      account.data.id,
-      bucket.data.id,
-      shard.data.id,
-    ]);
+    expect(
+      Object.fromEntries(
+        audits.results.map(({ action, resource_id }) => [action, resource_id]),
+      ),
+    ).toEqual({
+      STORAGE_ACCOUNT_CREATED: account.data.id,
+      STORAGE_ACCOUNT_VERIFIED: account.data.id,
+      LOGICAL_BUCKET_CREATED: bucket.data.id,
+      STORAGE_SHARD_CREATED: shard.data.id,
+    });
   });
 });

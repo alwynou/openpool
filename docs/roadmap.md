@@ -33,6 +33,7 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
   界面、流式 CLI 和 scheduled source cleanup；staging 0004 migration/deploy 与真实跨 Provider smoke
   待项目所有者授权，设计见 [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)）；
 - 业务写入与审计事件的事务 outbox/强一致 append；
+  首个代码 slice 仅原子覆盖 Logical Bucket；其余 mutation 仍待逐步迁移，不能据此标记 Phase 2 全部完成。
 - GitHub/static tier；
 - replication 与校验修复；
 - SDK、CLI 与有限 S3 compatibility gateway；
@@ -48,5 +49,5 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
   复用，未来需要 retry/version namespace design。
 - 没有无人值守的自动 migration、自动 replication、自动修复或完整 S3 gateway；发布命令可串联
   迁移但仍需用户明确授权。对象内容始终由客户端通过短期签名 URL 直传/直取 Provider。
-- V1 audit log 用于运维追踪；业务变更与 audit insert 是连续但非事务性的 D1 操作。audit 写入失败
-  会返回 500，已成功的业务变更不会自动回滚；需要强审计完整性时使用 Phase 2 的事务 outbox。
+- V1 audit log 用于运维追踪。Phase 2 首个代码 slice 对 Logical Bucket 使用同事务 outbox；其余业务
+  变更仍可能是连续非事务 D1 操作，直到各用例完成迁移。outbox Cron 使用 lease、event id 幂等和退避。

@@ -20,7 +20,9 @@ Cookie: openpool_session=...
 - `afterCreatedAt` 与 `afterId`：必须成对出现。它们来自上一页 `nextCursor`，时间必须是
   canonical ISO-8601 UTC 字符串。
 
-结果按 `createdAt DESC, id DESC` 排序，响应 envelope 的 `data` 为：
+结果按 `createdAt DESC, id DESC` 排序。查询统一合并尚未 delivered 的 outbox 与 `audit_logs`；同一
+内部 event id 在投递前后始终作为公开 `id`，事务提交后事件在投递前也可见且不会重复。响应 envelope
+的 `data` 为：
 
 ```json
 {
@@ -63,8 +65,8 @@ Cookie: openpool_session=...
 
 事件集合会随用例扩展；消费者应把未知 action 当作可显示的字符串，而不要硬编码为封闭枚举。
 容量预留、过期释放和删除释放只在其对应的状态转换成功时写入事件，重复请求不会重复扣减容量。
-V1 的业务写入与 audit insert 不是同一个 D1 事务；如果后者失败，请求会返回 500，但前者可能已经
-成功。该接口因此用于运维追踪而不是防篡改合规账本，调用方重试前应先读取资源当前状态。
+Logical Bucket mutation 已使用同事务 outbox；Cron 投递采用 lease、event id 幂等和退避。其余 mutation
+仍在逐步迁移，可能保留 V1 非事务窗口。该接口用于运维追踪而不是防篡改合规账本。
 
 ## 错误与边界
 
