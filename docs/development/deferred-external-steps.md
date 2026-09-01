@@ -27,12 +27,15 @@
 
 ## Provider 真实联调
 
-- [ ] 为 R2 创建独立测试 bucket 和 bucket-scoped S3 API credentials，执行 PUT/HEAD/GET/DELETE smoke test。
+- [x] 已在当前 staging Cloudflare account 创建 APAC 的独立空 bucket `openpool-staging-smoke`，并配置
+  只允许 staging `workers.dev` origin 的 `PUT`/`GET`/`HEAD`/`DELETE`、`Content-Type` 和 `ETag`
+  CORS policy（2026-09-01）。
+- [ ] 为 `openpool-staging-smoke` 创建只授权该 bucket 的 Object Read & Write S3 API credentials，
+  再通过 OpenPool 执行 PUT/HEAD/GET/DELETE smoke test；credential 不经过仓库或聊天。
 - [ ] 为 Backblaze B2 创建独立测试 bucket 和受限 application key，执行 S3-compatible smoke test。
 - [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
-- [ ] 为真实 Provider bucket 配置最小化 CORS：仅允许管理后台实际 origin，允许浏览器直传/直取所需
-  的 `PUT`、`GET`、`HEAD` 和 `Content-Type`（以及 Provider 要求的必要响应头）；不要开放不必要的
-  origin、method 或 header。否则 signed URL 在浏览器中会被 CORS 拦截。
+- [ ] 在浏览器中实际验证 R2 CORS；后续 B2/Generic S3 bucket 也必须配置最小化 CORS：仅允许管理后台
+  实际 origin 和直传/直取所需 method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
 
 所有 secret 都只能通过本地忽略文件、交互式命令、Cloudflare Secret 或外部 secret manager 注入，不能写入
 仓库、测试快照、日志或聊天记录。

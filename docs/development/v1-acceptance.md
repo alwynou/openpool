@@ -96,14 +96,15 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 以下步骤必须由项目所有者提供隔离资源和凭证，执行后才可声称真实联调通过：
 
-- [ ] R2：隔离测试 bucket、bucket-scoped S3 credentials；执行 `HEAD Bucket` 验证以及 PUT/HEAD/
-  GET/DELETE object smoke。
+- [ ] R2：已创建 APAC 隔离测试 bucket `openpool-staging-smoke` 并设置 staging-only CORS；仍需创建
+  bucket-scoped S3 credentials，并执行 `HEAD Bucket` 验证以及 PUT/HEAD/GET/DELETE object smoke。
 - [ ] Backblaze B2：隔离测试 bucket、受限 application key；用正确 region 执行同一组 S3-compatible
   smoke。
 - [ ] Generic S3：提供 HTTPS endpoint、region、validation bucket、addressing style 和受限凭证；
   记录兼容性差异及错误分类。
 - [ ] 在每个真实 bucket 配置最小化 CORS，只允许管理后台实际 origin，允许浏览器 signed URL 所需
-  的 `PUT`、`GET`、`HEAD` 和 `Content-Type`（以及必要响应头）；不开放不必要 origin/method/header。
+  的 `PUT`、`GET`、`HEAD` 和 `Content-Type`（以及必要响应头）；R2 policy 已配置但仍需浏览器实测，
+  B2/Generic S3 尚未配置。不得开放不必要 origin/method/header。
 - [ ] 通过浏览器实际执行 signed PUT/GET，确认 CORS preflight 和 response headers 正常；curl 成功
   不能替代浏览器 CORS 验收。
 
