@@ -112,8 +112,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 - [x] `npx wrangler login` 成功并确认唯一可见 account；staging 使用 APAC 的独立 D1 与
   `env.staging`（2026-09-01）。production 尚未创建，不能复用 staging database ID。
-- [ ] 配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、`ADMIN_BOOTSTRAP_TOKEN`；保管
-  `CREDENTIAL_MASTER_KEY_ID`，V1 期间不更换已有 key/ID。
+- [x] staging 已配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、`ADMIN_BOOTSTRAP_TOKEN`，
+  并在 macOS 登录钥匙串备份；`CREDENTIAL_MASTER_KEY_ID=primary-v1`（2026-09-01）。V1 期间不更换
+  已有 key/ID。
 - [ ] 运行 `npx wrangler whoami --json`、`npx wrangler d1 info openpool --config apps/worker/wrangler.jsonc`
   和 migrations list，确认目标无误。
 - [ ] 用仓库外受限路径保存迁移前 D1 export（包含 metadata、audit 和加密 credential envelope）：
@@ -130,12 +131,13 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   可备份。
 - [ ] 迁移成功后检查 migration history、健康接口、D1 关键约束和已有 credential 解密，再部署
   Worker；生产覆盖 `APP_ENV`，不使用 `development`。
-- [ ] 迁移确认完成后，运行根目录 `npm run deploy:staging` 构建 Web 并部署
+- [x] 迁移确认完成后，运行根目录 `npm run deploy:staging` 构建 Web 并部署
   `openpool-staging`；该命令不会隐式迁移 D1，但不是 dry-run，必须视为有远端发布副作用的命令。
 - [ ] 仅在明确需要把两个远端步骤合并且已再次确认账号、D1、备份和授权时，才使用
   `npm run deploy:staging:with-migrations`；该命令会先迁移 staging D1 再部署 staging Worker。
-- [ ] 部署后执行健康、认证、控制面流程，并重复真实 Provider signed PUT/GET/CORS smoke；确认
-  observability 日志无敏感值。
+- [ ] 部署后健康接口、`initialized: false` setup 状态和静态控制台已验证；管理员初始化、认证、
+  控制面流程及真实 Provider signed PUT/GET/CORS smoke 仍待完成，并需确认 observability 日志无
+  敏感值。
 - [ ] 确认 Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建，并在 Cloudflare 日志/metrics 中
   看到至少一次 scheduled maintenance 运行记录；确认失败清理会留待下次重试。
 

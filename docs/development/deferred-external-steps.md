@@ -11,14 +11,16 @@
   暂不创建，正式上线前再决定是否使用独立 account（2026-09-01）。
 - [x] 在 APAC 创建独立的 `openpool-staging` D1，并绑定到 `env.staging`（2026-09-01；database ID
   只保存在 Wrangler 配置所需位置）。
-- [ ] 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员 bootstrap secret；
-  记录/保管 `CREDENTIAL_MASTER_KEY_ID`（默认 `primary-v1`），不要在 V1 期间更换已有 vault key。
+- [x] 已为 staging 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员
+  bootstrap secret，并备份到 macOS 登录钥匙串；`CREDENTIAL_MASTER_KEY_ID` 固定为 `primary-v1`
+  （2026-09-01）。不要在 V1 期间更换已有 vault key。
 - [x] 已获授权并执行 `npm run db:migrate:staging`；0001→0003 均已应用，migration history 无待办
   （2026-09-01）。仓库目前没有 production migration 命令。
-- [ ] 明确授权后运行 `npm run deploy:staging`，将独立 Worker 发布到 staging `workers.dev`。只有
+- [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
+  接口、未初始化 setup 状态和静态控制台均验证通过（2026-09-01）。只有
   同时授权 staging migration 和部署时才使用 `npm run deploy:staging:with-migrations`。
-- [ ] 部署后确认 `*/5 * * * *` Cron Trigger 已创建，并在 Cloudflare 日志/metrics 看到 scheduled
-  maintenance 运行记录。
+- [ ] `*/5 * * * *` Cron Trigger 已随 staging Worker 创建；仍需在 Cloudflare 日志/metrics 看到
+  至少一次 scheduled maintenance 运行记录。
 - [ ] 如启用 CI/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入。
 
 ## Provider 真实联调
