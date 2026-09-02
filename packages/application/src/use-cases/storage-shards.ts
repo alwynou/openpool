@@ -9,7 +9,7 @@ import {
   type StorageShardStatus,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
+import type { AuditLogEntry } from '../ports/auth';
 import type {
   Clock,
   IdGenerator,
@@ -55,7 +55,6 @@ export interface StorageShardMutationDependencies {
   readonly shards: StorageShardRepository;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function invalidInput(message: string): StorageShardApplicationError {
@@ -160,14 +159,7 @@ export class CreateStorageShard {
       createdAt: now,
       updatedAt: now,
     };
-    if (!(await this.dependencies.shards.create(shard))) {
-      if (status === 'ACTIVE') throw activeShardConflict();
-      throw new StorageShardApplicationError(
-        'STORAGE_SHARD_ALREADY_EXISTS',
-        'The storage shard already exists',
-      );
-    }
-    await this.dependencies.audit.record({
+    const audit: AuditLogEntry = {
       actorType: 'ADMIN',
       actorId: command.actorId,
       action: 'STORAGE_SHARD_CREATED',
@@ -175,7 +167,14 @@ export class CreateStorageShard {
       resourceId: shard.id,
       createdAt: now,
       metadata: { status: shard.status },
-    });
+    };
+    if (!(await this.dependencies.shards.create(shard, audit))) {
+      if (status === 'ACTIVE') throw activeShardConflict();
+      throw new StorageShardApplicationError(
+        'STORAGE_SHARD_ALREADY_EXISTS',
+        'The storage shard already exists',
+      );
+    }
     return shard;
   }
 }
@@ -207,7 +206,7 @@ export class TransitionStorageShard {
   constructor(
     private readonly dependencies: Pick<
       StorageShardMutationDependencies,
-      'shards' | 'accounts' | 'clock' | 'audit'
+      'shards' | 'accounts' | 'clock'
     >,
   ) {}
 
@@ -278,6 +277,15 @@ export class TransitionStorageShard {
         shard,
         current.status,
         current.updatedAt,
+        {
+          actorType: 'ADMIN',
+          actorId: command.actorId,
+          action: 'STORAGE_SHARD_STATUS_CHANGED',
+          resourceType: 'STORAGE_SHARD',
+          resourceId: shard.id,
+          createdAt: now,
+          metadata: { from: current.status, to: shard.status },
+        },
       ))
     ) {
       throw new StorageShardApplicationError(
@@ -285,15 +293,6 @@ export class TransitionStorageShard {
         'Storage shard changed while the operation was in progress',
       );
     }
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'STORAGE_SHARD_STATUS_CHANGED',
-      resourceType: 'STORAGE_SHARD',
-      resourceId: shard.id,
-      createdAt: now,
-      metadata: { from: current.status, to: shard.status },
-    });
     return shard;
   }
 }

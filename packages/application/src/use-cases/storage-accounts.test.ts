@@ -1,7 +1,7 @@
 import type { ProviderCapabilities, StorageAccount } from '@openpool/domain';
 import { describe, expect, it } from 'vitest';
 
-import type { AuditLog } from '../ports/auth';
+import type { AuditLog, AuditLogEntry } from '../ports/auth';
 import type {
   CredentialEnvelope,
   CredentialPayload,
@@ -97,6 +97,7 @@ class FakeProvider implements StorageProvider {
 
 class FakeAccounts implements ManagedStorageAccountRepository {
   readonly records = new Map<string, StorageAccountRecord>();
+  audit?: AuditLog;
   forceConflict = false;
   blockingReferences = false;
   updates = 0;
@@ -104,6 +105,7 @@ class FakeAccounts implements ManagedStorageAccountRepository {
   async create(
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     if (
       [...this.records.values()].some(({ name }) => name === account.name)
@@ -111,6 +113,7 @@ class FakeAccounts implements ManagedStorageAccountRepository {
       return false;
     }
     this.records.set(account.id, { ...account, credentialEnvelope });
+    await this.audit?.record(audit);
     return true;
   }
 
@@ -125,6 +128,8 @@ class FakeAccounts implements ManagedStorageAccountRepository {
   async update(
     account: StorageAccount,
     expectedStatus: StorageAccount['status'],
+    _expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     this.updates += 1;
     if (this.forceConflict) return false;
@@ -134,6 +139,7 @@ class FakeAccounts implements ManagedStorageAccountRepository {
       ...account,
       credentialEnvelope: record.credentialEnvelope,
     });
+    await this.audit?.record(audit);
     return true;
   }
 
@@ -141,6 +147,7 @@ class FakeAccounts implements ManagedStorageAccountRepository {
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     this.updates += 1;
     if (this.forceConflict) return false;
@@ -153,6 +160,7 @@ class FakeAccounts implements ManagedStorageAccountRepository {
       return false;
     }
     this.records.set(account.id, { ...account, credentialEnvelope });
+    await this.audit?.record(audit);
     return true;
   }
 
@@ -184,6 +192,7 @@ function dependencies() {
   const vault = new FakeVault();
   const provider = new FakeProvider();
   const audit = new FakeAudit();
+  accounts.audit = audit;
   const providers: ProviderRegistry = {
     forAccount: () => provider,
   };

@@ -1,4 +1,8 @@
-import type { StorageShardRepository } from '@openpool/application';
+import type {
+  AuditLogEntry,
+  StorageShardRepository,
+} from '@openpool/application';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 import {
   storageShardStatuses,
   validatePhysicalBucketName,
@@ -99,19 +103,49 @@ function bindings(shard: StorageShard): readonly unknown[] {
 
 /** D1 adapter for logical-bucket to physical-bucket shard mappings. */
 export class D1StorageShardRepository implements StorageShardRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox?: Pick<
+      D1AuditOutboxRepository,
+      'statement' | 'assertPreviousChanges'
+    >,
+  ) {}
 
-  async create(shard: StorageShard): Promise<boolean> {
-    const result = await this.db
+  private async write(
+    statement: D1PreparedStatement,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    if (!this.auditOutbox) {
+      throw new Error('Storage shard mutation requires an audit outbox');
+    }
+    try {
+      const results = await this.db.batch([
+        statement,
+        this.auditOutbox.assertPreviousChanges(),
+        this.auditOutbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async create(shard: StorageShard, audit: AuditLogEntry): Promise<boolean> {
+    const statement = this.db
       .prepare(
         `INSERT OR IGNORE INTO storage_shards
          (id, logical_bucket_id, storage_account_id, physical_bucket, status,
           capacity_bytes, used_bytes, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(...bindings(shard))
-      .run();
-    return result.meta.changes === 1;
+      .bind(...bindings(shard));
+    return this.write(statement, audit);
   }
 
   async findById(id: string): Promise<StorageShard | undefined> {
@@ -161,10 +195,11 @@ export class D1StorageShardRepository implements StorageShardRepository {
     shard: StorageShard,
     expectedStatus: StorageShardStatus,
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     if (!statuses.has(expectedStatus)) failClosed('expected_status');
     validateShard(shard);
-    const result = await this.db
+    const statement = this.db
       .prepare(
         `UPDATE OR IGNORE storage_shards
          SET status = ?, capacity_bytes = ?, used_bytes = ?, updated_at = ?
@@ -178,8 +213,7 @@ export class D1StorageShardRepository implements StorageShardRepository {
         shard.id,
         expectedStatus,
         expectedUpdatedAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    return this.write(statement, audit);
   }
 }

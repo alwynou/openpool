@@ -61,6 +61,7 @@ beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
     testEnv.DB.prepare('DELETE FROM auth_sessions'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM audit_logs'),
     testEnv.DB.prepare('DELETE FROM administrators'),
   ]);
@@ -234,7 +235,21 @@ describe('authentication HTTP API', () => {
     });
 
     const audits = await testEnv.DB.prepare(
-      'SELECT action, request_id FROM audit_logs ORDER BY created_at',
+      `SELECT action, request_id
+       FROM (
+         SELECT id, action, request_id, created_at
+         FROM audit_logs
+         UNION ALL
+         SELECT id, action, request_id, created_at
+         FROM audit_outbox
+         WHERE status <> 'DELIVERED'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM audit_logs
+             WHERE audit_logs.event_id = audit_outbox.id
+           )
+       ) AS visible_audit_events
+       ORDER BY created_at, id`,
     ).all<{ action: string; request_id: string | null }>();
     expect(audits.results.map(({ action }) => action)).toEqual([
       'ADMINISTRATOR_INITIALIZED',

@@ -116,6 +116,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM audit_logs'),
     testEnv.DB.prepare('DELETE FROM auth_sessions'),
     testEnv.DB.prepare('DELETE FROM administrators'),
@@ -208,7 +209,7 @@ describe('storage account composition', () => {
     });
 
     const audits = await testEnv.DB.prepare(
-      `SELECT action FROM audit_logs
+      `SELECT action FROM audit_outbox
        WHERE resource_type = 'STORAGE_ACCOUNT'
        ORDER BY created_at, rowid`,
     ).all<{ action: string }>();
@@ -307,7 +308,7 @@ describe('storage account composition', () => {
     );
 
     const audits = await testEnv.DB.prepare(
-      `SELECT action FROM audit_logs
+      `SELECT action FROM audit_outbox
        WHERE resource_type = 'STORAGE_ACCOUNT'
        ORDER BY created_at, rowid`,
     ).all<{ action: string }>();

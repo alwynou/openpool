@@ -129,9 +129,14 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     env: Env,
     requestId: string,
   ): AuthUseCases => {
+    const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+      requestId,
+      idGenerator: () => ids.next(),
+    });
     const repository = new D1AuthRepository(env.DB, {
       requestId,
       auditIdGenerator: () => ids.next(),
+      auditOutbox,
     });
     const common = {
       administrators: repository,
@@ -141,7 +146,6 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       tokenHashes,
       ids,
       clock,
-      audit: repository,
     };
 
     return {
@@ -154,7 +158,6 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
         passwords,
         ids,
         clock,
-        audit: repository,
       }),
       login: new Login(common),
       authenticateSession: new AuthenticateSession(common),
@@ -167,15 +170,11 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       requestId,
       idGenerator: () => ids.next(),
     });
-    const accounts = new D1StorageAccountRepository(env.DB);
+    const accounts = new D1StorageAccountRepository(env.DB, auditOutbox);
     const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
-    const shards = new D1StorageShardRepository(env.DB);
-    const audit = new D1AuthRepository(env.DB, {
-      requestId,
-      auditIdGenerator: () => ids.next(),
-    });
+    const shards = new D1StorageShardRepository(env.DB, auditOutbox);
     const vault = credentialVaultFor(env, overrides.credentialVault);
-    const common = { accounts, vault, providers, clock, audit };
+    const common = { accounts, vault, providers, clock };
 
     const shardDependencies = {
       buckets,
@@ -183,7 +182,6 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       shards,
       ids,
       clock,
-      audit,
     };
 
     return {
@@ -192,11 +190,10 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
         accounts,
         vault,
         clock,
-        audit,
       }),
       list: new ListStorageAccounts(accounts),
       verify: new VerifyStorageAccount(common),
-      transition: new TransitionStorageAccount({ accounts, clock, audit }),
+      transition: new TransitionStorageAccount({ accounts, clock }),
       refresh: new RefreshStorageAccountHealth(common),
       createBucket: new CreateLogicalBucket({ buckets, ids, clock }),
       listBuckets: new ListLogicalBuckets(buckets),
@@ -290,12 +287,8 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       requestId,
       idGenerator: () => ids.next(),
     });
-    const apiKeys = new D1ApiKeyRepository(env.DB);
+    const apiKeys = new D1ApiKeyRepository(env.DB, auditOutbox);
     const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
-    const audit = new D1AuthRepository(env.DB, {
-      requestId,
-      auditIdGenerator: () => ids.next(),
-    });
     const hasher = createApiKeyHasher(env);
     return {
       createApiKey: new CreateApiKey({
@@ -304,13 +297,12 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
         hasher,
         ids,
         clock,
-        audit,
         buckets,
       }),
       listApiKeys: new ListApiKeys(apiKeys),
-      revokeApiKey: new RevokeApiKey({ apiKeys, clock, audit }),
+      revokeApiKey: new RevokeApiKey({ apiKeys, clock }),
       authenticateApiKey: new AuthenticateApiKey({ apiKeys, hasher, clock }),
-      authorizeApiKey: new AuthorizeApiKey({ clock, audit }),
+      authorizeApiKey: new AuthorizeApiKey({ clock, audit: auditOutbox }),
     };
   };
 

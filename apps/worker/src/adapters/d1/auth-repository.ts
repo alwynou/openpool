@@ -5,6 +5,7 @@ import type {
   AuthSessionRepository,
 } from '@openpool/application';
 import type { Administrator, AuthSession } from '@openpool/domain';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 
 interface AdministratorRow {
   readonly id: string;
@@ -26,6 +27,10 @@ interface SessionRow {
 export interface D1AuthRepositoryOptions {
   readonly requestId?: string;
   readonly auditIdGenerator?: () => string;
+  readonly auditOutbox?: Pick<
+    D1AuditOutboxRepository,
+    'statement' | 'assertPreviousChanges'
+  >;
 }
 
 function mapAdministrator(row: AdministratorRow): Administrator {
@@ -55,6 +60,12 @@ export class D1AuthRepository
 {
   private readonly requestId: string | null;
   private readonly auditIdGenerator: () => string;
+  private readonly auditOutbox:
+    | Pick<
+        D1AuditOutboxRepository,
+        'statement' | 'assertPreviousChanges'
+      >
+    | undefined;
 
   constructor(
     private readonly db: D1Database,
@@ -63,11 +74,25 @@ export class D1AuthRepository
     this.requestId = options.requestId ?? null;
     this.auditIdGenerator =
       options.auditIdGenerator ?? (() => crypto.randomUUID());
+    this.auditOutbox = options.auditOutbox;
   }
 
-  async createIfAbsent(administrator: Administrator): Promise<boolean> {
-    const result = await this.db
-      .prepare(
+  private transactionalAuditOutbox(): Pick<
+    D1AuditOutboxRepository,
+    'statement' | 'assertPreviousChanges'
+  > {
+    if (!this.auditOutbox) {
+      throw new Error('Authentication mutation requires an audit outbox');
+    }
+    return this.auditOutbox;
+  }
+
+  async createIfAbsent(
+    administrator: Administrator,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    const outbox = this.transactionalAuditOutbox();
+    const insert = this.db.prepare(
         `INSERT INTO administrators
          (id, username, password_hash, status, created_at, updated_at)
          SELECT ?, ?, ?, ?, ?, ?
@@ -80,9 +105,23 @@ export class D1AuthRepository
         administrator.status,
         administrator.createdAt,
         administrator.updatedAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    try {
+      const results = await this.db.batch([
+        insert,
+        outbox.assertPreviousChanges(),
+        outbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async isInitialized(): Promise<boolean> {
@@ -120,9 +159,9 @@ export class D1AuthRepository
     return row ? mapAdministrator(row) : undefined;
   }
 
-  async create(session: AuthSession): Promise<void> {
-    await this.db
-      .prepare(
+  async create(session: AuthSession, audit: AuditLogEntry): Promise<void> {
+    const outbox = this.transactionalAuditOutbox();
+    const insert = this.db.prepare(
         `INSERT INTO auth_sessions
          (id, administrator_id, token_hash, expires_at, created_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -133,8 +172,8 @@ export class D1AuthRepository
         session.tokenHash,
         session.expiresAt,
         session.createdAt,
-      )
-      .run();
+      );
+    await this.db.batch([insert, outbox.statement(audit)]);
   }
 
   async findByTokenHash(tokenHash: string): Promise<AuthSession | undefined> {
@@ -150,11 +189,30 @@ export class D1AuthRepository
     return row ? mapSession(row) : undefined;
   }
 
-  async revokeByTokenHash(tokenHash: string): Promise<void> {
-    await this.db
+  async revokeByTokenHash(
+    tokenHash: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    const outbox = this.transactionalAuditOutbox();
+    const remove = this.db
       .prepare('DELETE FROM auth_sessions WHERE token_hash = ?')
-      .bind(tokenHash)
-      .run();
+      .bind(tokenHash);
+    try {
+      const results = await this.db.batch([
+        remove,
+        outbox.assertPreviousChanges(),
+        outbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async record(entry: AuditLogEntry): Promise<void> {

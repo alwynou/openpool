@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { CredentialEnvelope } from '@openpool/application';
+import type { AuditLogEntry, CredentialEnvelope } from '@openpool/application';
 import type {
   LogicalBucket,
   ShardMigration,
@@ -28,10 +28,10 @@ interface TestEnv extends Env {
 }
 
 const testEnv = env as unknown as TestEnv;
-const accounts = new D1StorageAccountRepository(testEnv.DB);
 const auditOutbox = new D1AuditOutboxRepository(testEnv.DB);
+const accounts = new D1StorageAccountRepository(testEnv.DB, auditOutbox);
 const buckets = new D1LogicalBucketRepository(testEnv.DB, auditOutbox);
-const shards = new D1StorageShardRepository(testEnv.DB);
+const shards = new D1StorageShardRepository(testEnv.DB, auditOutbox);
 const objects = new D1ObjectRepository(testEnv.DB);
 const migrations = new D1ShardMigrationRepository(testEnv.DB);
 
@@ -98,6 +98,21 @@ function shard(
   };
 }
 
+function setupAudit(
+  action: 'STORAGE_ACCOUNT_CREATED' | 'STORAGE_SHARD_CREATED',
+  resourceType: 'STORAGE_ACCOUNT' | 'STORAGE_SHARD',
+  resourceId: string,
+): AuditLogEntry {
+  return {
+    actorType: 'SYSTEM',
+    actorId: null,
+    action,
+    resourceType,
+    resourceId,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  };
+}
+
 beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
@@ -120,8 +135,28 @@ async function setupReadyObject(): Promise<{
 }> {
   const sourceAccount = account('account-source', 'Source');
   const targetAccount = account('account-target', 'Target');
-  expect(await accounts.create(sourceAccount, envelope)).toBe(true);
-  expect(await accounts.create(targetAccount, envelope)).toBe(true);
+  expect(
+    await accounts.create(
+      sourceAccount,
+      envelope,
+      setupAudit(
+        'STORAGE_ACCOUNT_CREATED',
+        'STORAGE_ACCOUNT',
+        sourceAccount.id,
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    await accounts.create(
+      targetAccount,
+      envelope,
+      setupAudit(
+        'STORAGE_ACCOUNT_CREATED',
+        'STORAGE_ACCOUNT',
+        targetAccount.id,
+      ),
+    ),
+  ).toBe(true);
   expect(
     await buckets.create(bucket, {
       actorType: 'SYSTEM',
@@ -134,8 +169,18 @@ async function setupReadyObject(): Promise<{
   ).toBe(true);
   const source = shard('shard-source', sourceAccount.id, 'ACTIVE');
   const target = shard('shard-target', targetAccount.id, 'STANDBY');
-  expect(await shards.create(source)).toBe(true);
-  expect(await shards.create(target)).toBe(true);
+  expect(
+    await shards.create(
+      source,
+      setupAudit('STORAGE_SHARD_CREATED', 'STORAGE_SHARD', source.id),
+    ),
+  ).toBe(true);
+  expect(
+    await shards.create(
+      target,
+      setupAudit('STORAGE_SHARD_CREATED', 'STORAGE_SHARD', target.id),
+    ),
+  ).toBe(true);
 
   const object: StoredObject = {
     id: 'object-1',

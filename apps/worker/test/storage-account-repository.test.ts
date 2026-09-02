@@ -2,17 +2,22 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { Env } from '../src/env';
-import { ManagedD1StorageAccountRepository } from '../src/adapters/d1';
-import type { CredentialEnvelope } from '@openpool/application';
+import type { AuditLogEntry, CredentialEnvelope } from '@openpool/application';
 import type { StorageAccount } from '@openpool/domain';
+
+import {
+  D1AuditOutboxRepository,
+  ManagedD1StorageAccountRepository,
+} from '../src/adapters/d1';
+import type { Env } from '../src/env';
 
 interface TestEnv extends Env {
   readonly TEST_MIGRATIONS: D1Migration[];
 }
 
 const testEnv = env as unknown as TestEnv;
-const repository = new ManagedD1StorageAccountRepository(testEnv.DB);
+const outbox = new D1AuditOutboxRepository(testEnv.DB);
+const repository = new ManagedD1StorageAccountRepository(testEnv.DB, outbox);
 
 const envelope: CredentialEnvelope = {
   version: 1,
@@ -56,6 +61,60 @@ function account(overrides: Partial<StorageAccount> = {}): StorageAccount {
   };
 }
 
+function audit(
+  value: StorageAccount,
+  action:
+    | 'STORAGE_ACCOUNT_CREATED'
+    | 'STORAGE_ACCOUNT_CONFIGURATION_UPDATED'
+    | 'STORAGE_ACCOUNT_STATUS_CHANGED',
+): AuditLogEntry {
+  return {
+    actorType: 'ADMIN',
+    actorId: 'admin-1',
+    action,
+    resourceType: 'STORAGE_ACCOUNT',
+    resourceId: value.id,
+    createdAt: value.updatedAt,
+  };
+}
+
+function createAccount(
+  value: StorageAccount,
+  credentialEnvelope: CredentialEnvelope,
+): Promise<boolean> {
+  return repository.create(
+    value,
+    credentialEnvelope,
+    audit(value, 'STORAGE_ACCOUNT_CREATED'),
+  );
+}
+
+function updateAccount(
+  value: StorageAccount,
+  expectedStatus: StorageAccount['status'],
+  expectedUpdatedAt: string,
+): Promise<boolean> {
+  return repository.update(
+    value,
+    expectedStatus,
+    expectedUpdatedAt,
+    audit(value, 'STORAGE_ACCOUNT_STATUS_CHANGED'),
+  );
+}
+
+function updateConfiguration(
+  value: StorageAccount,
+  credentialEnvelope: CredentialEnvelope,
+  expectedUpdatedAt: string,
+): Promise<boolean> {
+  return repository.updateVerifyingConfiguration(
+    value,
+    credentialEnvelope,
+    expectedUpdatedAt,
+    audit(value, 'STORAGE_ACCOUNT_CONFIGURATION_UPDATED'),
+  );
+}
+
 beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
@@ -65,13 +124,15 @@ beforeEach(async () => {
     testEnv.DB.prepare('DELETE FROM storage_shards'),
     testEnv.DB.prepare('DELETE FROM logical_buckets'),
     testEnv.DB.prepare('DELETE FROM storage_accounts'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
+    testEnv.DB.prepare('DELETE FROM audit_logs'),
   ]);
 });
 
 describe('managed storage account D1 repository', () => {
   it('round-trips all metadata and retains the encrypted envelope', async () => {
     const original = account();
-    expect(await repository.create(original, envelope)).toBe(true);
+    expect(await createAccount(original, envelope)).toBe(true);
 
     const found = await repository.findById(original.id);
     expect(found).toEqual({ ...original, credentialEnvelope: envelope });
@@ -86,19 +147,66 @@ describe('managed storage account D1 repository', () => {
   });
 
   it('returns false for an atomic duplicate name create', async () => {
-    expect(await repository.create(account(), envelope)).toBe(true);
+    expect(await createAccount(account(), envelope)).toBe(true);
     expect(
-      await repository.create(
+      await createAccount(
         account({ id: 'account-2', name: 'Primary' }),
         { ...envelope, keyId: 'key-2' },
       ),
     ).toBe(false);
     expect((await repository.list()).map(({ id }) => id)).toEqual(['account-1']);
+    expect(
+      await testEnv.DB.prepare(
+        'SELECT COUNT(*) AS count FROM audit_outbox',
+      ).first(),
+    ).toEqual({ count: 1 });
+  });
+
+  it('rolls back the account when the outbox append fails', async () => {
+    const fixedOutbox = new D1AuditOutboxRepository(testEnv.DB, {
+      idGenerator: () => 'event-fixed',
+    });
+    const conflicting = new ManagedD1StorageAccountRepository(
+      testEnv.DB,
+      fixedOutbox,
+    );
+    const first = account();
+    const second = account({ id: 'account-2', name: 'Secondary' });
+
+    await expect(
+      conflicting.create(
+        first,
+        envelope,
+        audit(first, 'STORAGE_ACCOUNT_CREATED'),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      conflicting.create(
+        second,
+        replacementEnvelope,
+        audit(second, 'STORAGE_ACCOUNT_CREATED'),
+      ),
+    ).rejects.toThrow();
+    await expect(conflicting.findById(second.id)).resolves.toBeUndefined();
+  });
+
+  it('fails closed when a mutation repository has no outbox', async () => {
+    const unconfigured = new ManagedD1StorageAccountRepository(testEnv.DB);
+    const value = account();
+
+    await expect(
+      unconfigured.create(
+        value,
+        envelope,
+        audit(value, 'STORAGE_ACCOUNT_CREATED'),
+      ),
+    ).rejects.toThrow('requires an audit outbox');
+    await expect(unconfigured.findById(value.id)).resolves.toBeUndefined();
   });
 
   it('updates only when the expected status still matches', async () => {
     const original = account({ status: 'ACTIVE', writeEnabled: true });
-    expect(await repository.create(original, envelope)).toBe(true);
+    expect(await createAccount(original, envelope)).toBe(true);
     const changed = account({
       status: 'DRAINING',
       writeEnabled: false,
@@ -106,10 +214,10 @@ describe('managed storage account D1 repository', () => {
       providerConfig: { endpoint: 'https://new.example.test' },
     });
     expect(
-      await repository.update(changed, 'ACTIVE', original.updatedAt),
+      await updateAccount(changed, 'ACTIVE', original.updatedAt),
     ).toBe(true);
     expect(
-      await repository.update(
+      await updateAccount(
         account({ status: 'READ_ONLY' }),
         'ACTIVE',
         original.updatedAt,
@@ -127,7 +235,7 @@ describe('managed storage account D1 repository', () => {
       writeEnabled: true,
       healthStatus: 'HEALTHY',
     });
-    expect(await repository.create(original, envelope)).toBe(true);
+    expect(await createAccount(original, envelope)).toBe(true);
     await testEnv.DB.prepare(
       `UPDATE storage_accounts
        SET used_bytes = 125, updated_at = '2026-09-01T00:30:00.000Z'
@@ -142,7 +250,7 @@ describe('managed storage account D1 repository', () => {
       updatedAt: '2026-09-01T01:00:00.000Z',
     });
     expect(
-      await repository.update(stale, 'ACTIVE', original.updatedAt),
+      await updateAccount(stale, 'ACTIVE', original.updatedAt),
     ).toBe(false);
     expect(await repository.findById(original.id)).toMatchObject({
       status: 'ACTIVE',
@@ -156,7 +264,7 @@ describe('managed storage account D1 repository', () => {
       healthStatus: 'DEGRADED',
       lastHealthCheckedAt: '2026-09-01T00:10:00.000Z',
     });
-    expect(await repository.create(original, envelope)).toBe(true);
+    expect(await createAccount(original, envelope)).toBe(true);
     const corrected = account({
       providerConfig: {
         endpoint: 'https://corrected.example.test',
@@ -166,7 +274,7 @@ describe('managed storage account D1 repository', () => {
     });
 
     expect(
-      await repository.updateVerifyingConfiguration(
+      await updateConfiguration(
         corrected,
         replacementEnvelope,
         original.updatedAt,
@@ -184,7 +292,7 @@ describe('managed storage account D1 repository', () => {
     });
 
     expect(
-      await repository.updateVerifyingConfiguration(
+      await updateConfiguration(
         account({
           providerConfig: { endpoint: 'https://stale.example.test' },
           updatedAt: '2026-09-01T00:00:00.002Z',
@@ -217,14 +325,16 @@ describe('managed storage account D1 repository', () => {
       account({ id: 'unhealthy', name: 'Unhealthy', status: 'ACTIVE', writeEnabled: true, healthStatus: 'DEGRADED' }),
       account({ id: 'unknown-capacity', name: 'Unknown capacity', status: 'ACTIVE', writeEnabled: true, healthStatus: 'HEALTHY', capacityAccuracy: 'UNKNOWN' }),
     ];
-    expect(await repository.create(writable, envelope)).toBe(true);
-    for (const candidate of cases) expect(await repository.create(candidate, envelope)).toBe(true);
+    expect(await createAccount(writable, envelope)).toBe(true);
+    for (const candidate of cases) {
+      expect(await createAccount(candidate, envelope)).toBe(true);
+    }
     expect((await repository.listWritable()).map(({ id }) => id)).toEqual(['writable']);
   });
 
   it('fails closed when persisted JSON is malformed', async () => {
     const original = account();
-    expect(await repository.create(original, envelope)).toBe(true);
+    expect(await createAccount(original, envelope)).toBe(true);
     await testEnv.DB.prepare(
       "UPDATE storage_accounts SET provider_config = '[1]' WHERE id = ?",
     )
@@ -237,7 +347,7 @@ describe('managed storage account D1 repository', () => {
 
   it('detects live shard and object references that block removal', async () => {
     expect(
-      await repository.create(account({ usedBytes: 0 }), envelope),
+      await createAccount(account({ usedBytes: 0 }), envelope),
     ).toBe(true);
     await expect(repository.hasBlockingReferences('account-1')).resolves.toBe(
       false,

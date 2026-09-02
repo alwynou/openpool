@@ -73,7 +73,8 @@ migration 任务。`SWITCHED` 表示目标已经是 primary，但源清理仍可
 maintenance 幂等重试。
 
 Audit outbox：`PENDING → PROCESSING → DELIVERED`；失败回到可重试状态，租约过期可接管。同一
-`event_id` 最多产生一条 delivered audit log。首个代码 slice 仅覆盖 Logical Bucket mutation。
+`event_id` 最多产生一条 delivered audit log。当前已覆盖认证 session、API Key create/revoke、
+Storage Account、Logical Bucket 与 Storage Shard mutation；Object 和 Shard Migration 生命周期仍待迁移。
 
 状态转换必须由用例显式完成，并写 audit log。数据库 CHECK 约束只负责拒绝非法值。
 

@@ -1,10 +1,12 @@
 import type {
+  AuditLogEntry,
   CredentialEnvelope,
   ManagedStorageAccountRepository,
   StorageAccountConfigurationRepository,
   StorageAccountReferenceRepository,
   StorageAccountRecord,
 } from '@openpool/application';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 import type {
   CapacityAccuracy,
   ProviderCapabilities,
@@ -303,15 +305,47 @@ export class D1StorageAccountRepository
     StorageAccountConfigurationRepository,
     StorageAccountReferenceRepository
 {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox?: Pick<
+      D1AuditOutboxRepository,
+      'statement' | 'assertPreviousChanges'
+    >,
+  ) {}
+
+  private async write(
+    statement: D1PreparedStatement,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    if (!this.auditOutbox) {
+      throw new Error('Storage account mutation requires an audit outbox');
+    }
+    try {
+      const results = await this.db.batch([
+        statement,
+        this.auditOutbox.assertPreviousChanges(),
+        this.auditOutbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
 
   async create(
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     validateEnvelope(credentialEnvelope);
     const bindings = accountBindings(account);
-    const result = await this.db
+    const statement = this.db
       .prepare(
         `INSERT INTO storage_accounts
          (id, name, provider, status, priority, write_enabled, capacity_bytes,
@@ -325,9 +359,8 @@ export class D1StorageAccountRepository
         ...bindings.slice(0, 9),
         JSON.stringify(credentialEnvelope),
         ...bindings.slice(9),
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    return this.write(statement, audit);
   }
 
   async findById(id: string): Promise<StorageAccountRecord | undefined> {
@@ -389,10 +422,11 @@ export class D1StorageAccountRepository
     account: StorageAccount,
     expectedStatus: StorageAccountStatus,
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     validateProviderConfig(account.providerConfig);
     validateCapabilities(account.capabilities);
-    const result = await this.db
+    const statement = this.db
       .prepare(
         `UPDATE storage_accounts
          SET name = ?, provider = ?, status = ?, priority = ?,
@@ -419,15 +453,15 @@ export class D1StorageAccountRepository
         account.id,
         expectedStatus,
         expectedUpdatedAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    return this.write(statement, audit);
   }
 
   async updateVerifyingConfiguration(
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean> {
     validateProviderConfig(account.providerConfig);
     validateEnvelope(credentialEnvelope);
@@ -440,7 +474,7 @@ export class D1StorageAccountRepository
     ) {
       failClosed('configuration state');
     }
-    const result = await this.db
+    const statement = this.db
       .prepare(
         `UPDATE storage_accounts
          SET provider_config = ?, credential_envelope = ?,
@@ -455,9 +489,8 @@ export class D1StorageAccountRepository
         account.updatedAt,
         account.id,
         expectedUpdatedAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    return this.write(statement, audit);
   }
 }
 

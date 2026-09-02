@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { AuditLogEntry } from '@openpool/application';
 import type { LogicalBucket, StorageShard } from '@openpool/domain';
 import {
   D1AuditOutboxRepository,
@@ -17,7 +18,7 @@ interface TestEnv extends Env {
 const testEnv = env as unknown as TestEnv;
 const auditOutbox = new D1AuditOutboxRepository(testEnv.DB);
 const buckets = new D1LogicalBucketRepository(testEnv.DB, auditOutbox);
-const shards = new D1StorageShardRepository(testEnv.DB);
+const shards = new D1StorageShardRepository(testEnv.DB, auditOutbox);
 
 function bucket(overrides: Partial<LogicalBucket> = {}): LogicalBucket {
   return {
@@ -54,6 +55,37 @@ function shard(overrides: Partial<StorageShard> = {}): StorageShard {
     updatedAt: '2026-09-01T00:00:00.000Z',
     ...overrides,
   };
+}
+
+function shardAudit(
+  value: StorageShard,
+  action: 'STORAGE_SHARD_CREATED' | 'STORAGE_SHARD_STATUS_CHANGED',
+): AuditLogEntry {
+  return {
+    actorType: 'ADMIN',
+    actorId: 'admin-1',
+    action,
+    resourceType: 'STORAGE_SHARD',
+    resourceId: value.id,
+    createdAt: value.updatedAt,
+  };
+}
+
+function createShard(value: StorageShard): Promise<boolean> {
+  return shards.create(value, shardAudit(value, 'STORAGE_SHARD_CREATED'));
+}
+
+function updateShard(
+  value: StorageShard,
+  expectedStatus: StorageShard['status'],
+  expectedUpdatedAt: string,
+): Promise<boolean> {
+  return shards.update(
+    value,
+    expectedStatus,
+    expectedUpdatedAt,
+    shardAudit(value, 'STORAGE_SHARD_STATUS_CHANGED'),
+  );
 }
 
 async function insertStorageAccount(): Promise<void> {
@@ -187,9 +219,9 @@ describe('storage shard D1 repository', () => {
       physicalBucket: 'physical-b',
     });
 
-    expect(await shards.create(later)).toBe(true);
-    expect(await shards.create(secondAtSameTime)).toBe(true);
-    expect(await shards.create(firstAtSameTime)).toBe(true);
+    expect(await createShard(later)).toBe(true);
+    expect(await createShard(secondAtSameTime)).toBe(true);
+    expect(await createShard(firstAtSameTime)).toBe(true);
     expect(await shards.findById(firstAtSameTime.id)).toEqual(firstAtSameTime);
     expect(await shards.findActiveByLogicalBucketId('bucket-1')).toEqual(
       firstAtSameTime,
@@ -205,14 +237,14 @@ describe('storage shard D1 repository', () => {
   });
 
   it('returns false for duplicate ids and active-shard uniqueness conflicts', async () => {
-    expect(await shards.create(shard({ status: 'ACTIVE' }))).toBe(true);
+    expect(await createShard(shard({ status: 'ACTIVE' }))).toBe(true);
     expect(
-      await shards.create(
+      await createShard(
         shard({ id: 'shard-1', physicalBucket: 'duplicate-id' }),
       ),
     ).toBe(false);
     expect(
-      await shards.create(
+      await createShard(
         shard({
           id: 'shard-2',
           physicalBucket: 'second-active',
@@ -221,6 +253,49 @@ describe('storage shard D1 repository', () => {
       ),
     ).toBe(false);
     expect(await shards.list()).toHaveLength(1);
+    expect(
+      await testEnv.DB.prepare(
+        `SELECT COUNT(*) AS count
+         FROM audit_outbox
+         WHERE action = 'STORAGE_SHARD_CREATED'`,
+      ).first(),
+    ).toEqual({ count: 1 });
+  });
+
+  it('rolls back the shard when the outbox append fails', async () => {
+    const fixedOutbox = new D1AuditOutboxRepository(testEnv.DB, {
+      idGenerator: () => 'event-fixed',
+    });
+    const conflicting = new D1StorageShardRepository(testEnv.DB, fixedOutbox);
+    const first = shard();
+    const second = shard({ id: 'shard-2', physicalBucket: 'physical-two' });
+
+    await expect(
+      conflicting.create(
+        first,
+        shardAudit(first, 'STORAGE_SHARD_CREATED'),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      conflicting.create(
+        second,
+        shardAudit(second, 'STORAGE_SHARD_CREATED'),
+      ),
+    ).rejects.toThrow();
+    await expect(conflicting.findById(second.id)).resolves.toBeUndefined();
+  });
+
+  it('fails closed when a mutation repository has no outbox', async () => {
+    const unconfigured = new D1StorageShardRepository(testEnv.DB);
+    const value = shard();
+
+    await expect(
+      unconfigured.create(
+        value,
+        shardAudit(value, 'STORAGE_SHARD_CREATED'),
+      ),
+    ).rejects.toThrow('requires an audit outbox');
+    await expect(unconfigured.findById(value.id)).resolves.toBeUndefined();
   });
 
   it('atomically checks expected status and returns false on active conflicts', async () => {
@@ -229,8 +304,8 @@ describe('storage shard D1 repository', () => {
       id: 'shard-2',
       physicalBucket: 'physical-two',
     });
-    expect(await shards.create(active)).toBe(true);
-    expect(await shards.create(standby)).toBe(true);
+    expect(await createShard(active)).toBe(true);
+    expect(await createShard(standby)).toBe(true);
 
     const conflicting = {
       ...standby,
@@ -238,7 +313,7 @@ describe('storage shard D1 repository', () => {
       updatedAt: '2026-09-01T01:00:00.000Z',
     };
     expect(
-      await shards.update(conflicting, 'STANDBY', standby.updatedAt),
+      await updateShard(conflicting, 'STANDBY', standby.updatedAt),
     ).toBe(false);
     expect((await shards.findById(standby.id))?.status).toBe('STANDBY');
 
@@ -248,20 +323,20 @@ describe('storage shard D1 repository', () => {
       updatedAt: '2026-09-01T02:00:00.000Z',
     };
     expect(
-      await shards.update(retired, 'ACTIVE', standby.updatedAt),
+      await updateShard(retired, 'ACTIVE', standby.updatedAt),
     ).toBe(false);
     expect(
-      await shards.update(retired, 'STANDBY', standby.updatedAt),
+      await updateShard(retired, 'STANDBY', standby.updatedAt),
     ).toBe(true);
     expect(
-      await shards.update(retired, 'STANDBY', standby.updatedAt),
+      await updateShard(retired, 'STANDBY', standby.updatedAt),
     ).toBe(false);
     expect(await shards.findById(standby.id)).toEqual(retired);
   });
 
   it('does not overwrite shard capacity changed after a stale read', async () => {
     const original = shard();
-    expect(await shards.create(original)).toBe(true);
+    expect(await createShard(original)).toBe(true);
     await testEnv.DB.prepare(
       `UPDATE storage_shards
        SET used_bytes = 125, updated_at = '2026-09-01T00:30:00.000Z'
@@ -276,7 +351,7 @@ describe('storage shard D1 repository', () => {
       updatedAt: '2026-09-01T01:00:00.000Z',
     };
     expect(
-      await shards.update(stale, 'STANDBY', original.updatedAt),
+      await updateShard(stale, 'STANDBY', original.updatedAt),
     ).toBe(false);
     expect(await shards.findById(original.id)).toMatchObject({
       status: 'STANDBY',
@@ -286,7 +361,7 @@ describe('storage shard D1 repository', () => {
   });
 
   it('fails closed when persisted capacity values are inconsistent', async () => {
-    expect(await shards.create(shard())).toBe(true);
+    expect(await createShard(shard())).toBe(true);
     await testEnv.DB.prepare(
       'UPDATE storage_shards SET used_bytes = capacity_bytes + 1 WHERE id = ?',
     )

@@ -51,8 +51,9 @@ Web query cache 或命令行参数。CLI 仅从 `OPENPOOL_SESSION_COOKIE` 环境
   不受控内容进入响应与日志关联字段。
 - Phase 2 transactional audit outbox 要求已迁移的业务写入与 outbox append 同一 D1 batch/事务；Cron 以 lease、
   稳定 event id 幂等投递并指数退避。查询同时读取 pending/processing outbox 与 delivered logs 并去重。
-  首个代码 slice 仅覆盖 Logical Bucket；其余用例仍保留 V1 非事务语义。outbox 仍是运维追踪，不是
-  防篡改合规账本，metadata 继续禁止 credential、token、signed URL。
+  当前覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket 与 Storage Shard；
+  Object 和 Shard Migration 仍保留 V1 非事务语义。outbox 仍是运维追踪，不是防篡改合规账本，
+  metadata 继续禁止 credential、token、signed URL。
 
 ## 威胁边界
 

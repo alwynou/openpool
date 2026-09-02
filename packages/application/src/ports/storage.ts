@@ -34,6 +34,7 @@ export interface ManagedStorageAccountRepository
   create(
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
+    audit: AuditLogEntry,
   ): Promise<boolean>;
   findById(id: string): Promise<StorageAccountRecord | undefined>;
   list(): Promise<readonly StorageAccountRecord[]>;
@@ -41,6 +42,7 @@ export interface ManagedStorageAccountRepository
     account: StorageAccount,
     expectedStatus: StorageAccount['status'],
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean>;
 }
 
@@ -50,6 +52,7 @@ export interface StorageAccountConfigurationRepository {
     account: StorageAccount,
     credentialEnvelope: CredentialEnvelope,
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean>;
 }
 
@@ -67,7 +70,7 @@ export interface LogicalBucketRepository {
 
 export interface StorageShardRepository {
   /** Returns false for a duplicate or an active-shard uniqueness conflict. */
-  create(shard: StorageShard): Promise<boolean>;
+  create(shard: StorageShard, audit: AuditLogEntry): Promise<boolean>;
   findById(id: string): Promise<StorageShard | undefined>;
   findActiveByLogicalBucketId(
     logicalBucketId: string,
@@ -81,6 +84,7 @@ export interface StorageShardRepository {
     shard: StorageShard,
     expectedStatus: StorageShard['status'],
     expectedUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<boolean>;
 }
 

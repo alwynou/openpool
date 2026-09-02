@@ -121,7 +121,6 @@ export interface CreateApiKeyDependencies {
   readonly hasher: ApiKeyHasher;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
   readonly buckets: Pick<LogicalBucketRepository, 'findById'>;
 }
 
@@ -208,19 +207,18 @@ export class CreateApiKey {
       createdAt: now.toISOString(),
     };
 
-    if (!(await this.dependencies.apiKeys.create(record))) {
-      throw apiKeyError('API_KEY_CONFLICT', 'API key could not be created');
-    }
-
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
+    const auditEntry = {
+      actorType: 'ADMIN' as const,
       actorId: command.actorId,
-      action: 'API_KEY_CREATED',
-      resourceType: 'API_KEY',
+      action: 'API_KEY_CREATED' as const,
+      resourceType: 'API_KEY' as const,
       resourceId: record.id,
       createdAt: record.createdAt,
       metadata: { keyPrefix: record.keyPrefix },
-    });
+    };
+    if (!(await this.dependencies.apiKeys.create(record, auditEntry))) {
+      throw apiKeyError('API_KEY_CONFLICT', 'API key could not be created');
+    }
 
     return {
       apiKey: toSafeApiKey(record),
@@ -247,7 +245,6 @@ export interface RevokeApiKeyCommand {
 export interface RevokeApiKeyDependencies {
   readonly apiKeys: Pick<ApiKeyRepository, 'findById' | 'revoke'>;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 export class RevokeApiKey {
@@ -270,7 +267,21 @@ export class RevokeApiKey {
     }
 
     const revokedAt = this.dependencies.clock.now().toISOString();
-    if (!(await this.dependencies.apiKeys.revoke(command.id, revokedAt))) {
+    const auditEntry = {
+      actorType: 'ADMIN' as const,
+      actorId: command.actorId,
+      action: 'API_KEY_REVOKED' as const,
+      resourceType: 'API_KEY' as const,
+      resourceId: current.id,
+      createdAt: revokedAt,
+    };
+    if (
+      !(await this.dependencies.apiKeys.revoke(
+        command.id,
+        revokedAt,
+        auditEntry,
+      ))
+    ) {
       const concurrent = await this.dependencies.apiKeys.findById(command.id);
       if (concurrent && concurrent.revokedAt !== null) {
         return toSafeApiKey(concurrent);
@@ -282,14 +293,6 @@ export class RevokeApiKey {
     }
 
     const revoked = { ...current, revokedAt };
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'API_KEY_REVOKED',
-      resourceType: 'API_KEY',
-      resourceId: current.id,
-      createdAt: revokedAt,
-    });
     return toSafeApiKey(revoked);
   }
 }

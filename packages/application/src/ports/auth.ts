@@ -2,16 +2,22 @@ import type { Administrator, AuthSession } from '@openpool/domain';
 
 export interface AdministratorRepository {
   /** Must be implemented as one atomic insert-if-empty operation. */
-  createIfAbsent(administrator: Administrator): Promise<boolean>;
+  createIfAbsent(
+    administrator: Administrator,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
   isInitialized(): Promise<boolean>;
   findByUsername(username: string): Promise<Administrator | undefined>;
   findById(id: string): Promise<Administrator | undefined>;
 }
 
 export interface AuthSessionRepository {
-  create(session: AuthSession): Promise<void>;
+  create(session: AuthSession, audit: AuditLogEntry): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<AuthSession | undefined>;
-  revokeByTokenHash(tokenHash: string): Promise<void>;
+  revokeByTokenHash(
+    tokenHash: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
 }
 
 export interface PasswordHasher {

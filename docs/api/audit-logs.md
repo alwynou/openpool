@@ -65,8 +65,9 @@ Cookie: openpool_session=...
 
 事件集合会随用例扩展；消费者应把未知 action 当作可显示的字符串，而不要硬编码为封闭枚举。
 容量预留、过期释放和删除释放只在其对应的状态转换成功时写入事件，重复请求不会重复扣减容量。
-Logical Bucket mutation 已使用同事务 outbox；Cron 投递采用 lease、event id 幂等和退避。其余 mutation
-仍在逐步迁移，可能保留 V1 非事务窗口。该接口用于运维追踪而不是防篡改合规账本。
+认证 session、API Key create/revoke、Storage Account、Logical Bucket 与 Storage Shard mutation 已使用
+同事务 outbox；Cron 投递采用 lease、event id 幂等和退避。Object 与 Shard Migration mutation 仍在
+逐步迁移，可能保留 V1 非事务窗口。该接口用于运维追踪而不是防篡改合规账本。
 
 ## 错误与边界
 

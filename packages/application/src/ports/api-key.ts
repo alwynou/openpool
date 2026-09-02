@@ -1,4 +1,5 @@
 import type { ApiKey } from '@openpool/domain';
+import type { AuditLogEntry } from './auth';
 
 export interface GeneratedApiKey {
   /** High-entropy bearer credential. It must only be returned at creation. */
@@ -22,10 +23,14 @@ export interface ApiKeyRecord extends ApiKey {
 }
 
 export interface ApiKeyRepository {
-  create(apiKey: ApiKeyRecord): Promise<boolean>;
+  create(apiKey: ApiKeyRecord, audit: AuditLogEntry): Promise<boolean>;
   list(): Promise<readonly ApiKeyRecord[]>;
   findById(id: string): Promise<ApiKeyRecord | undefined>;
   findByKeyHash(keyHash: string): Promise<ApiKeyRecord | undefined>;
   /** Atomically sets revokedAt only when the key exists and is not revoked. */
-  revoke(id: string, revokedAt: string): Promise<boolean>;
+  revoke(
+    id: string,
+    revokedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
 }

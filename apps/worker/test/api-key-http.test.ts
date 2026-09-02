@@ -335,6 +335,7 @@ beforeEach(async () => {
     testEnv.DB.prepare('DELETE FROM storage_shards'),
     testEnv.DB.prepare('DELETE FROM logical_buckets'),
     testEnv.DB.prepare('DELETE FROM storage_accounts'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM audit_logs'),
     testEnv.DB.prepare('DELETE FROM auth_sessions'),
     testEnv.DB.prepare('DELETE FROM administrators'),
@@ -569,9 +570,21 @@ describe('API key Worker composition', () => {
 
     const audits = await testEnv.DB.prepare(
       `SELECT actor_type, actor_id, action, resource_type
-       FROM audit_logs
+       FROM (
+         SELECT id, actor_type, actor_id, action, resource_type, created_at
+         FROM audit_logs
+         UNION ALL
+         SELECT id, actor_type, actor_id, action, resource_type, created_at
+         FROM audit_outbox
+         WHERE status <> 'DELIVERED'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM audit_logs
+             WHERE audit_logs.event_id = audit_outbox.id
+           )
+       ) AS visible_audit_events
        WHERE actor_type = 'API_KEY'
-       ORDER BY rowid`,
+       ORDER BY created_at, id`,
     ).all<{
       actor_type: string;
       actor_id: string;

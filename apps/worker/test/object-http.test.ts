@@ -322,6 +322,7 @@ beforeEach(async () => {
     testEnv.DB.prepare('DELETE FROM storage_shards'),
     testEnv.DB.prepare('DELETE FROM logical_buckets'),
     testEnv.DB.prepare('DELETE FROM storage_accounts'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
     testEnv.DB.prepare('DELETE FROM audit_logs'),
     testEnv.DB.prepare('DELETE FROM auth_sessions'),
     testEnv.DB.prepare('DELETE FROM administrators'),

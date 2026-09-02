@@ -4,7 +4,7 @@ import type {
   ProviderCapabilities,
   StorageShard,
 } from '@openpool/domain';
-import type { AuditLog } from '../ports/auth';
+import type { AuditLog, AuditLogEntry } from '../ports/auth';
 import type {
   CredentialEnvelope,
 } from '../ports/credential-vault';
@@ -104,9 +104,10 @@ class FakeAccounts implements ManagedStorageAccountRepository {
 
 class FakeShards implements StorageShardRepository {
   readonly values = new Map<string, StorageShard>();
+  audit?: AuditLog;
   forceConflict = false;
 
-  async create(shard: StorageShard): Promise<boolean> {
+  async create(shard: StorageShard, audit: AuditLogEntry): Promise<boolean> {
     if (
       this.values.has(shard.id) ||
       (shard.status === 'ACTIVE' &&
@@ -119,6 +120,7 @@ class FakeShards implements StorageShardRepository {
       return false;
     }
     this.values.set(shard.id, shard);
+    await this.audit?.record(audit);
     return true;
   }
 
@@ -143,7 +145,12 @@ class FakeShards implements StorageShardRepository {
     );
   }
 
-  async update(shard: StorageShard, expectedStatus: StorageShard['status']) {
+  async update(
+    shard: StorageShard,
+    expectedStatus: StorageShard['status'],
+    _expectedUpdatedAt: string,
+    audit: AuditLogEntry,
+  ) {
     if (this.forceConflict) return false;
     const current = this.values.get(shard.id);
     if (!current || current.status !== expectedStatus) return false;
@@ -159,6 +166,7 @@ class FakeShards implements StorageShardRepository {
       return false;
     }
     this.values.set(shard.id, shard);
+    await this.audit?.record(audit);
     return true;
   }
 }
@@ -178,6 +186,7 @@ const clock: Clock = {
 function setup() {
   const shards = new FakeShards();
   const audit = new FakeAudit();
+  shards.audit = audit;
   const dependencies = {
     buckets: new FakeBuckets(),
     accounts: new FakeAccounts(),

@@ -77,14 +77,16 @@ class FakeHasher implements ApiKeyHasher {
 
 class FakeApiKeys implements ApiKeyRepository {
   readonly values = new Map<string, ApiKeyRecord>();
+  readonly auditEntries: AuditLogEntry[] = [];
   rejectCreate = false;
   rejectRevoke = false;
 
-  async create(apiKey: ApiKeyRecord): Promise<boolean> {
+  async create(apiKey: ApiKeyRecord, audit: AuditLogEntry): Promise<boolean> {
     if (this.rejectCreate) {
       return false;
     }
     this.values.set(apiKey.id, apiKey);
+    if (audit) this.auditEntries.push(audit);
     return true;
   }
 
@@ -102,12 +104,17 @@ class FakeApiKeys implements ApiKeyRepository {
     );
   }
 
-  async revoke(id: string, revokedAt: string): Promise<boolean> {
+  async revoke(
+    id: string,
+    revokedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
     const current = this.values.get(id);
     if (!current || current.revokedAt !== null || this.rejectRevoke) {
       return false;
     }
     this.values.set(id, { ...current, revokedAt });
+    if (audit) this.auditEntries.push(audit);
     return true;
   }
 }
@@ -141,7 +148,6 @@ function createFixture() {
   const generator = new FakeGenerator();
   const hasher = new FakeHasher();
   const clock = new FakeClock();
-  const audit = new FakeAudit();
   const buckets = new FakeBuckets();
   const create = new CreateApiKey({
     apiKeys,
@@ -149,10 +155,9 @@ function createFixture() {
     hasher,
     ids: new FakeIds(),
     clock,
-    audit,
     buckets,
   });
-  return { apiKeys, generator, hasher, clock, audit, buckets, create };
+  return { apiKeys, generator, hasher, clock, buckets, create };
 }
 
 function expectCode(error: unknown, code: string): void {
@@ -193,7 +198,7 @@ describe('CreateApiKey', () => {
     expect(fixture.apiKeys.values.get('api-key-1')).not.toHaveProperty(
       'rawToken',
     );
-    expect(fixture.audit.entries).toEqual([
+    expect(fixture.apiKeys.auditEntries).toEqual([
       expect.objectContaining({
         actorType: 'ADMIN',
         actorId: 'admin-1',
@@ -297,8 +302,7 @@ describe('RevokeApiKey', () => {
     const apiKeys = new FakeApiKeys();
     apiKeys.values.set('api-key-1', record());
     const clock = new FakeClock();
-    const audit = new FakeAudit();
-    const revoke = new RevokeApiKey({ apiKeys, clock, audit });
+    const revoke = new RevokeApiKey({ apiKeys, clock });
 
     const first = await revoke.execute({ actorId: 'admin-1', id: 'api-key-1' });
     const second = await revoke.execute({ actorId: 'admin-1', id: 'api-key-1' });
@@ -306,7 +310,7 @@ describe('RevokeApiKey', () => {
     expect(first.revokedAt).toBe(now.toISOString());
     expect(second).toEqual(first);
     expect(first).not.toHaveProperty('keyHash');
-    expect(audit.entries).toEqual([
+    expect(apiKeys.auditEntries).toEqual([
       expect.objectContaining({
         actorType: 'ADMIN',
         actorId: 'admin-1',
@@ -319,7 +323,6 @@ describe('RevokeApiKey', () => {
     const revoke = new RevokeApiKey({
       apiKeys: new FakeApiKeys(),
       clock: new FakeClock(),
-      audit: new FakeAudit(),
     });
 
     await expect(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type {
   AdministratorRepository,
   AuditLog,
+  AuditLogEntry,
   AuthClock,
   AuthSessionRepository,
   PasswordHasher,
@@ -51,14 +52,19 @@ class FakeTokenHashes implements TokenHasher {
 
 class FakeAdministratorRepository implements AdministratorRepository {
   administrator?: Administrator;
+  audit?: FakeAudit;
 
   async isInitialized(): Promise<boolean> {
     return this.administrator !== undefined;
   }
 
-  async createIfAbsent(value: Administrator): Promise<boolean> {
+  async createIfAbsent(
+    value: Administrator,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
     if (this.administrator) return false;
     this.administrator = value;
+    await this.audit?.record(audit);
     return true;
   }
 
@@ -77,17 +83,24 @@ class FakeAdministratorRepository implements AdministratorRepository {
 
 class FakeSessions implements AuthSessionRepository {
   readonly sessions = new Map<string, AuthSession>();
+  audit?: FakeAudit;
 
-  async create(value: AuthSession): Promise<void> {
+  async create(value: AuthSession, audit: AuditLogEntry): Promise<void> {
     this.sessions.set(value.tokenHash, value);
+    await this.audit?.record(audit);
   }
 
   async findByTokenHash(hash: string): Promise<AuthSession | undefined> {
     return this.sessions.get(hash);
   }
 
-  async revokeByTokenHash(hash: string): Promise<void> {
-    this.sessions.delete(hash);
+  async revokeByTokenHash(
+    hash: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    const changed = this.sessions.delete(hash);
+    if (changed) await this.audit?.record(audit);
+    return changed;
   }
 }
 
@@ -122,7 +135,6 @@ describe('authentication use cases', () => {
       passwords: new FakePasswords(),
       ids: ids('admin'),
       clock: new FakeClock(),
-      audit: new FakeAudit(),
     };
 
     await expect(
@@ -140,13 +152,13 @@ describe('authentication use cases', () => {
     expect(await setupStatus.execute()).toEqual({ initialized: false });
 
     const audit = new FakeAudit();
+    administrators.audit = audit;
     const initialize = new InitializeAdministrator({
       administrators,
       bootstrap,
       passwords: new FakePasswords(),
       ids: ids('admin'),
       clock: new FakeClock(),
-      audit,
     });
     const result = await initialize.execute({
       ...validCredentials,
@@ -172,7 +184,6 @@ describe('authentication use cases', () => {
       passwords,
       ids: ids('admin'),
       clock,
-      audit: new FakeAudit(),
     }).execute(validCredentials);
 
     const login = new Login({
@@ -183,7 +194,6 @@ describe('authentication use cases', () => {
       tokenHashes: new FakeTokenHashes(),
       ids: ids('session'),
       clock,
-      audit: new FakeAudit(),
     });
     const rejected = async (username: string): Promise<AuthError> => {
       try {
@@ -207,6 +217,8 @@ describe('authentication use cases', () => {
     const clock = new FakeClock();
     const audit = new FakeAudit();
     const sessions = new FakeSessions();
+    administrators.audit = audit;
+    sessions.audit = audit;
     const passwords = new FakePasswords();
     const tokenHashes = new FakeTokenHashes();
 
@@ -216,7 +228,6 @@ describe('authentication use cases', () => {
       passwords,
       ids: ids('admin'),
       clock,
-      audit,
     }).execute(validCredentials);
 
     const login = await new Login({
@@ -227,7 +238,6 @@ describe('authentication use cases', () => {
       tokenHashes,
       ids: ids('session'),
       clock,
-      audit,
     }).execute({
       username: validCredentials.username,
       password: validCredentials.password,
@@ -249,7 +259,7 @@ describe('authentication use cases', () => {
       code: 'SESSION_INVALID',
     });
 
-    const logout = new Logout({ sessions, tokenHashes, audit, clock });
+    const logout = new Logout({ sessions, tokenHashes, clock });
     await logout.execute(login.token);
     await expect(logout.execute(login.token)).resolves.toBeUndefined();
     expect(audit.actions).toEqual([

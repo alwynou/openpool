@@ -8,7 +8,7 @@ import {
   type StorageAccountStatus,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
+import type { AuditLogEntry } from '../ports/auth';
 import type {
   Clock,
   IdGenerator,
@@ -58,7 +58,6 @@ export interface CreateStorageAccountDependencies {
   readonly providers: ProviderRegistry;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function validateAccountInput(command: CreateStorageAccountCommand): void {
@@ -123,22 +122,26 @@ export class CreateStorageAccount {
     const credentialEnvelope = await this.dependencies.vault.encrypt(
       command.credentials,
     );
-    if (
-      !(await this.dependencies.accounts.create(account, credentialEnvelope))
-    ) {
-      throw new StorageAccountApplicationError(
-        'STORAGE_ACCOUNT_ALREADY_EXISTS',
-        'A storage account with this name already exists',
-      );
-    }
-    await this.dependencies.audit.record({
+    const audit: AuditLogEntry = {
       actorType: 'ADMIN',
       actorId: command.actorId,
       action: 'STORAGE_ACCOUNT_CREATED',
       resourceType: 'STORAGE_ACCOUNT',
       resourceId: account.id,
       createdAt: now,
-    });
+    };
+    if (
+      !(await this.dependencies.accounts.create(
+        account,
+        credentialEnvelope,
+        audit,
+      ))
+    ) {
+      throw new StorageAccountApplicationError(
+        'STORAGE_ACCOUNT_ALREADY_EXISTS',
+        'A storage account with this name already exists',
+      );
+    }
     if (command.verifyImmediately) {
       return new VerifyStorageAccount(this.dependencies).execute({
         actorId: command.actorId,
@@ -162,7 +165,6 @@ export interface UpdateStorageAccountConfigurationDependencies {
     StorageAccountConfigurationRepository;
   readonly vault: CredentialVault;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function nextUpdatedAt(current: string, now: Date): string {
@@ -224,6 +226,20 @@ export class UpdateStorageAccountConfiguration {
         account,
         credentialEnvelope,
         command.expectedUpdatedAt,
+        {
+          actorType: 'ADMIN',
+          actorId: command.actorId,
+          action: 'STORAGE_ACCOUNT_CONFIGURATION_UPDATED',
+          resourceType: 'STORAGE_ACCOUNT',
+          resourceId: account.id,
+          createdAt: changedAt,
+          metadata: {
+            providerConfigChanged: String(
+              command.providerConfig !== undefined,
+            ),
+            credentialsChanged: String(command.credentials !== undefined),
+          },
+        },
       ))
     ) {
       throw new StorageAccountApplicationError(
@@ -231,18 +247,6 @@ export class UpdateStorageAccountConfiguration {
         'Storage account changed while the operation was in progress',
       );
     }
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'STORAGE_ACCOUNT_CONFIGURATION_UPDATED',
-      resourceType: 'STORAGE_ACCOUNT',
-      resourceId: account.id,
-      createdAt: changedAt,
-      metadata: {
-        providerConfigChanged: String(command.providerConfig !== undefined),
-        credentialsChanged: String(command.credentials !== undefined),
-      },
-    });
     return { account };
   }
 }
@@ -252,7 +256,6 @@ export interface VerifyStorageAccountDependencies {
   readonly vault: CredentialVault;
   readonly providers: ProviderRegistry;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function verificationFailed(message: string): StorageAccountApplicationError {
@@ -377,15 +380,15 @@ export class VerifyStorageAccount {
       account,
       record.status,
       record.updatedAt,
+      {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'STORAGE_ACCOUNT_VERIFIED',
+        resourceType: 'STORAGE_ACCOUNT',
+        resourceId: account.id,
+        createdAt: checkedAt,
+      },
     );
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'STORAGE_ACCOUNT_VERIFIED',
-      resourceType: 'STORAGE_ACCOUNT',
-      resourceId: account.id,
-      createdAt: checkedAt,
-    });
     return { account };
   }
 }
@@ -406,7 +409,6 @@ export interface TransitionStorageAccountDependencies {
   readonly accounts: ManagedStorageAccountRepository &
     StorageAccountReferenceRepository;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 export class TransitionStorageAccount {
@@ -447,16 +449,16 @@ export class TransitionStorageAccount {
       account,
       record.status,
       record.updatedAt,
+      {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'STORAGE_ACCOUNT_STATUS_CHANGED',
+        resourceType: 'STORAGE_ACCOUNT',
+        resourceId: account.id,
+        createdAt: now,
+        metadata: { from: record.status, to: account.status },
+      },
     );
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'STORAGE_ACCOUNT_STATUS_CHANGED',
-      resourceType: 'STORAGE_ACCOUNT',
-      resourceId: account.id,
-      createdAt: now,
-      metadata: { from: record.status, to: account.status },
-    });
     return account;
   }
 }
@@ -466,7 +468,6 @@ export interface RefreshStorageAccountHealthDependencies {
   readonly vault: CredentialVault;
   readonly providers: ProviderRegistry;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 export class RefreshStorageAccountHealth {
@@ -500,19 +501,19 @@ export class RefreshStorageAccountHealth {
       account,
       record.status,
       record.updatedAt,
-    );
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'STORAGE_ACCOUNT_HEALTH_REFRESHED',
-      resourceType: 'STORAGE_ACCOUNT',
-      resourceId: account.id,
-      createdAt: checkedAt,
-      metadata: {
-        healthStatus: account.healthStatus,
-        capacityAccuracy: account.capacityAccuracy,
+      {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'STORAGE_ACCOUNT_HEALTH_REFRESHED',
+        resourceType: 'STORAGE_ACCOUNT',
+        resourceId: account.id,
+        createdAt: checkedAt,
+        metadata: {
+          healthStatus: account.healthStatus,
+          capacityAccuracy: account.capacityAccuracy,
+        },
       },
-    });
+    );
     return account;
   }
 }
@@ -529,8 +530,16 @@ async function updateAccountOrThrow(
   account: StorageAccount,
   expectedStatus: StorageAccountStatus,
   expectedUpdatedAt: string,
+  audit: AuditLogEntry,
 ): Promise<void> {
-  if (!(await accounts.update(account, expectedStatus, expectedUpdatedAt))) {
+  if (
+    !(await accounts.update(
+      account,
+      expectedStatus,
+      expectedUpdatedAt,
+      audit,
+    ))
+  ) {
     throw new StorageAccountApplicationError(
       'STORAGE_ACCOUNT_CONFLICT',
       'Storage account changed while the operation was in progress',

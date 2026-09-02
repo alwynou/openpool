@@ -2,7 +2,6 @@ import type { Administrator, AuthSession } from '@openpool/domain';
 
 import type {
   AdministratorRepository,
-  AuditLog,
   AuthClock,
   AuthIdGenerator,
   AuthSessionRepository,
@@ -102,7 +101,6 @@ export interface InitializeAdministratorDependencies {
   readonly passwords: PasswordHasher;
   readonly ids: AuthIdGenerator;
   readonly clock: AuthClock;
-  readonly audit: AuditLog;
 }
 
 export interface InitializeAdministratorResult {
@@ -138,18 +136,18 @@ export class InitializeAdministrator {
       updatedAt: now,
     };
 
-    if (!(await this.dependencies.administrators.createIfAbsent(administrator))) {
+    if (
+      !(await this.dependencies.administrators.createIfAbsent(administrator, {
+        actorType: 'ADMIN',
+        actorId: administrator.id,
+        action: 'ADMINISTRATOR_INITIALIZED',
+        resourceType: 'ADMINISTRATOR',
+        resourceId: administrator.id,
+        createdAt: now,
+      }))
+    ) {
       throw alreadyInitialized();
     }
-
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: administrator.id,
-      action: 'ADMINISTRATOR_INITIALIZED',
-      resourceType: 'ADMINISTRATOR',
-      resourceId: administrator.id,
-      createdAt: now,
-    });
 
     return { administrator };
   }
@@ -186,7 +184,6 @@ export interface LoginDependencies {
   readonly tokenHashes: TokenHasher;
   readonly ids: AuthIdGenerator;
   readonly clock: AuthClock;
-  readonly audit: AuditLog;
 }
 
 export interface LoginResult {
@@ -237,8 +234,7 @@ export class Login {
       createdAt: now.toISOString(),
     };
 
-    await this.dependencies.sessions.create(session);
-    await this.dependencies.audit.record({
+    await this.dependencies.sessions.create(session, {
       actorType: 'ADMIN',
       actorId: administrator.id,
       action: 'LOGIN',
@@ -300,7 +296,6 @@ export class AuthenticateSession {
 export interface LogoutDependencies {
   readonly sessions: AuthSessionRepository;
   readonly tokenHashes: TokenHasher;
-  readonly audit: AuditLog;
   readonly clock: AuthClock;
 }
 
@@ -312,10 +307,8 @@ export class Logout {
     const session =
       await this.dependencies.sessions.findByTokenHash(tokenHash);
 
-    await this.dependencies.sessions.revokeByTokenHash(tokenHash);
-
     if (session) {
-      await this.dependencies.audit.record({
+      await this.dependencies.sessions.revokeByTokenHash(tokenHash, {
         actorType: 'ADMIN',
         actorId: session.administratorId,
         action: 'LOGOUT',

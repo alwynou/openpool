@@ -1,4 +1,8 @@
-import type { ApiKeyRecord, ApiKeyRepository } from '@openpool/application';
+import type {
+  ApiKeyRecord,
+  ApiKeyRepository,
+  AuditLogEntry,
+} from '@openpool/application';
 import {
   apiKeyScopes,
   validateApiKeyName,
@@ -6,6 +10,7 @@ import {
   validateApiKeyScopes,
   type ApiKeyScope,
 } from '@openpool/domain';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 
 interface ApiKeyRow {
   readonly id: unknown;
@@ -118,11 +123,42 @@ function mapApiKey(row: ApiKeyRow): ApiKeyRecord {
 
 /** D1 persistence for API key metadata; it never accepts or stores raw tokens. */
 export class D1ApiKeyRepository implements ApiKeyRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox?: Pick<
+      D1AuditOutboxRepository,
+      'statement' | 'assertPreviousChanges'
+    >,
+  ) {}
 
-  async create(apiKey: ApiKeyRecord): Promise<boolean> {
+  private async write(
+    statement: D1PreparedStatement,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    if (!this.auditOutbox) {
+      throw new Error('API key mutation requires an audit outbox');
+    }
+    try {
+      const results = await this.db.batch([
+        statement,
+        this.auditOutbox.assertPreviousChanges(),
+        this.auditOutbox.statement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_audit_outbox_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async create(apiKey: ApiKeyRecord, audit: AuditLogEntry): Promise<boolean> {
     validateRecord(apiKey);
-    const result = await this.db
+    const insert = this.db
       .prepare(
         `INSERT OR IGNORE INTO api_keys
          (id, name, key_prefix, key_hash, scopes, logical_bucket_id,
@@ -140,9 +176,8 @@ export class D1ApiKeyRepository implements ApiKeyRepository {
         apiKey.expiresAt,
         apiKey.revokedAt,
         apiKey.createdAt,
-      )
-      .run();
-    return result.meta.changes === 1;
+      );
+    return this.write(insert, audit);
   }
 
   async list(): Promise<readonly ApiKeyRecord[]> {
@@ -168,16 +203,19 @@ export class D1ApiKeyRepository implements ApiKeyRepository {
     return row === null ? undefined : mapApiKey(row);
   }
 
-  async revoke(id: string, revokedAt: string): Promise<boolean> {
+  async revoke(
+    id: string,
+    revokedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
     timestamp(revokedAt, 'revoked_at');
-    const result = await this.db
+    const update = this.db
       .prepare(
         `UPDATE api_keys
          SET revoked_at = ?
          WHERE id = ? AND revoked_at IS NULL`,
       )
-      .bind(revokedAt, id)
-      .run();
-    return result.meta.changes === 1;
+      .bind(revokedAt, id);
+    return this.write(update, audit);
   }
 }
