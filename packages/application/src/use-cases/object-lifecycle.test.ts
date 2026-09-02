@@ -7,7 +7,7 @@ import type {
   StoredObject,
   UploadSession,
 } from '@openpool/domain';
-import type { AuditLog } from '../ports/auth';
+import type { AuditLog, AuditLogEntry } from '../ports/auth';
 import type {
   CredentialEnvelope,
   CredentialPayload,
@@ -133,6 +133,7 @@ class FakeShards implements StorageShardRepository {
 
 class FakeObjects implements ObjectRepository {
   readonly records = new Map<string, ObjectAggregate>();
+  audit?: AuditLog;
   reservationResult: ObjectReservationResult = 'RESERVED';
   completionResult?: CompleteUploadPersistenceResult;
   beginResult?: BeginDeletePersistenceResult;
@@ -145,10 +146,12 @@ class FakeObjects implements ObjectRepository {
     object: StoredObject,
     primaryLocation: ObjectLocation,
     uploadSession: UploadSession,
+    audit: AuditLogEntry,
   ): Promise<ObjectReservationResult> {
     this.events.push('reserve');
     if (this.reservationResult !== 'RESERVED') return this.reservationResult;
     this.records.set(object.id, { object, primaryLocation, uploadSession });
+    await this.audit?.record(audit);
     return 'RESERVED';
   }
 
@@ -218,8 +221,12 @@ class FakeObjects implements ObjectRepository {
     completedAt: string,
     etag: string | null,
     checksum: string | null,
+    audit: AuditLogEntry,
   ): Promise<CompleteUploadPersistenceResult> {
-    if (this.completionResult !== undefined) return this.completionResult;
+    if (this.completionResult !== undefined) {
+      if (this.completionResult === 'COMPLETED') await this.audit?.record(audit);
+      return this.completionResult;
+    }
     const aggregate = this.records.get(objectId);
     if (!aggregate || aggregate.uploadSession?.id !== uploadSessionId) {
       return 'NOT_FOUND';
@@ -254,6 +261,7 @@ class FakeObjects implements ObjectRepository {
         completedAt,
       },
     });
+    await this.audit?.record(audit);
     return 'COMPLETED';
   }
 
@@ -261,8 +269,12 @@ class FakeObjects implements ObjectRepository {
     objectId: string,
     uploadSessionId: string,
     _expiredAt: string,
+    audit: AuditLogEntry,
   ): Promise<ExpireUploadPersistenceResult> {
-    if (this.expiryResult !== undefined) return this.expiryResult;
+    if (this.expiryResult !== undefined) {
+      if (this.expiryResult === 'EXPIRED') await this.audit?.record(audit);
+      return this.expiryResult;
+    }
     const aggregate = this.records.get(objectId);
     if (!aggregate || aggregate.uploadSession?.id !== uploadSessionId) {
       return 'NOT_FOUND';
@@ -279,12 +291,14 @@ class FakeObjects implements ObjectRepository {
       ...aggregate,
       uploadSession: { ...aggregate.uploadSession, status: 'EXPIRED' },
     });
+    await this.audit?.record(audit);
     return 'EXPIRED';
   }
 
   async finishExpiredUploadCleanup(
     objectId: string,
     uploadSessionId: string,
+    audit: AuditLogEntry,
   ) {
     const aggregate = this.records.get(objectId);
     if (!aggregate || aggregate.uploadSession?.id !== uploadSessionId) {
@@ -300,14 +314,19 @@ class FakeObjects implements ObjectRepository {
       ...aggregate,
       uploadSession: { ...aggregate.uploadSession, status: 'ABORTED' },
     });
+    await this.audit?.record(audit);
     return 'CLEANED' as const;
   }
 
   async beginDelete(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<BeginDeletePersistenceResult> {
-    if (this.beginResult !== undefined) return this.beginResult;
+    if (this.beginResult !== undefined) {
+      if (this.beginResult === 'STARTED') await this.audit?.record(audit);
+      return this.beginResult;
+    }
     const aggregate = this.records.get(objectId);
     if (!aggregate) return 'NOT_FOUND';
     if (aggregate.object.status === 'DELETING') return 'ALREADY_DELETING';
@@ -317,14 +336,19 @@ class FakeObjects implements ObjectRepository {
       ...aggregate,
       object: { ...aggregate.object, status: 'DELETING', updatedAt },
     });
+    await this.audit?.record(audit);
     return 'STARTED';
   }
 
   async finishDeleteAndReleaseCapacity(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<FinishDeletePersistenceResult> {
-    if (this.finishResult !== undefined) return this.finishResult;
+    if (this.finishResult !== undefined) {
+      if (this.finishResult === 'DELETED') await this.audit?.record(audit);
+      return this.finishResult;
+    }
     const aggregate = this.records.get(objectId);
     if (!aggregate) return 'NOT_FOUND';
     if (aggregate.object.status === 'DELETED') return 'ALREADY_DELETED';
@@ -334,6 +358,7 @@ class FakeObjects implements ObjectRepository {
       ...aggregate,
       object: { ...aggregate.object, status: 'DELETED', updatedAt },
     });
+    await this.audit?.record(audit);
     return 'DELETED';
   }
 }
@@ -404,7 +429,7 @@ class FakeVault implements CredentialVault {
 
 class FakeAudit implements AuditLog {
   readonly actions: string[] = [];
-  async record(entry: { action: string }): Promise<void> {
+  async record(entry: AuditLogEntry): Promise<void> {
     this.actions.push(entry.action);
   }
 }
@@ -414,6 +439,7 @@ function setup() {
   const provider = new FakeProvider();
   const vault = new FakeVault();
   const audit = new FakeAudit();
+  objects.audit = audit;
   const clock: Clock = {
     now: () => new Date('2026-01-01T00:00:00.000Z'),
   };

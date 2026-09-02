@@ -1,4 +1,5 @@
 import type {
+  AuditLogEntry,
   BeginDeletePersistenceResult,
   CompleteUploadPersistenceResult,
   ExpireUploadPersistenceResult,
@@ -21,6 +22,7 @@ import {
   type UploadSession,
   type UploadSessionStatus,
 } from '@openpool/domain';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 
 type DatabaseRow = Record<string, unknown>;
 
@@ -279,6 +281,11 @@ function isExpectedConstraint(error: unknown): boolean {
   );
 }
 
+function isAuditOutboxFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes('audit_outbox');
+}
+
 function softLimit(capacityBytes: number): number {
   return capacityBytes - Math.ceil(capacityBytes / 10);
 }
@@ -290,12 +297,29 @@ interface OperationState {
 
 /** D1 authority for logical-object aggregates and their capacity reservations. */
 export class D1ObjectRepository implements ObjectRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox?: Pick<D1AuditOutboxRepository, 'statement'>,
+  ) {}
+
+  private auditStatement(audit: AuditLogEntry): D1PreparedStatement {
+    if (this.auditOutbox === undefined) {
+      throw new Error('Object mutation requires audit outbox');
+    }
+    return this.auditOutbox.statement(audit);
+  }
+
+  private mutationAssertion(): D1PreparedStatement {
+    return this.db.prepare(
+      'INSERT INTO object_repository_assertions (ok) VALUES (changes())',
+    );
+  }
 
   async reserveUploadAndCapacity(
     object: StoredObject,
     location: ObjectLocation,
     session: UploadSession,
+    audit: AuditLogEntry,
   ): Promise<ObjectReservationResult> {
     validateReservation(object, location, session);
     try {
@@ -352,9 +376,11 @@ export class D1ObjectRepository implements ObjectRepository {
             session.createdAt,
             session.completedAt,
           ),
+        this.auditStatement(audit),
       ]);
       return 'RESERVED';
     } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
       if (!isExpectedConstraint(error)) throw error;
       return this.classifyReservationFailure(object, location);
     }
@@ -482,6 +508,7 @@ export class D1ObjectRepository implements ObjectRepository {
     completedAt: string,
     etag: string | null,
     checksum: string | null,
+    audit: AuditLogEntry,
   ): Promise<CompleteUploadPersistenceResult> {
     text(objectId, 'complete.object_id');
     text(uploadSessionId, 'complete.upload_session_id');
@@ -561,9 +588,11 @@ export class D1ObjectRepository implements ObjectRepository {
         this.db.prepare(
           'INSERT INTO object_repository_assertions (ok) VALUES (changes())',
         ),
+        this.auditStatement(audit),
       ]);
       return 'COMPLETED';
     } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
       if (!isExpectedConstraint(error)) throw error;
       const after = await this.operationState(objectId, uploadSessionId);
       const afterClassification = this.classifyCompleteState(after);
@@ -577,6 +606,7 @@ export class D1ObjectRepository implements ObjectRepository {
     objectId: string,
     uploadSessionId: string,
     expiredAt: string,
+    audit: AuditLogEntry,
   ): Promise<ExpireUploadPersistenceResult> {
     text(objectId, 'expire.object_id');
     text(uploadSessionId, 'expire.upload_session_id');
@@ -611,9 +641,11 @@ export class D1ObjectRepository implements ObjectRepository {
         this.db.prepare(
           'INSERT INTO object_repository_assertions (ok) VALUES (changes())',
         ),
+        this.auditStatement(audit),
       ]);
       return 'EXPIRED';
     } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
       if (!isExpectedConstraint(error)) throw error;
       const state = await this.operationState(objectId, uploadSessionId);
       const classification = this.classifyExpireState(state);
@@ -624,19 +656,34 @@ export class D1ObjectRepository implements ObjectRepository {
   async finishExpiredUploadCleanup(
     objectId: string,
     uploadSessionId: string,
+    audit: AuditLogEntry,
   ): Promise<FinishExpiredUploadCleanupPersistenceResult> {
     text(objectId, 'expired_cleanup.object_id');
     text(uploadSessionId, 'expired_cleanup.upload_session_id');
-    const result = await this.db
-      .prepare(
-        `UPDATE upload_sessions
-         SET status = 'ABORTED'
-         WHERE id = ? AND object_id = ? AND status = 'EXPIRED'
-         RETURNING id`,
-      )
-      .bind(uploadSessionId, objectId)
-      .all<{ id: string }>();
-    if (result.results.length === 1) return 'CLEANED';
+    const before = await this.operationState(objectId, uploadSessionId);
+    if (before === null) return 'NOT_FOUND';
+    if (before.sessionStatus !== 'EXPIRED') {
+      return before.sessionStatus === 'ABORTED'
+        ? 'ALREADY_CLEANED'
+        : 'INVALID_STATE';
+    }
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE upload_sessions
+             SET status = 'ABORTED'
+             WHERE id = ? AND object_id = ? AND status = 'EXPIRED'`,
+          )
+          .bind(uploadSessionId, objectId),
+        this.mutationAssertion(),
+        this.auditStatement(audit),
+      ]);
+      return 'CLEANED';
+    } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
+      if (!isExpectedConstraint(error)) throw error;
+    }
     const state = await this.operationState(objectId, uploadSessionId);
     if (state === null) return 'NOT_FOUND';
     if (state.sessionStatus === 'ABORTED') return 'ALREADY_CLEANED';
@@ -646,24 +693,39 @@ export class D1ObjectRepository implements ObjectRepository {
   async beginDelete(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<BeginDeletePersistenceResult> {
     text(objectId, 'delete.object_id');
     text(updatedAt, 'delete.updated_at');
-    const result = await this.db
-      .prepare(
-        `UPDATE objects
-         SET status = 'DELETING', updated_at = ?
-         WHERE id = ? AND status = 'READY'
-           AND NOT EXISTS (
-             SELECT 1 FROM shard_migration_objects AS migration_task
-             WHERE migration_task.object_id = objects.id
-               AND migration_task.status IN ('RESERVED', 'SWITCHED')
-           )
-         RETURNING id`,
-      )
-      .bind(updatedAt, objectId)
-      .all<{ id: string }>();
-    if (result.results.length === 1) return 'STARTED';
+    const currentStatus = await this.objectStatus(objectId);
+    if (currentStatus === null) return 'NOT_FOUND';
+    if (currentStatus !== 'READY') {
+      if (currentStatus === 'DELETING') return 'ALREADY_DELETING';
+      if (currentStatus === 'DELETED') return 'ALREADY_DELETED';
+      return 'INVALID_STATE';
+    }
+    try {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE objects
+             SET status = 'DELETING', updated_at = ?
+             WHERE id = ? AND status = 'READY'
+               AND NOT EXISTS (
+                 SELECT 1 FROM shard_migration_objects AS migration_task
+                 WHERE migration_task.object_id = objects.id
+                   AND migration_task.status IN ('RESERVED', 'SWITCHED')
+               )`,
+          )
+          .bind(updatedAt, objectId),
+        this.mutationAssertion(),
+        this.auditStatement(audit),
+      ]);
+      return 'STARTED';
+    } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
+      if (!isExpectedConstraint(error)) throw error;
+    }
     const status = await this.objectStatus(objectId);
     if (status === null) return 'NOT_FOUND';
     if (status === 'DELETING') return 'ALREADY_DELETING';
@@ -675,23 +737,30 @@ export class D1ObjectRepository implements ObjectRepository {
   async finishDeleteAndReleaseCapacity(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<FinishDeletePersistenceResult> {
     text(objectId, 'finish_delete.object_id');
     text(updatedAt, 'finish_delete.updated_at');
+    const currentStatus = await this.objectStatus(objectId);
+    if (currentStatus === null) return 'NOT_FOUND';
+    if (currentStatus !== 'DELETING') {
+      return currentStatus === 'DELETED' ? 'ALREADY_DELETED' : 'INVALID_STATE';
+    }
     try {
-      const result = await this.db
-        .prepare(
+      await this.db.batch([
+        this.db.prepare(
           `UPDATE objects
            SET status = 'DELETED', updated_at = ?
            WHERE id = ? AND status = 'DELETING'
            RETURNING id`,
-        )
-        .bind(updatedAt, objectId)
-        .all<{ id: string }>();
-      if (result.results.length === 1) return 'DELETED';
+        ).bind(updatedAt, objectId),
+        this.mutationAssertion(),
+        this.auditStatement(audit),
+      ]);
+      return 'DELETED';
     } catch (error) {
+      if (isAuditOutboxFailure(error)) throw error;
       if (!isExpectedConstraint(error)) throw error;
-      return 'CONFLICT';
     }
     const status = await this.objectStatus(objectId);
     if (status === null) return 'NOT_FOUND';

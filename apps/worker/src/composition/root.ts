@@ -205,20 +205,19 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
   };
 
   const createObjectUseCases = (env: Env, requestId: string) => {
+    const auditOutbox = new D1AuditOutboxRepository(env.DB, {
+      requestId,
+      idGenerator: () => ids.next(),
+    });
     const accounts = new D1StorageAccountRepository(env.DB);
     const shards = new D1StorageShardRepository(env.DB);
-    const objects = new D1ObjectRepository(env.DB);
-    const audit = new D1AuthRepository(env.DB, {
-      requestId,
-      auditIdGenerator: () => ids.next(),
-    });
+    const objects = new D1ObjectRepository(env.DB, auditOutbox);
     const common = {
       accounts,
       objects,
       providers,
       vault: credentialVaultFor(env, overrides.credentialVault),
       clock,
-      audit,
     };
 
     return {
@@ -226,7 +225,7 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       completeUpload: new CompleteUpload(common),
       listObjects: new ListObjectMetadata(objects),
       getObject: new GetObjectMetadata(objects),
-      createDownload: new CreateDownload(common),
+      createDownload: new CreateDownload({ ...common, audit: auditOutbox }),
       deleteObject: new DeleteObject(common),
     };
   };
@@ -239,11 +238,7 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     const accounts = new D1StorageAccountRepository(env.DB);
     const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
     const shards = new D1StorageShardRepository(env.DB);
-    const migrations = new D1ShardMigrationRepository(env.DB);
-    const audit = new D1AuthRepository(env.DB, {
-      requestId,
-      auditIdGenerator: () => ids.next(),
-    });
+    const migrations = new D1ShardMigrationRepository(env.DB, auditOutbox);
     const transferDependencies = {
       migrations,
       accounts,
@@ -251,7 +246,6 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       vault: credentialVaultFor(env, overrides.credentialVault),
       ids,
       clock,
-      audit,
     };
 
     return {
@@ -261,7 +255,6 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
         accounts,
         ids,
         clock,
-        audit,
       }),
       getMigration: new GetShardMigration(migrations),
       listMigrations: new ListShardMigrations(buckets, migrations),
@@ -408,11 +401,7 @@ export async function runScheduledMaintenance(
     requestId,
     idGenerator: () => ids.next(),
   });
-  const objects = new D1ObjectRepository(env.DB);
-  const audit = new D1AuthRepository(env.DB, {
-    requestId,
-    auditIdGenerator: () => ids.next(),
-  });
+  const objects = new D1ObjectRepository(env.DB, auditOutbox);
   const accounts = new D1StorageAccountRepository(env.DB);
   const providers =
     overrides.providerRegistry ?? createStorageProviderRegistry();
@@ -423,15 +412,13 @@ export async function runScheduledMaintenance(
     providers,
     vault,
     clock,
-    audit,
   }).execute();
   const migrationCleanup = await new SweepShardMigrationCleanup({
-    migrations: new D1ShardMigrationRepository(env.DB),
+    migrations: new D1ShardMigrationRepository(env.DB, auditOutbox),
     accounts,
     providers,
     vault,
     clock,
-    audit,
   }).execute();
   const auditDelivery = await new DrainAuditOutbox({
     outbox: auditOutbox,

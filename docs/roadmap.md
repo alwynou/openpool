@@ -32,9 +32,9 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 - account drain 与 shard migration（本地实现完成：持久化任务、原子 cutover、双重容量预留、管理
   界面、流式 CLI 和 scheduled source cleanup；staging 0004 migration/deploy 与真实跨 Provider smoke
   待项目所有者授权，设计见 [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)）；
-- 业务写入与审计事件的事务 outbox/强一致 append；
-  已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket 与 Storage Shard；
-  Object 和 Shard Migration mutation 仍待迁移，不能据此标记 Phase 2 全部完成。
+- 业务写入与审计事件的事务 outbox/强一致 append（本地实现完成）；
+  已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
+  Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy 待项目所有者授权。
 - GitHub/static tier；
 - replication 与校验修复；
 - SDK、CLI 与有限 S3 compatibility gateway；
@@ -50,6 +50,5 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
   复用，未来需要 retry/version namespace design。
 - 没有无人值守的自动 migration、自动 replication、自动修复或完整 S3 gateway；发布命令可串联
   迁移但仍需用户明确授权。对象内容始终由客户端通过短期签名 URL 直传/直取 Provider。
-- V1 audit log 用于运维追踪。认证 session、API Key create/revoke、Storage Account、Logical Bucket 与
-  Storage Shard 已使用同事务 outbox；Object 与 Shard Migration 仍可能是连续非事务 D1 操作，直到
-  各用例完成迁移。outbox Cron 使用 lease、event id 幂等和退避。
+- V1 audit log 用于运维追踪。全部现有 business mutation 已使用同事务 outbox；没有对应业务写入的
+  签名下载和 API Key 授权事件直接 append 到 outbox。outbox Cron 使用 lease、event id 幂等和退避。

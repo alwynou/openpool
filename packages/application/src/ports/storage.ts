@@ -93,6 +93,7 @@ export interface ShardMigrationRepository {
     migration: ShardMigration,
     expectedSourceUpdatedAt: string,
     expectedTargetUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<CreateShardMigrationPersistenceResult>;
   findById(id: string): Promise<ShardMigration | undefined>;
   listByLogicalBucketId(
@@ -101,6 +102,7 @@ export interface ShardMigrationRepository {
   progress(id: string): Promise<ShardMigrationProgress | undefined>;
   claimTransfer(
     input: ClaimShardMigrationTransferInput,
+    audit: AuditLogEntry,
   ): Promise<ClaimShardMigrationTransferPersistenceResult>;
   findTransfer(
     taskId: string,
@@ -115,14 +117,17 @@ export interface ShardMigrationRepository {
     leaseToken: string,
     etag: string | null,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<SwitchShardMigrationPrimaryResult>;
   finishSourceCleanup(
     taskId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<FinishShardMigrationCleanupResult>;
   completeIfReady(
     migrationId: string,
     completedAt: string,
+    audit: AuditLogEntry,
   ): Promise<CompleteShardMigrationResult>;
 }
 
@@ -194,6 +199,7 @@ export interface ObjectRepository {
     object: StoredObject,
     location: ObjectLocation,
     session: UploadSession,
+    audit: AuditLogEntry,
   ): Promise<ObjectReservationResult>;
   findById(id: string): Promise<ObjectAggregate | undefined>;
   findByLogicalKey(
@@ -217,6 +223,7 @@ export interface ObjectRepository {
     completedAt: string,
     etag: string | null,
     checksum: string | null,
+    audit: AuditLogEntry,
   ): Promise<CompleteUploadPersistenceResult>;
   /**
    * Atomically applies PENDING -> EXPIRED to the upload session and releases
@@ -226,21 +233,25 @@ export interface ObjectRepository {
     objectId: string,
     uploadSessionId: string,
     expiredAt: string,
+    audit: AuditLogEntry,
   ): Promise<ExpireUploadPersistenceResult>;
   /** Marks provider cleanup complete without releasing capacity again. */
   finishExpiredUploadCleanup(
     objectId: string,
     uploadSessionId: string,
+    audit: AuditLogEntry,
   ): Promise<FinishExpiredUploadCleanupPersistenceResult>;
   /** Atomically applies READY -> DELETING using a conditional update. */
   beginDelete(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<BeginDeletePersistenceResult>;
   /** Atomically applies DELETING -> DELETED and releases reserved capacity. */
   finishDeleteAndReleaseCapacity(
     objectId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<FinishDeletePersistenceResult>;
 }
 

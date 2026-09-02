@@ -6,7 +6,6 @@ import {
   type StorageAccount,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
 import type { CredentialVault } from '../ports/credential-vault';
 import type {
   Clock,
@@ -62,7 +61,6 @@ export interface StartShardMigrationDependencies {
   readonly accounts: Pick<ManagedStorageAccountRepository, 'findById'>;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function targetCanHostMigration(account: StorageAccount): boolean {
@@ -181,6 +179,18 @@ export class StartShardMigration {
       migration,
       command.expectedSourceUpdatedAt,
       command.expectedTargetUpdatedAt,
+      {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'SHARD_MIGRATION_STARTED',
+        resourceType: 'SHARD_MIGRATION',
+        resourceId: migration.id,
+        createdAt: now,
+        metadata: {
+          sourceShardId: source.id,
+          targetShardId: target.id,
+        },
+      },
     );
     if (created === 'ALREADY_RUNNING') {
       throw new ShardMigrationApplicationError(
@@ -194,18 +204,6 @@ export class StartShardMigration {
         'Shard state changed while migration was starting',
       );
     }
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'SHARD_MIGRATION_STARTED',
-      resourceType: 'SHARD_MIGRATION',
-      resourceId: migration.id,
-      createdAt: now,
-      metadata: {
-        sourceShardId: source.id,
-        targetShardId: target.id,
-      },
-    });
     return {
       migration,
       progress: await requireProgress(this.dependencies.migrations, migration.id),
@@ -258,7 +256,6 @@ export interface TransferShardMigrationDependencies {
   readonly vault: CredentialVault;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 export interface ShardMigrationTransferResult {
@@ -341,15 +338,27 @@ export class ClaimShardMigrationTransfer {
     const leaseExpiresAt = new Date(
       now.getTime() + TRANSFER_TTL_SECONDS * 1_000,
     ).toISOString();
-    const claim = await this.dependencies.migrations.claimTransfer({
-      migrationId: migration.id,
-      taskId: this.dependencies.ids.next(),
-      targetLocationId: this.dependencies.ids.next(),
-      targetPhysicalKeyPrefix: 'objects/',
-      leaseToken: this.dependencies.ids.next(),
-      leasedAt,
-      leaseExpiresAt,
-    });
+    const taskId = this.dependencies.ids.next();
+    const claim = await this.dependencies.migrations.claimTransfer(
+      {
+        migrationId: migration.id,
+        taskId,
+        targetLocationId: this.dependencies.ids.next(),
+        targetPhysicalKeyPrefix: 'objects/',
+        leaseToken: this.dependencies.ids.next(),
+        leasedAt,
+        leaseExpiresAt,
+      },
+      {
+        actorType: 'ADMIN',
+        actorId: command.actorId,
+        action: 'SHARD_MIGRATION_TRANSFER_CLAIMED',
+        resourceType: 'SHARD_MIGRATION',
+        resourceId: migration.id,
+        createdAt: leasedAt,
+        metadata: { taskId },
+      },
+    );
     if (claim.outcome === 'CAPACITY_UNAVAILABLE') {
       throw new ShardMigrationApplicationError(
         'SHARD_MIGRATION_CAPACITY_UNAVAILABLE',
@@ -366,17 +375,15 @@ export class ClaimShardMigrationTransfer {
       const completed = await this.dependencies.migrations.completeIfReady(
         migration.id,
         leasedAt,
-      );
-      if (completed === 'COMPLETED') {
-        await this.dependencies.audit.record({
+        {
           actorType: 'ADMIN',
           actorId: command.actorId,
           action: 'SHARD_MIGRATION_COMPLETED',
           resourceType: 'SHARD_MIGRATION',
           resourceId: migration.id,
           createdAt: leasedAt,
-        });
-      }
+        },
+      );
       throw new ShardMigrationApplicationError(
         completed === 'BLOCKED'
           ? 'SHARD_MIGRATION_BLOCKED'
@@ -433,18 +440,6 @@ export class ClaimShardMigrationTransfer {
         validateSignedTransfer(upload, now.getTime()),
       ),
     ).toISOString();
-    await this.dependencies.audit.record({
-      actorType: 'ADMIN',
-      actorId: command.actorId,
-      action: 'SHARD_MIGRATION_TRANSFER_CLAIMED',
-      resourceType: 'SHARD_MIGRATION',
-      resourceId: migration.id,
-      createdAt: leasedAt,
-      metadata: {
-        taskId: transfer.task.id,
-        objectId: transfer.object.id,
-      },
-    });
     return {
       taskId: transfer.task.id,
       objectId: transfer.object.id,
@@ -540,6 +535,15 @@ export class CompleteShardMigrationTransfer {
         command.leaseToken,
         metadata.etag,
         switchedAt,
+        {
+          actorType: 'ADMIN',
+          actorId: command.actorId,
+          action: 'SHARD_MIGRATION_OBJECT_SWITCHED',
+          resourceType: 'OBJECT',
+          resourceId: transfer.object.id,
+          createdAt: switchedAt,
+          metadata: { migrationId: transfer.migration.id },
+        },
       );
       if (
         switched !== 'SWITCHED' &&
@@ -550,17 +554,6 @@ export class CompleteShardMigrationTransfer {
           'SHARD_MIGRATION_CONFLICT',
           'Object changed while migration primary was switching',
         );
-      }
-      if (switched === 'SWITCHED') {
-        await this.dependencies.audit.record({
-          actorType: 'ADMIN',
-          actorId: command.actorId,
-          action: 'SHARD_MIGRATION_OBJECT_SWITCHED',
-          resourceType: 'OBJECT',
-          resourceId: transfer.object.id,
-          createdAt: switchedAt,
-          metadata: { migrationId: transfer.migration.id },
-        });
       }
       transfer =
         (await this.dependencies.migrations.findTransfer(
@@ -575,15 +568,7 @@ export class CompleteShardMigrationTransfer {
       const cleaned = await this.dependencies.migrations.finishSourceCleanup(
         transfer.task.id,
         now.toISOString(),
-      );
-      if (cleaned !== 'COMPLETED' && cleaned !== 'ALREADY_COMPLETED') {
-        throw new ShardMigrationApplicationError(
-          'SHARD_MIGRATION_CONFLICT',
-          'Migration source changed while cleanup was completing',
-        );
-      }
-      if (cleaned === 'COMPLETED') {
-        await this.dependencies.audit.record({
+        {
           actorType: 'ADMIN',
           actorId: command.actorId,
           action: 'SHARD_MIGRATION_OBJECT_COMPLETED',
@@ -591,28 +576,33 @@ export class CompleteShardMigrationTransfer {
           resourceId: transfer.object.id,
           createdAt: now.toISOString(),
           metadata: { migrationId: transfer.migration.id },
-        });
+        },
+      );
+      if (cleaned !== 'COMPLETED' && cleaned !== 'ALREADY_COMPLETED') {
+        throw new ShardMigrationApplicationError(
+          'SHARD_MIGRATION_CONFLICT',
+          'Migration source changed while cleanup was completing',
+        );
       }
     }
 
+    const completedAt = this.dependencies.clock.now().toISOString();
     const migrationCompletion =
       await this.dependencies.migrations.completeIfReady(
         transfer.migration.id,
-        this.dependencies.clock.now().toISOString(),
+        completedAt,
+        {
+          actorType: 'ADMIN',
+          actorId: command.actorId,
+          action: 'SHARD_MIGRATION_COMPLETED',
+          resourceType: 'SHARD_MIGRATION',
+          resourceId: transfer.migration.id,
+          createdAt: completedAt,
+        },
       );
     const migrationCompleted =
       migrationCompletion === 'COMPLETED' ||
       migrationCompletion === 'ALREADY_COMPLETED';
-    if (migrationCompletion === 'COMPLETED') {
-      await this.dependencies.audit.record({
-        actorType: 'ADMIN',
-        actorId: command.actorId,
-        action: 'SHARD_MIGRATION_COMPLETED',
-        resourceType: 'SHARD_MIGRATION',
-        resourceId: transfer.migration.id,
-        createdAt: this.dependencies.clock.now().toISOString(),
-      });
-    }
     return {
       taskId: transfer.task.id,
       status: 'COMPLETED',
@@ -661,7 +651,7 @@ export class SweepShardMigrationCleanup {
   constructor(
     private readonly dependencies: Pick<
       TransferShardMigrationDependencies,
-      'migrations' | 'accounts' | 'providers' | 'vault' | 'clock' | 'audit'
+      'migrations' | 'accounts' | 'providers' | 'vault' | 'clock'
     >,
   ) {}
 
@@ -682,37 +672,37 @@ export class SweepShardMigrationCleanup {
           await this.dependencies.migrations.finishSourceCleanup(
             transfer.task.id,
             now,
+            {
+              actorType: 'SYSTEM',
+              actorId: null,
+              action: 'SHARD_MIGRATION_OBJECT_COMPLETED',
+              resourceType: 'OBJECT',
+              resourceId: transfer.object.id,
+              createdAt: now,
+              metadata: { migrationId: transfer.migration.id },
+            },
           );
         if (cleanup !== 'COMPLETED' && cleanup !== 'ALREADY_COMPLETED') {
           throw new Error('Shard migration cleanup state changed');
         }
         if (cleanup === 'COMPLETED') {
           cleaned += 1;
-          await this.dependencies.audit.record({
-            actorType: 'SYSTEM',
-            actorId: null,
-            action: 'SHARD_MIGRATION_OBJECT_COMPLETED',
-            resourceType: 'OBJECT',
-            resourceId: transfer.object.id,
-            createdAt: now,
-            metadata: { migrationId: transfer.migration.id },
-          });
         }
         const completion =
           await this.dependencies.migrations.completeIfReady(
             transfer.migration.id,
             now,
+            {
+              actorType: 'SYSTEM',
+              actorId: null,
+              action: 'SHARD_MIGRATION_COMPLETED',
+              resourceType: 'SHARD_MIGRATION',
+              resourceId: transfer.migration.id,
+              createdAt: now,
+            },
           );
         if (completion === 'COMPLETED') {
           completedMigrations += 1;
-          await this.dependencies.audit.record({
-            actorType: 'SYSTEM',
-            actorId: null,
-            action: 'SHARD_MIGRATION_COMPLETED',
-            resourceType: 'SHARD_MIGRATION',
-            resourceId: transfer.migration.id,
-            createdAt: now,
-          });
         }
       } catch {
         failed += 1;

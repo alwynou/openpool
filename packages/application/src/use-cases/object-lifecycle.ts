@@ -28,7 +28,6 @@ interface ObjectProviderDependencies {
   readonly providers: ProviderRegistry;
   readonly vault: CredentialVault;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 function assertIdentifier(value: string, label: string): void {
@@ -144,18 +143,16 @@ export class CompleteUpload {
           aggregate.object.id,
           session.id,
           now.toISOString(),
-        );
-      if (expiry === 'EXPIRED' || expiry === 'ALREADY_EXPIRED') {
-        if (expiry === 'EXPIRED') {
-          await this.dependencies.audit.record({
+          {
             actorType: command.actorType ?? 'ADMIN',
             actorId: command.actorId,
             action: 'OBJECT_UPLOAD_EXPIRED',
             resourceType: 'OBJECT',
             resourceId: aggregate.object.id,
             createdAt: now.toISOString(),
-          });
-        }
+          },
+        );
+      if (expiry === 'EXPIRED' || expiry === 'ALREADY_EXPIRED') {
         throw objectError('OBJECT_UPLOAD_EXPIRED', 'Upload session has expired');
       }
       throw objectError(
@@ -203,6 +200,15 @@ export class CompleteUpload {
       completedAt,
       metadata.etag,
       metadata.checksum,
+      {
+        actorType: command.actorType ?? 'ADMIN',
+        actorId: command.actorId,
+        action: 'OBJECT_UPLOAD_COMPLETED',
+        resourceType: 'OBJECT',
+        resourceId: aggregate.object.id,
+        createdAt: completedAt,
+        metadata: { sizeBytes: String(aggregate.object.sizeBytes) },
+      },
     );
     if (persisted === 'ALREADY_COMPLETED') {
       const current = await requireAggregate(
@@ -234,15 +240,6 @@ export class CompleteUpload {
       'COMPLETED',
       completedAt,
     );
-    await this.dependencies.audit.record({
-      actorType: command.actorType ?? 'ADMIN',
-      actorId: command.actorId,
-      action: 'OBJECT_UPLOAD_COMPLETED',
-      resourceType: 'OBJECT',
-      resourceId: object.id,
-      createdAt: completedAt,
-      metadata: { sizeBytes: String(object.sizeBytes) },
-    });
     return { object, session: completedSession, alreadyCompleted: false };
   }
 }
@@ -285,18 +282,18 @@ export class SweepExpiredUploads {
             candidate.objectId,
             candidate.uploadSessionId,
             expiredAt,
+            {
+              actorType: 'SYSTEM',
+              actorId: null,
+              action: 'OBJECT_UPLOAD_EXPIRED',
+              resourceType: 'OBJECT',
+              resourceId: candidate.objectId,
+              createdAt: expiredAt,
+              metadata: { uploadSessionId: candidate.uploadSessionId },
+            },
           );
         if (result === 'EXPIRED') {
           expired += 1;
-          await this.dependencies.audit.record({
-            actorType: 'SYSTEM',
-            actorId: null,
-            action: 'OBJECT_UPLOAD_EXPIRED',
-            resourceType: 'OBJECT',
-            resourceId: candidate.objectId,
-            createdAt: expiredAt,
-            metadata: { uploadSessionId: candidate.uploadSessionId },
-          });
         }
       } catch {
         failed += 1;
@@ -335,18 +332,18 @@ export class SweepExpiredUploads {
           await this.dependencies.objects.finishExpiredUploadCleanup(
             candidate.objectId,
             candidate.uploadSessionId,
+            {
+              actorType: 'SYSTEM',
+              actorId: null,
+              action: 'OBJECT_UPLOAD_ABORTED',
+              resourceType: 'OBJECT',
+              resourceId: candidate.objectId,
+              createdAt: expiredAt,
+              metadata: { uploadSessionId: candidate.uploadSessionId },
+            },
           );
         if (result === 'CLEANED') {
           cleaned += 1;
-          await this.dependencies.audit.record({
-            actorType: 'SYSTEM',
-            actorId: null,
-            action: 'OBJECT_UPLOAD_ABORTED',
-            resourceType: 'OBJECT',
-            resourceId: candidate.objectId,
-            createdAt: expiredAt,
-            metadata: { uploadSessionId: candidate.uploadSessionId },
-          });
         }
       } catch {
         failed += 1;
@@ -373,8 +370,8 @@ export class CreateDownload {
   constructor(
     private readonly dependencies: Pick<
       ObjectProviderDependencies,
-      'accounts' | 'objects' | 'providers' | 'vault' | 'clock' | 'audit'
-    >,
+      'accounts' | 'objects' | 'providers' | 'vault' | 'clock'
+    > & { readonly audit: AuditLog },
   ) {}
 
   async execute(command: {
@@ -467,6 +464,14 @@ export class DeleteObject {
       const begun = await this.dependencies.objects.beginDelete(
         aggregate.object.id,
         startedAt,
+        {
+          actorType: command.actorType ?? 'ADMIN',
+          actorId: command.actorId,
+          action: 'OBJECT_DELETE_STARTED',
+          resourceType: 'OBJECT',
+          resourceId: aggregate.object.id,
+          createdAt: startedAt,
+        },
       );
       if (begun === 'ALREADY_DELETED') {
         return (await requireAggregate(this.dependencies.objects, command.objectId))
@@ -491,14 +496,6 @@ export class DeleteObject {
             startedAt,
           ),
         };
-        await this.dependencies.audit.record({
-          actorType: command.actorType ?? 'ADMIN',
-          actorId: command.actorId,
-          action: 'OBJECT_DELETE_STARTED',
-          resourceType: 'OBJECT',
-          resourceId: aggregate.object.id,
-          createdAt: startedAt,
-        });
       } else {
         aggregate = await requireAggregate(
           this.dependencies.objects,
@@ -526,6 +523,14 @@ export class DeleteObject {
       await this.dependencies.objects.finishDeleteAndReleaseCapacity(
         aggregate.object.id,
         deletedAt,
+        {
+          actorType: command.actorType ?? 'ADMIN',
+          actorId: command.actorId,
+          action: 'OBJECT_DELETED',
+          resourceType: 'OBJECT',
+          resourceId: aggregate.object.id,
+          createdAt: deletedAt,
+        },
       );
     if (finished === 'ALREADY_DELETED') {
       return (await requireAggregate(this.dependencies.objects, command.objectId))
@@ -546,14 +551,6 @@ export class DeleteObject {
       'DELETED',
       deletedAt,
     );
-    await this.dependencies.audit.record({
-      actorType: command.actorType ?? 'ADMIN',
-      actorId: command.actorId,
-      action: 'OBJECT_DELETED',
-      resourceType: 'OBJECT',
-      resourceId: deleted.id,
-      createdAt: deletedAt,
-    });
     return deleted;
   }
 }

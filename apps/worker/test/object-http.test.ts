@@ -566,9 +566,22 @@ describe('object HTTP composition', () => {
 
     const audits = await testEnv.DB.prepare(
       `SELECT action, resource_id, request_id
-       FROM audit_logs
+       FROM (
+         SELECT rowid AS sequence, action, resource_type, resource_id,
+                request_id, created_at
+         FROM audit_logs
+         UNION ALL
+         SELECT rowid AS sequence, action, resource_type, resource_id,
+                request_id, created_at
+         FROM audit_outbox
+         WHERE status <> 'DELIVERED'
+           AND NOT EXISTS (
+             SELECT 1 FROM audit_logs
+             WHERE audit_logs.event_id = audit_outbox.id
+           )
+       ) AS visible_audit_events
        WHERE resource_type = 'OBJECT'
-       ORDER BY rowid`,
+       ORDER BY created_at, sequence`,
     ).all<{
       action: string;
       resource_id: string;
@@ -647,7 +660,16 @@ describe('object HTTP composition', () => {
 
     const reservedAudits = await testEnv.DB.prepare(
       `SELECT COUNT(*) AS count
-       FROM audit_logs
+       FROM (
+         SELECT action FROM audit_logs
+         UNION ALL
+         SELECT action FROM audit_outbox
+         WHERE status <> 'DELIVERED'
+           AND NOT EXISTS (
+             SELECT 1 FROM audit_logs
+             WHERE audit_logs.event_id = audit_outbox.id
+           )
+       ) AS visible_audit_events
        WHERE action = 'OBJECT_UPLOAD_RESERVED'`,
     ).first<{ count: number }>();
     expect(reservedAudits?.count).toBe(1);

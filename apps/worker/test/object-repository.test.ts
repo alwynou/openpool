@@ -2,9 +2,10 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations, type D1Migration } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { AuditLogEntry } from '@openpool/application';
 import type { ObjectLocation, StoredObject, UploadSession } from '@openpool/domain';
 
-import { D1ObjectRepository } from '../src/adapters/d1';
+import { D1AuditOutboxRepository, D1ObjectRepository } from '../src/adapters/d1';
 import type { Env } from '../src/env';
 
 interface TestEnv extends Env {
@@ -23,8 +24,24 @@ interface CapacityRow {
 }
 
 const testEnv = env as unknown as TestEnv;
-const objects = new D1ObjectRepository(testEnv.DB);
 const now = '2026-09-01T00:00:00.000Z';
+const auditOutbox = new D1AuditOutboxRepository(testEnv.DB);
+const objects = new D1ObjectRepository(testEnv.DB, auditOutbox);
+
+function audit(
+  action: string,
+  resourceId: string,
+  createdAt: string = now,
+): AuditLogEntry {
+  return {
+    actorType: 'ADMIN',
+    actorId: 'admin-1',
+    action,
+    resourceType: 'OBJECT',
+    resourceId,
+    createdAt,
+  };
+}
 
 async function setupPlacement(options: {
   readonly accountCapacity?: number;
@@ -129,7 +146,19 @@ async function reserve(value: Reservation) {
     value.object,
     value.location,
     value.session,
+    audit('OBJECT_UPLOAD_RESERVED', value.object.id),
   );
+}
+
+async function outboxCount(action?: string): Promise<number> {
+  const row = action === undefined
+    ? await testEnv.DB.prepare(
+        'SELECT COUNT(*) AS count FROM audit_outbox',
+      ).first<{ count: number }>()
+    : await testEnv.DB.prepare(
+        'SELECT COUNT(*) AS count FROM audit_outbox WHERE action = ?',
+      ).bind(action).first<{ count: number }>();
+  return row?.count ?? -1;
 }
 
 async function capacity(): Promise<CapacityRow> {
@@ -162,6 +191,8 @@ beforeEach(async () => {
     testEnv.DB.prepare('DELETE FROM storage_shards'),
     testEnv.DB.prepare('DELETE FROM logical_buckets'),
     testEnv.DB.prepare('DELETE FROM storage_accounts'),
+    testEnv.DB.prepare('DELETE FROM audit_outbox'),
+    testEnv.DB.prepare('DELETE FROM audit_logs'),
   ]);
 });
 
@@ -187,6 +218,7 @@ describe('object D1 repository reservation', () => {
       account_used: 150,
       shard_used: 150,
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
   });
 
   it('serializes concurrent reservations at the 90% soft limit', async () => {
@@ -207,6 +239,7 @@ describe('object D1 repository reservation', () => {
       account_used: 90,
       shard_used: 90,
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
   });
 
   it('keeps namespace conflicts atomic under concurrency', async () => {
@@ -224,6 +257,7 @@ describe('object D1 repository reservation', () => {
       account_used: 10,
       shard_used: 10,
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
   });
 
   it('rolls back rows and counters when a later batch insert conflicts', async () => {
@@ -243,6 +277,7 @@ describe('object D1 repository reservation', () => {
       account_used: 10,
       shard_used: 10,
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
   });
 
   it('rejects unavailable placement and either level exceeding its soft limit', async () => {
@@ -281,6 +316,84 @@ describe('object D1 repository reservation', () => {
       'CAPACITY_UNAVAILABLE',
     );
     expect(await rowCount('objects')).toBe(0);
+    await expect(outboxCount()).resolves.toBe(0);
+  });
+
+  it('rolls back the business mutation when a fixed audit event id conflicts', async () => {
+    await setupPlacement({ accountUsed: 0, shardUsed: 0 });
+    const fixedOutbox = new D1AuditOutboxRepository(testEnv.DB, {
+      idGenerator: () => 'event-fixed',
+    });
+    const repository = new D1ObjectRepository(testEnv.DB, fixedOutbox);
+    const first = reservation('fixed-first');
+    const second = reservation('fixed-second');
+
+    await expect(
+      repository.reserveUploadAndCapacity(
+        first.object,
+        first.location,
+        first.session,
+        audit('OBJECT_UPLOAD_RESERVED', first.object.id),
+      ),
+    ).resolves.toBe('RESERVED');
+    await expect(
+      repository.reserveUploadAndCapacity(
+        second.object,
+        second.location,
+        second.session,
+        audit('OBJECT_UPLOAD_RESERVED', second.object.id),
+      ),
+    ).rejects.toThrow();
+
+    await expect(repository.findById(first.object.id)).resolves.toBeDefined();
+    await expect(repository.findById(second.object.id)).resolves.toBeUndefined();
+    await expect(capacity()).resolves.toEqual({
+      account_used: 50,
+      shard_used: 50,
+    });
+    await expect(outboxCount()).resolves.toBe(1);
+  });
+
+  it('fails closed when a mutation repository has no audit outbox', async () => {
+    await setupPlacement({ accountUsed: 0, shardUsed: 0 });
+    const repository = new D1ObjectRepository(testEnv.DB);
+    const value = reservation('missing-outbox');
+
+    await expect(
+      repository.reserveUploadAndCapacity(
+        value.object,
+        value.location,
+        value.session,
+        audit('OBJECT_UPLOAD_RESERVED', value.object.id),
+      ),
+    ).rejects.toThrow('Object mutation requires audit outbox');
+    await expect(repository.findById(value.object.id)).resolves.toBeUndefined();
+    await expect(capacity()).resolves.toEqual({
+      account_used: 0,
+      shard_used: 0,
+    });
+    await expect(outboxCount()).resolves.toBe(0);
+  });
+
+  it('does not append audit events for no-op mutations', async () => {
+    await setupPlacement({ accountUsed: 0, shardUsed: 0 });
+    const value = reservation('no-op');
+    await expect(reserve(value)).resolves.toBe('RESERVED');
+
+    await expect(
+      reserve(value),
+    ).resolves.toBe('OBJECT_CONFLICT');
+    await expect(
+      objects.completeUpload(
+        value.object.id,
+        'missing-session',
+        '2026-09-01T00:01:00.000Z',
+        'etag',
+        null,
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
+      ),
+    ).resolves.toBe('NOT_FOUND');
+    await expect(outboxCount()).resolves.toBe(1);
   });
 });
 
@@ -297,6 +410,7 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:01:00.000Z',
         'etag-one',
         'checksum-one',
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
       ),
       objects.completeUpload(
         value.object.id,
@@ -304,6 +418,7 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:01:00.000Z',
         'etag-one',
         'checksum-one',
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
       ),
     ]);
     expect(results.sort()).toEqual(['ALREADY_COMPLETED', 'COMPLETED']);
@@ -331,12 +446,15 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:02:00.000Z',
         'different-etag',
         'different-checksum',
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:02:00.000Z'),
       ),
     ).toBe('ALREADY_COMPLETED');
     await expect(capacity()).resolves.toEqual({
       account_used: 120,
       shard_used: 120,
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
+    await expect(outboxCount('OBJECT_UPLOAD_COMPLETED')).resolves.toBe(1);
   });
 
   it('does not mutate a pending aggregate when completion identifiers conflict', async () => {
@@ -351,6 +469,7 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:01:00.000Z',
         'etag',
         'checksum',
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
       ),
     ).toBe('NOT_FOUND');
     await expect(objects.findById(value.object.id)).resolves.toEqual({
@@ -377,6 +496,7 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:01:00.000Z',
         'etag',
         'checksum',
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
       ),
     ).toBe('CONFLICT');
     const state = await testEnv.DB.prepare(
@@ -398,6 +518,7 @@ describe('object D1 repository lifecycle', () => {
       checksum: null,
       session_status: 'PENDING',
     });
+    await expect(outboxCount()).resolves.toBe(1);
   });
 
   it('expires only once and retains the pending aggregate for audit', async () => {
@@ -410,6 +531,7 @@ describe('object D1 repository lifecycle', () => {
         value.object.id,
         value.session.id,
         '2026-09-01T00:16:00.000Z',
+        audit('OBJECT_UPLOAD_EXPIRED', value.object.id, '2026-09-01T00:16:00.000Z'),
       ),
     ).toBe('EXPIRED');
     expect(
@@ -417,6 +539,7 @@ describe('object D1 repository lifecycle', () => {
         value.object.id,
         value.session.id,
         '2026-09-01T00:17:00.000Z',
+        audit('OBJECT_UPLOAD_EXPIRED', value.object.id, '2026-09-01T00:17:00.000Z'),
       ),
     ).toBe('ALREADY_EXPIRED');
     await expect(capacity()).resolves.toEqual({
@@ -436,11 +559,20 @@ describe('object D1 repository lifecycle', () => {
     ).resolves.toEqual([
       { objectId: value.object.id, uploadSessionId: value.session.id },
     ]);
-    const cleanup = await Promise.all([
-      objects.finishExpiredUploadCleanup(value.object.id, value.session.id),
-      objects.finishExpiredUploadCleanup(value.object.id, value.session.id),
-    ]);
-    expect(cleanup.sort()).toEqual(['ALREADY_CLEANED', 'CLEANED']);
+    await expect(
+      objects.finishExpiredUploadCleanup(
+        value.object.id,
+        value.session.id,
+        audit('OBJECT_UPLOAD_ABORTED', value.object.id),
+      ),
+    ).resolves.toBe('CLEANED');
+    await expect(
+      objects.finishExpiredUploadCleanup(
+        value.object.id,
+        value.session.id,
+        audit('OBJECT_UPLOAD_ABORTED', value.object.id),
+      ),
+    ).resolves.toBe('ALREADY_CLEANED');
     await expect(capacity()).resolves.toEqual({
       account_used: 100,
       shard_used: 100,
@@ -452,6 +584,8 @@ describe('object D1 repository lifecycle', () => {
     await expect(
       objects.listExpiredUploadsAwaitingCleanup(10),
     ).resolves.toEqual([]);
+    await expect(outboxCount('OBJECT_UPLOAD_EXPIRED')).resolves.toBe(1);
+    await expect(outboxCount('OBJECT_UPLOAD_ABORTED')).resolves.toBe(1);
   });
 
   it('lists only pending sessions older than the requested cleanup cutoff', async () => {
@@ -482,6 +616,7 @@ describe('object D1 repository lifecycle', () => {
         '2026-09-01T00:01:00.000Z',
         'etag',
         null,
+        audit('OBJECT_UPLOAD_COMPLETED', value.object.id, '2026-09-01T00:01:00.000Z'),
       ),
     ).toBe('COMPLETED');
 
@@ -489,24 +624,28 @@ describe('object D1 repository lifecycle', () => {
       await objects.beginDelete(
         value.object.id,
         '2026-09-01T00:02:00.000Z',
+        audit('OBJECT_DELETE_STARTED', value.object.id, '2026-09-01T00:02:00.000Z'),
       ),
     ).toBe('STARTED');
     expect(
       await objects.beginDelete(
         value.object.id,
         '2026-09-01T00:03:00.000Z',
+        audit('OBJECT_DELETE_STARTED', value.object.id, '2026-09-01T00:03:00.000Z'),
       ),
     ).toBe('ALREADY_DELETING');
     expect(
       await objects.finishDeleteAndReleaseCapacity(
         value.object.id,
         '2026-09-01T00:04:00.000Z',
+        audit('OBJECT_DELETED', value.object.id, '2026-09-01T00:04:00.000Z'),
       ),
     ).toBe('DELETED');
     expect(
       await objects.finishDeleteAndReleaseCapacity(
         value.object.id,
         '2026-09-01T00:05:00.000Z',
+        audit('OBJECT_DELETED', value.object.id, '2026-09-01T00:05:00.000Z'),
       ),
     ).toBe('ALREADY_DELETED');
     await expect(capacity()).resolves.toEqual({
@@ -517,6 +656,10 @@ describe('object D1 repository lifecycle', () => {
       object: { status: 'DELETED' },
       uploadSession: { status: 'COMPLETED' },
     });
+    await expect(outboxCount('OBJECT_UPLOAD_RESERVED')).resolves.toBe(1);
+    await expect(outboxCount('OBJECT_UPLOAD_COMPLETED')).resolves.toBe(1);
+    await expect(outboxCount('OBJECT_DELETE_STARTED')).resolves.toBe(1);
+    await expect(outboxCount('OBJECT_DELETED')).resolves.toBe(1);
   });
 
   it('rolls a batch back when a required conditional update changes no rows', async () => {

@@ -61,13 +61,15 @@ Cookie: openpool_session=...
 - Logical Bucket/Shard：`LOGICAL_BUCKET_CREATED`、`STORAGE_SHARD_CREATED`、
   `STORAGE_SHARD_STATUS_CHANGED`；
 - Object：`OBJECT_UPLOAD_RESERVED`、`OBJECT_UPLOAD_COMPLETED`、`OBJECT_UPLOAD_EXPIRED`、
-  `OBJECT_UPLOAD_ABORTED`、`OBJECT_DOWNLOAD_SIGNED`、`OBJECT_DELETE_STARTED`、`OBJECT_DELETED`。
+  `OBJECT_UPLOAD_ABORTED`、`OBJECT_DOWNLOAD_SIGNED`、`OBJECT_DELETE_STARTED`、`OBJECT_DELETED`；
+- Shard Migration：`SHARD_MIGRATION_STARTED`、`SHARD_MIGRATION_TRANSFER_CLAIMED`、
+  `SHARD_MIGRATION_OBJECT_SWITCHED`、`SHARD_MIGRATION_OBJECT_COMPLETED`、`SHARD_MIGRATION_COMPLETED`。
 
 事件集合会随用例扩展；消费者应把未知 action 当作可显示的字符串，而不要硬编码为封闭枚举。
 容量预留、过期释放和删除释放只在其对应的状态转换成功时写入事件，重复请求不会重复扣减容量。
-认证 session、API Key create/revoke、Storage Account、Logical Bucket 与 Storage Shard mutation 已使用
-同事务 outbox；Cron 投递采用 lease、event id 幂等和退避。Object 与 Shard Migration mutation 仍在
-逐步迁移，可能保留 V1 非事务窗口。该接口用于运维追踪而不是防篡改合规账本。
+全部现有 business mutation 已使用同事务 outbox；没有对应业务写入的签名下载和 API Key 授权事件
+直接 append 到 outbox。Cron 投递采用 lease、event id 幂等和退避。该接口用于运维追踪而不是防篡改
+合规账本。
 
 ## 错误与边界
 

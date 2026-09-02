@@ -33,7 +33,7 @@ erDiagram
 - storage account 使用状态机，不物理删除历史引用中的账号。
 - `credential_envelope` 只保存版本化加密信封，永不保存明文 secret。
 - `key_hash`、`token_hash` 只保存不可逆摘要，明文只在创建时返回一次。
-- 已迁移的业务写入与对应 audit outbox append 同一 D1 batch/事务；outbox `id` 是全局唯一 event id。
+- 全部现有业务写入与对应 audit outbox append 同一 D1 batch/事务；outbox `id` 是全局唯一 event id。
 - `PENDING`/`PROCESSING` 事件由租约保护，成功投递后为 `DELIVERED`；失败按退避重试。查询 union 未
   delivered outbox 与 `AUDIT_LOGS`，投递前后沿用同一公开 `id`。
 
@@ -73,8 +73,8 @@ migration 任务。`SWITCHED` 表示目标已经是 primary，但源清理仍可
 maintenance 幂等重试。
 
 Audit outbox：`PENDING → PROCESSING → DELIVERED`；失败回到可重试状态，租约过期可接管。同一
-`event_id` 最多产生一条 delivered audit log。当前已覆盖认证 session、API Key create/revoke、
-Storage Account、Logical Bucket 与 Storage Shard mutation；Object 和 Shard Migration 生命周期仍待迁移。
+`event_id` 最多产生一条 delivered audit log。当前覆盖认证 session、API Key create/revoke、
+Storage Account、Logical Bucket、Storage Shard、Object 与 Shard Migration 的全部现有 mutation。
 
 状态转换必须由用例显式完成，并写 audit log。数据库 CHECK 约束只负责拒绝非法值。
 

@@ -10,7 +10,7 @@ import {
   type StoredObject,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
+import type { AuditLog, AuditLogEntry } from '../ports/auth';
 import type {
   CredentialEnvelope,
   CredentialPayload,
@@ -222,6 +222,7 @@ const task: ShardMigrationObject = {
 };
 
 class FakeMigrations implements ShardMigrationRepository {
+  audit?: AuditLog;
   current: ShardMigration | undefined;
   transfer: ShardMigrationTransferAggregate = {
     migration,
@@ -239,8 +240,16 @@ class FakeMigrations implements ShardMigrationRepository {
   switched = 0;
   cleaned = 0;
 
-  async createAndCutover(value: ShardMigration) {
-    if (this.createResult === 'CREATED') this.current = value;
+  async createAndCutover(
+    value: ShardMigration,
+    _expectedSourceUpdatedAt: string,
+    _expectedTargetUpdatedAt: string,
+    audit: AuditLogEntry,
+  ) {
+    if (this.createResult === 'CREATED') {
+      this.current = value;
+      await this.audit?.record(audit);
+    }
     return this.createResult;
   }
 
@@ -268,7 +277,13 @@ class FakeMigrations implements ShardMigrationRepository {
       : undefined;
   }
 
-  async claimTransfer(_input: ClaimShardMigrationTransferInput) {
+  async claimTransfer(
+    _input: ClaimShardMigrationTransferInput,
+    audit: AuditLogEntry,
+  ) {
+    if (this.claimResult.outcome === 'CLAIMED') {
+      await this.audit?.record(audit);
+    }
     return this.claimResult;
   }
 
@@ -282,7 +297,13 @@ class FakeMigrations implements ShardMigrationRepository {
     return this.transfer.task.status === 'SWITCHED' ? [this.transfer] : [];
   }
 
-  async switchPrimary(): Promise<SwitchShardMigrationPrimaryResult> {
+  async switchPrimary(
+    _taskId: string,
+    _leaseToken: string,
+    _etag: string | null,
+    _updatedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<SwitchShardMigrationPrimaryResult> {
     this.switched += 1;
     this.transfer = {
       ...this.transfer,
@@ -290,20 +311,33 @@ class FakeMigrations implements ShardMigrationRepository {
       sourceLocation: { ...sourceLocation, isPrimary: false },
       targetLocation: { ...targetLocation, isPrimary: true },
     };
+    await this.audit?.record(audit);
     return 'SWITCHED';
   }
 
-  async finishSourceCleanup(): Promise<FinishShardMigrationCleanupResult> {
+  async finishSourceCleanup(
+    _taskId: string,
+    _updatedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<FinishShardMigrationCleanupResult> {
     this.cleaned += 1;
     this.transfer = {
       ...this.transfer,
       task: { ...this.transfer.task, status: 'COMPLETED' },
       sourceLocation: null,
     };
+    await this.audit?.record(audit);
     return 'COMPLETED';
   }
 
-  async completeIfReady() {
+  async completeIfReady(
+    _migrationId: string,
+    _completedAt: string,
+    audit: AuditLogEntry,
+  ) {
+    if (this.completeResult === 'COMPLETED') {
+      await this.audit?.record(audit);
+    }
     return this.completeResult;
   }
 }
@@ -373,7 +407,7 @@ class FakeProvider implements StorageProvider {
 class FakeAudit implements AuditLog {
   readonly actions: string[] = [];
 
-  async record(entry: { action: string }) {
+  async record(entry: AuditLogEntry) {
     this.actions.push(entry.action);
   }
 }
@@ -385,6 +419,7 @@ function setup() {
   const provider = new FakeProvider();
   const vault = new FakeVault();
   const audit = new FakeAudit();
+  migrations.audit = audit;
   let id = 0;
   const providers: ProviderRegistry = { forAccount: () => provider };
   const common = {

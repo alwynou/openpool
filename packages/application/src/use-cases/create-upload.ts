@@ -6,7 +6,6 @@ import {
   type UploadSession,
 } from '@openpool/domain';
 
-import type { AuditLog } from '../ports/auth';
 import type { CredentialVault } from '../ports/credential-vault';
 import type {
   Clock,
@@ -47,7 +46,6 @@ export interface CreateUploadDependencies {
   readonly vault: CredentialVault;
   readonly ids: IdGenerator;
   readonly clock: Clock;
-  readonly audit: AuditLog;
 }
 
 /** @deprecated Use ObjectApplicationError and its stable code. */
@@ -204,6 +202,19 @@ export class CreateUpload {
       object,
       location,
       session,
+      {
+        actorType: command.actorType ?? 'ADMIN',
+        actorId: command.actorId,
+        action: 'OBJECT_UPLOAD_RESERVED',
+        resourceType: 'OBJECT',
+        resourceId: objectId,
+        createdAt: now,
+        metadata: {
+          logicalBucketId: command.bucketId,
+          storageShardId: shard.id,
+          sizeBytes: String(command.sizeBytes),
+        },
+      },
     );
     if (reservation !== 'RESERVED') {
       if (reservation === 'OBJECT_CONFLICT') {
@@ -227,19 +238,6 @@ export class CreateUpload {
       );
     }
 
-    await this.dependencies.audit.record({
-      actorType: command.actorType ?? 'ADMIN',
-      actorId: command.actorId,
-      action: 'OBJECT_UPLOAD_RESERVED',
-      resourceType: 'OBJECT',
-      resourceId: objectId,
-      createdAt: now,
-      metadata: {
-        logicalBucketId: command.bucketId,
-        storageShardId: shard.id,
-        sizeBytes: String(command.sizeBytes),
-      },
-    });
     return {
       objectId,
       uploadSessionId,

@@ -1,4 +1,5 @@
 import type {
+  AuditLogEntry,
   ClaimShardMigrationTransferInput,
   ClaimShardMigrationTransferPersistenceResult,
   CompleteShardMigrationResult,
@@ -9,6 +10,7 @@ import type {
   ShardMigrationTransferAggregate,
   SwitchShardMigrationPrimaryResult,
 } from '@openpool/application';
+import type { D1AuditOutboxRepository } from './audit-outbox-repository';
 import type {
   ObjectLocation,
   ObjectStatus,
@@ -237,6 +239,7 @@ function mapTransfer(row: TransferRow): ShardMigrationTransferAggregate {
 function isExpectedD1Conflict(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
+  if (message.includes('audit_outbox')) return false;
   return (
     message.includes('constraint') ||
     message.includes('openpool_shard_migration_') ||
@@ -279,12 +282,30 @@ const transferColumns = `
   target.updated_at AS target_updated_at`;
 
 export class D1ShardMigrationRepository implements ShardMigrationRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly auditOutbox?: D1AuditOutboxRepository,
+  ) {}
+
+  private auditStatement(audit: AuditLogEntry): D1PreparedStatement {
+    if (!this.auditOutbox) {
+      throw new Error('Shard migration audit outbox unavailable');
+    }
+    return this.auditOutbox.statement(audit);
+  }
+
+  private auditAssertion(): D1PreparedStatement {
+    if (!this.auditOutbox) {
+      throw new Error('Shard migration audit outbox unavailable');
+    }
+    return this.auditOutbox.assertPreviousChanges();
+  }
 
   async createAndCutover(
     migration: ShardMigration,
     expectedSourceUpdatedAt: string,
     expectedTargetUpdatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<CreateShardMigrationPersistenceResult> {
     try {
       await this.db.batch([
@@ -346,6 +367,8 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
             migration.createdAt,
             migration.updatedAt,
           ),
+        this.auditStatement(audit),
+        this.auditAssertion(),
       ]);
       return 'CREATED';
     } catch (error) {
@@ -438,50 +461,67 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
 
   async claimTransfer(
     input: ClaimShardMigrationTransferInput,
+    audit: AuditLogEntry,
   ): Promise<ClaimShardMigrationTransferPersistenceResult> {
-    let taskId: string | undefined;
-    const reclaimed = await this.db
+    if (!this.auditOutbox) {
+      throw new Error('Shard migration audit outbox unavailable');
+    }
+    const reclaimCandidate = await this.db
       .prepare(
-        `UPDATE shard_migration_objects
-         SET status = 'RESERVED', lease_token = ?, lease_expires_at = ?,
-             attempt_count = attempt_count + 1, last_error_code = NULL,
-             updated_at = ?
-         WHERE id = (
-           SELECT task.id
+        `SELECT task.id
            FROM shard_migration_objects AS task
            JOIN shard_migrations AS migration ON migration.id = task.migration_id
            WHERE task.migration_id = ? AND migration.status = 'RUNNING'
              AND (
                task.status = 'FAILED' OR
                (task.status = 'RESERVED' AND task.lease_expires_at <= ?)
-             )
+           )
            ORDER BY task.updated_at ASC, task.id ASC
-           LIMIT 1
-         )
-         RETURNING id`,
+           LIMIT 1`,
       )
-      .bind(
-        input.leaseToken,
-        input.leaseExpiresAt,
-        input.leasedAt,
-        input.migrationId,
-        input.leasedAt,
-      )
+      .bind(input.migrationId, input.leasedAt)
       .first<{ id: unknown }>();
-    if (reclaimed !== null) taskId = text(reclaimed.id, 'claim.reclaimed_id');
 
-    if (taskId === undefined) {
-      try {
-        const inserted = await this.db
+    let taskId: string;
+    try {
+      if (reclaimCandidate !== null) {
+        taskId = text(reclaimCandidate.id, 'claim.reclaimed_id');
+        await this.db.batch([
+          this.db
+            .prepare(
+              `UPDATE shard_migration_objects
+               SET status = 'RESERVED', lease_token = ?, lease_expires_at = ?,
+                   attempt_count = attempt_count + 1, last_error_code = NULL,
+                   updated_at = ?
+               WHERE id = ? AND migration_id = ?
+                 AND EXISTS (
+                   SELECT 1 FROM shard_migrations
+                   WHERE id = ? AND status = 'RUNNING'
+                 )
+                 AND (
+                   status = 'FAILED' OR
+                   (status = 'RESERVED' AND lease_expires_at <= ?)
+                 )`,
+            )
+            .bind(
+              input.leaseToken,
+              input.leaseExpiresAt,
+              input.leasedAt,
+              taskId,
+              input.migrationId,
+              input.migrationId,
+              input.leasedAt,
+            ),
+          this.db.prepare(
+            'INSERT INTO shard_migration_assertions (ok) VALUES (changes())',
+          ),
+          this.auditStatement(audit),
+          this.auditAssertion(),
+        ]);
+      } else {
+        const candidate = await this.db
           .prepare(
-            `INSERT INTO shard_migration_objects
-             (id, migration_id, object_id, source_location_id,
-              target_location_id, target_physical_key, status, lease_token,
-              lease_expires_at, attempt_count, last_error_code, created_at,
-              updated_at, completed_at)
-             SELECT ?, migration.id, object.id, source.id, ?,
-                    ? || substr(object.id, 1, 2) || '/' || object.id,
-                    'RESERVED', ?, ?, 1, NULL, ?, ?, NULL
+            `SELECT object.id AS object_id, source.id AS source_location_id
              FROM shard_migrations AS migration
              JOIN object_locations AS source
                ON source.storage_shard_id = migration.source_shard_id
@@ -495,31 +535,71 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
                    AND existing.object_id = object.id
                )
              ORDER BY object.logical_key ASC, object.id ASC
-             LIMIT 1
-             RETURNING id`,
+             LIMIT 1`,
           )
-          .bind(
-            input.taskId,
-            input.targetLocationId,
-            input.targetPhysicalKeyPrefix,
-            input.leaseToken,
-            input.leaseExpiresAt,
-            input.leasedAt,
-            input.leasedAt,
-            input.migrationId,
-          )
-          .first<{ id: unknown }>();
-        if (inserted === null) return { outcome: 'NONE' };
-        taskId = text(inserted.id, 'claim.inserted_id');
-      } catch (error) {
-        if (!isExpectedD1Conflict(error)) throw error;
-        const message = error instanceof Error ? error.message : '';
-        return {
-          outcome: message.includes('openpool_shard_migration_unavailable')
-            ? 'CAPACITY_UNAVAILABLE'
-            : 'CONFLICT',
-        };
+          .bind(input.migrationId)
+          .first<{ object_id: unknown; source_location_id: unknown }>();
+        if (candidate === null) return { outcome: 'NONE' };
+
+        const objectId = text(candidate.object_id, 'claim.object_id');
+        const sourceLocationId = text(
+          candidate.source_location_id,
+          'claim.source_location_id',
+        );
+        taskId = input.taskId;
+        await this.db.batch([
+          this.db
+            .prepare(
+              `INSERT INTO shard_migration_objects
+               (id, migration_id, object_id, source_location_id,
+                target_location_id, target_physical_key, status, lease_token,
+                lease_expires_at, attempt_count, last_error_code, created_at,
+                updated_at, completed_at)
+               SELECT ?, migration.id, object.id, source.id, ?,
+                      ? || substr(object.id, 1, 2) || '/' || object.id,
+                      'RESERVED', ?, ?, 1, NULL, ?, ?, NULL
+               FROM shard_migrations AS migration
+               JOIN object_locations AS source
+                 ON source.id = ?
+                AND source.storage_shard_id = migration.source_shard_id
+                AND source.is_primary = 1
+               JOIN objects AS object
+                 ON object.id = ? AND object.id = source.object_id
+               WHERE migration.id = ? AND migration.status = 'RUNNING'
+                 AND object.status = 'READY'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM shard_migration_objects AS existing
+                   WHERE existing.migration_id = migration.id
+                     AND existing.object_id = object.id
+                 )`,
+            )
+            .bind(
+              input.taskId,
+              input.targetLocationId,
+              input.targetPhysicalKeyPrefix,
+              input.leaseToken,
+              input.leaseExpiresAt,
+              input.leasedAt,
+              input.leasedAt,
+              sourceLocationId,
+              objectId,
+              input.migrationId,
+            ),
+          this.db.prepare(
+            'INSERT INTO shard_migration_assertions (ok) VALUES (changes())',
+          ),
+          this.auditStatement(audit),
+          this.auditAssertion(),
+        ]);
       }
+    } catch (error) {
+      if (!isExpectedD1Conflict(error)) throw error;
+      const message = error instanceof Error ? error.message : '';
+      return {
+        outcome: message.includes('openpool_shard_migration_unavailable')
+          ? 'CAPACITY_UNAVAILABLE'
+          : 'CONFLICT',
+      };
     }
 
     const transfer = await this.findTransfer(taskId, input.leaseToken);
@@ -574,6 +654,7 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
     leaseToken: string,
     etag: string | null,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<SwitchShardMigrationPrimaryResult> {
     const before = await this.taskStatus(taskId);
     if (before === undefined) return 'NOT_FOUND';
@@ -634,6 +715,8 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
         this.db.prepare(
           'INSERT INTO shard_migration_assertions (ok) VALUES (changes())',
         ),
+        this.auditStatement(audit),
+        this.auditAssertion(),
       ]);
       return 'SWITCHED';
     } catch (error) {
@@ -648,6 +731,7 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
   async finishSourceCleanup(
     taskId: string,
     updatedAt: string,
+    audit: AuditLogEntry,
   ): Promise<FinishShardMigrationCleanupResult> {
     const before = await this.taskStatus(taskId);
     if (before === undefined) return 'NOT_FOUND';
@@ -729,6 +813,8 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
         this.db.prepare(
           'INSERT INTO shard_migration_assertions (ok) VALUES (changes())',
         ),
+        this.auditStatement(audit),
+        this.auditAssertion(),
       ]);
       return 'COMPLETED';
     } catch (error) {
@@ -742,6 +828,7 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
   async completeIfReady(
     migrationId: string,
     completedAt: string,
+    audit: AuditLogEntry,
   ): Promise<CompleteShardMigrationResult> {
     const migration = await this.findById(migrationId);
     if (!migration) return 'NOT_FOUND';
@@ -788,6 +875,8 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
         this.db.prepare(
           'INSERT INTO shard_migration_assertions (ok) VALUES (changes())',
         ),
+        this.auditStatement(audit),
+        this.auditAssertion(),
       ]);
       return 'COMPLETED';
     } catch (error) {

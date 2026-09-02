@@ -263,8 +263,8 @@ describe('scheduled maintenance composition', () => {
       migrationsCleaned: 0,
       migrationsCompleted: 0,
       migrationCleanupFailed: 0,
-      auditOutboxClaimed: 0,
-      auditOutboxDelivered: 0,
+      auditOutboxClaimed: 2,
+      auditOutboxDelivered: 2,
       auditOutboxRetried: 0,
       auditOutboxFailed: 0,
     });
@@ -301,8 +301,8 @@ describe('scheduled maintenance composition', () => {
       migrationsCleaned: 1,
       migrationsCompleted: 1,
       migrationCleanupFailed: 0,
-      auditOutboxClaimed: 0,
-      auditOutboxDelivered: 0,
+      auditOutboxClaimed: 2,
+      auditOutboxDelivered: 2,
       auditOutboxRetried: 0,
       auditOutboxFailed: 0,
     });
