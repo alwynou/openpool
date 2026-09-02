@@ -26,6 +26,7 @@ export interface CreateUploadCommand {
   readonly logicalKey: string;
   readonly sizeBytes: number;
   readonly contentType: string;
+  readonly retryUploadSessionId?: string;
 }
 
 export interface CreateUploadResult {
@@ -58,7 +59,8 @@ export class NoStorageAvailableError extends ObjectApplicationError {
 
 function assertCommand(command: CreateUploadCommand): string {
   const contentType = command.contentType.trim();
-  if (!command.actorId.trim() || !command.bucketId.trim()) {
+  if (!command.actorId.trim() || !command.bucketId.trim() ||
+    (command.retryUploadSessionId !== undefined && !command.retryUploadSessionId.trim())) {
     throw objectError('OBJECT_INVALID_INPUT', 'Actor and logical bucket are required');
   }
   try {
@@ -92,6 +94,18 @@ export class CreateUpload {
 
   async execute(command: CreateUploadCommand): Promise<CreateUploadResult> {
     const contentType = assertCommand(command);
+    const previous = command.retryUploadSessionId === undefined
+      ? undefined
+      : await this.dependencies.objects.findByLogicalKey(command.bucketId, command.logicalKey);
+    if (command.retryUploadSessionId !== undefined) {
+      if (!previous) throw objectError('OBJECT_NOT_FOUND', 'Object was not found');
+      if (previous.object.status !== 'PENDING') {
+        throw objectError('OBJECT_INVALID_STATE', 'Only unfinished uploads can be retried');
+      }
+      if (previous.uploadSession?.id !== command.retryUploadSessionId) {
+        throw objectError('OBJECT_CONFLICT', 'The upload session has changed');
+      }
+    }
     const shard = await this.dependencies.shards.findActiveByLogicalBucketId(
       command.bucketId,
     );
@@ -121,12 +135,14 @@ export class CreateUpload {
     if (
       !hasPreflightCapacity(
         shard.capacityBytes,
-        shard.usedBytes,
+        shard.usedBytes - (previous?.uploadSession?.status === 'PENDING' &&
+          previous.primaryLocation.storageShardId === shard.id ? previous.object.sizeBytes : 0),
         command.sizeBytes,
       ) ||
       !hasPreflightCapacity(
         account.capacityBytes,
-        account.usedBytes,
+        account.usedBytes - (previous?.uploadSession?.status === 'PENDING' &&
+          previous.primaryLocation.storageAccountId === account.id ? previous.object.sizeBytes : 0),
         command.sizeBytes,
       )
     ) {
@@ -136,10 +152,11 @@ export class CreateUpload {
       );
     }
 
-    const objectId = this.dependencies.ids.next();
+    const objectId = previous?.object.id ?? this.dependencies.ids.next();
     const locationId = this.dependencies.ids.next();
     const uploadSessionId = this.dependencies.ids.next();
-    const physicalKey = `objects/${objectId.slice(0, 2)}/${objectId}`;
+    const physicalId = previous ? locationId : objectId;
+    const physicalKey = `objects/${physicalId.slice(0, 2)}/${physicalId}`;
     const now = this.dependencies.clock.now().toISOString();
     const object: StoredObject = {
       id: objectId,
@@ -149,7 +166,7 @@ export class CreateUpload {
       contentType,
       checksum: null,
       status: 'PENDING',
-      createdAt: now,
+      createdAt: previous?.object.createdAt ?? now,
       updatedAt: now,
     };
     const location: ObjectLocation = {
@@ -205,7 +222,7 @@ export class CreateUpload {
       {
         actorType: command.actorType ?? 'ADMIN',
         actorId: command.actorId,
-        action: 'OBJECT_UPLOAD_RESERVED',
+        action: previous ? 'OBJECT_UPLOAD_RETRIED' : 'OBJECT_UPLOAD_RESERVED',
         resourceType: 'OBJECT',
         resourceId: objectId,
         createdAt: now,
@@ -213,8 +230,12 @@ export class CreateUpload {
           logicalBucketId: command.bucketId,
           storageShardId: shard.id,
           sizeBytes: String(command.sizeBytes),
+          uploadSessionId,
+          ...(command.retryUploadSessionId === undefined ? {} :
+            { previousUploadSessionId: command.retryUploadSessionId }),
         },
       },
+      command.retryUploadSessionId,
     );
     if (reservation !== 'RESERVED') {
       if (reservation === 'OBJECT_CONFLICT') {

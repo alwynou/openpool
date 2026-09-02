@@ -21,6 +21,9 @@
   按顺序应用到独立 staging D1，相关 Worker/Web 已部署，migration history 无待办（2026-09-02）。
   所有者因数据不重要而明确要求本次跳过备份；本地持久化 D1 和 production 未改动，未来升级不能
   继承这次免备份例外。详细证据见[升级验收记录](staging-upgrade-acceptance.md)。
+- [ ] 上传重试 `0006_upload_retries.sql` 与配套 Worker/Web 已本地实现，尚未获得新的持久化
+  migration/deploy 授权。升级后需在隔离 staging 验证同路径失败重试、旧 session 拒绝、过期 grace
+  后旧位置清理和新文件内容不变；不能把本地测试标为真实 Provider 验收。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration

@@ -92,6 +92,21 @@ const uploadCompletion: CompleteUploadResponse = {
 };
 
 describe('OpenPoolClient', () => {
+  it('queries the current upload and forwards an explicit retry session without automatic retry', async () => {
+    const session = { objectId: 'object/1', uploadSessionId: 'previous-session',
+      status: 'ABORTED', expiresAt: uploadReservation.expiresAt };
+    const { fetch, calls } = controlFetch(envelope(session), envelope(uploadReservation));
+    const client = new OpenPoolClient({ baseUrl: 'https://control.example', apiKey: 'test-key', fetch });
+    expect(await client.getUpload('object/1')).toEqual(session);
+    expect(await client.createUpload({ ...uploadInput, retryUploadSessionId: session.uploadSessionId }))
+      .toEqual(uploadReservation);
+    expect(String(callAt(calls, 0).input)).toBe('https://control.example/api/v1/uploads/object%2F1');
+    expect(callAt(calls, 0).init?.method).toBe('GET');
+    expect(callAt(calls, 1).init?.body).toBe(JSON.stringify({
+      ...uploadInput, retryUploadSessionId: session.uploadSessionId,
+    }));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   describe('constructor validation', () => {
     it('accepts a root control-plane URL and localhost HTTP', () => {
       expect(

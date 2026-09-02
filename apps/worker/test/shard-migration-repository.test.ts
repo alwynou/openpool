@@ -480,6 +480,244 @@ describe('shard migration D1 repository', () => {
     expect(await auditOutboxCount()).toBe(outboxBeforeNoOp);
   });
 
+  it('blocks source retirement for an expired retry location until cleanup', async () => {
+    const fixture = await setupReadyObject();
+
+    // Remove the fixture object so the source shard can exercise a migration
+    // whose only remaining source location is the historical retry attempt.
+    expect(
+      await objects.beginDelete(
+        'object-1',
+        '2026-09-01T00:05:00.000Z',
+        mutationAudit(
+          'OBJECT_DELETE_STARTED',
+          'OBJECT',
+          'object-1',
+          '2026-09-01T00:05:00.000Z',
+        ),
+      ),
+    ).toBe('STARTED');
+    expect(
+      await objects.finishDeleteAndReleaseCapacity(
+        'object-1',
+        '2026-09-01T00:06:00.000Z',
+        mutationAudit(
+          'OBJECT_DELETED',
+          'OBJECT',
+          'object-1',
+          '2026-09-01T00:06:00.000Z',
+        ),
+      ),
+    ).toBe('DELETED');
+
+    // A pending upload must be reserved while its source account is writable;
+    // put the account back into DRAINING before starting the migration.
+    await testEnv.DB.prepare(
+      `UPDATE storage_accounts
+       SET status = 'ACTIVE', write_enabled = 1,
+           updated_at = '2026-09-01T00:07:00.000Z'
+       WHERE id = 'account-source'`,
+    ).run();
+    const pendingObject: StoredObject = {
+      id: 'object-retry',
+      logicalBucketId: bucket.id,
+      logicalKey: 'reports/retry.txt',
+      sizeBytes: 40,
+      contentType: 'text/plain',
+      checksum: null,
+      status: 'PENDING',
+      createdAt: '2026-09-01T00:08:00.000Z',
+      updatedAt: '2026-09-01T00:08:00.000Z',
+    };
+    const pendingLocation: ObjectLocation = {
+      id: 'location-retry-source',
+      objectId: pendingObject.id,
+      storageAccountId: fixture.source.storageAccountId,
+      storageShardId: fixture.source.id,
+      physicalBucket: fixture.source.physicalBucket,
+      physicalKey: 'objects/retry/object-retry-source',
+      etag: null,
+      isPrimary: true,
+      createdAt: pendingObject.createdAt,
+      updatedAt: pendingObject.updatedAt,
+    };
+    const pendingSession: UploadSession = {
+      id: 'upload-retry-source',
+      objectId: pendingObject.id,
+      status: 'PENDING',
+      expiresAt: '2026-09-01T00:15:00.000Z',
+      createdAt: pendingObject.createdAt,
+      completedAt: null,
+    };
+    expect(
+      await objects.reserveUploadAndCapacity(
+        pendingObject,
+        pendingLocation,
+        pendingSession,
+        mutationAudit(
+          'OBJECT_UPLOAD_RESERVED',
+          'OBJECT',
+          pendingObject.id,
+          pendingObject.createdAt,
+        ),
+      ),
+    ).toBe('RESERVED');
+    await testEnv.DB.prepare(
+      `UPDATE storage_accounts
+       SET status = 'DRAINING', write_enabled = 0,
+           updated_at = '2026-09-01T00:09:00.000Z'
+       WHERE id = 'account-source'`,
+    ).run();
+
+    const currentSource = await shards.findById(fixture.source.id);
+    if (!currentSource) throw new Error('Missing source shard');
+    expect(currentSource.usedBytes).toBe(40);
+    expect(
+      await migrations.createAndCutover(
+        fixture.migration,
+        currentSource.updatedAt,
+        fixture.target.updatedAt,
+        migrationAudit(
+          'SHARD_MIGRATION_CREATED',
+          fixture.migration.id,
+          fixture.migration.createdAt,
+        ),
+      ),
+    ).toBe('CREATED');
+
+    const retriedObject: StoredObject = {
+      ...pendingObject,
+      updatedAt: '2026-09-01T00:10:00.000Z',
+    };
+    const retriedLocation: ObjectLocation = {
+      id: 'location-retry-target',
+      objectId: retriedObject.id,
+      storageAccountId: fixture.target.storageAccountId,
+      storageShardId: fixture.target.id,
+      physicalBucket: fixture.target.physicalBucket,
+      physicalKey: 'objects/retry/object-retry-target',
+      etag: null,
+      isPrimary: true,
+      createdAt: retriedObject.updatedAt,
+      updatedAt: retriedObject.updatedAt,
+    };
+    const retriedSession: UploadSession = {
+      id: 'upload-retry-target',
+      objectId: retriedObject.id,
+      status: 'PENDING',
+      expiresAt: '2026-09-01T00:25:00.000Z',
+      createdAt: retriedObject.updatedAt,
+      completedAt: null,
+    };
+    expect(
+      await objects.reserveUploadAndCapacity(
+        retriedObject,
+        retriedLocation,
+        retriedSession,
+        mutationAudit(
+          'OBJECT_UPLOAD_RETRIED',
+          'OBJECT',
+          retriedObject.id,
+          retriedObject.updatedAt,
+        ),
+        pendingSession.id,
+      ),
+    ).toBe('RESERVED');
+    expect(await accounts.findById('account-source')).toMatchObject({
+      usedBytes: 0,
+    });
+    expect(await accounts.findById('account-target')).toMatchObject({
+      usedBytes: 40,
+    });
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      usedBytes: 0,
+    });
+    expect(await shards.findById(fixture.target.id)).toMatchObject({
+      usedBytes: 40,
+    });
+
+    expect(
+      await objects.completeUpload(
+        retriedObject.id,
+        retriedSession.id,
+        '2026-09-01T00:11:00.000Z',
+        'retry-etag',
+        null,
+        mutationAudit(
+          'OBJECT_UPLOAD_COMPLETED',
+          'OBJECT',
+          retriedObject.id,
+          '2026-09-01T00:11:00.000Z',
+        ),
+      ),
+    ).toBe('COMPLETED');
+    expect(await migrations.progress(fixture.migration.id)).toEqual({
+      reserved: 0,
+      switched: 0,
+      completed: 0,
+      failed: 0,
+      remainingReady: 0,
+      blocking: 1,
+    });
+
+    const beforeBlockedRetirement = await shards.findById(fixture.source.id);
+    expect(
+      await migrations.completeIfReady(
+        fixture.migration.id,
+        '2026-09-01T00:12:00.000Z',
+        migrationAudit(
+          'SHARD_MIGRATION_COMPLETED',
+          fixture.migration.id,
+          '2026-09-01T00:12:00.000Z',
+        ),
+      ),
+    ).toBe('BLOCKED');
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      status: 'MIGRATING',
+      usedBytes: beforeBlockedRetirement?.usedBytes ?? -1,
+    });
+
+    expect(
+      await objects.finishExpiredUploadCleanup(
+        pendingObject.id,
+        pendingSession.id,
+        mutationAudit(
+          'OBJECT_UPLOAD_ABORTED',
+          'OBJECT',
+          pendingObject.id,
+          '2026-09-01T00:13:00.000Z',
+        ),
+      ),
+    ).toBe('CLEANED');
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      usedBytes: 0,
+    });
+    expect(await shards.findById(fixture.target.id)).toMatchObject({
+      usedBytes: 40,
+    });
+    expect(
+      await migrations.completeIfReady(
+        fixture.migration.id,
+        '2026-09-01T00:14:00.000Z',
+        migrationAudit(
+          'SHARD_MIGRATION_COMPLETED',
+          fixture.migration.id,
+          '2026-09-01T00:14:00.000Z',
+        ),
+      ),
+    ).toBe('COMPLETED');
+    expect(await shards.findById(fixture.source.id)).toMatchObject({
+      status: 'RETIRED',
+      usedBytes: 0,
+    });
+    expect(await accounts.findById('account-source')).toMatchObject({
+      usedBytes: 0,
+    });
+    expect(await accounts.findById('account-target')).toMatchObject({
+      usedBytes: 40,
+    });
+  });
+
   it('rejects stale cutover and reclaims only expired transfer leases', async () => {
     const fixture = await setupReadyObject();
     const outboxBeforeStaleCutover = await auditOutboxCount();

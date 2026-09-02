@@ -441,8 +441,13 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
             FROM object_locations AS location
             JOIN objects AS object ON object.id = location.object_id
             WHERE location.storage_shard_id = migration.source_shard_id
-              AND location.is_primary = 1
-              AND object.status NOT IN ('READY', 'DELETED')) AS blocking
+              AND (
+                EXISTS (SELECT 1 FROM upload_sessions AS session
+                  WHERE session.location_id = location.id AND session.status = 'EXPIRED')
+                OR (location.is_primary = 1 AND object.status NOT IN ('READY', 'DELETED')
+                  AND NOT EXISTS (SELECT 1 FROM upload_sessions AS session
+                    WHERE session.location_id = location.id AND session.status = 'ABORTED'))
+              )) AS blocking
          FROM shard_migrations AS migration
          WHERE migration.id = ? LIMIT 1`,
       )
@@ -849,7 +854,14 @@ export class D1ShardMigrationRepository implements ShardMigrationRepository {
                  FROM object_locations AS location
                  JOIN objects AS object ON object.id = location.object_id
                  WHERE location.storage_shard_id = storage_shards.id
-                   AND object.status <> 'DELETED'
+                   AND (
+                     EXISTS (SELECT 1 FROM upload_sessions AS session
+                       WHERE session.location_id = location.id AND session.status = 'EXPIRED')
+                     OR (object.status <> 'DELETED' AND NOT EXISTS (
+                       SELECT 1 FROM upload_sessions AS session
+                       WHERE session.location_id = location.id AND session.status = 'ABORTED'
+                     ))
+                   )
                )
                AND NOT EXISTS (
                  SELECT 1 FROM shard_migration_objects AS task

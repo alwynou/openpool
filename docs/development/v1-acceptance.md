@@ -76,8 +76,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   Provider 404 删除可安全重试。
 - [x] 列表支持 `status`、`prefix`、`afterKey`、`limit`（1–1000）并按 logical key 稳定排序；
   公开响应不包含 account、shard、physical bucket/key、credential 或签名 URL。
-- [x] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；同一 logical key 的后续
-  reservation 按 V1 约束冲突。该限制待 future retry/version namespace design。
+- [x] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；普通同路径 reservation 仍冲突。
+  本地 `0006` 新增显式 retry：同一 object/key、全新 session/物理位置、旧会话隔离、容量/审计原子
+  交换，支持 PENDING/EXPIRED/ABORTED 当前尝试。已用用例、D1、HTTP、SDK/Web 工作流测试验证；
+  staging 仍在 0005，重试功能的远端升级和真实直传验收待授权。
 - [x] 用 `npm run dev:worker:scheduled` 启动本地 Worker，并访问
   `http://localhost:8787/cdn-cgi/handler/scheduled?format=json` 触发一次 scheduled maintenance：验证
   outcome 为 `ok`，并通过 scheduled/repository tests 验证签名 expiry 后 5 分钟

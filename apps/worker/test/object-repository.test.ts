@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditLogEntry } from '@openpool/application';
 import type { ObjectLocation, StoredObject, UploadSession } from '@openpool/domain';
 
-import { D1AuditOutboxRepository, D1ObjectRepository } from '../src/adapters/d1';
+import { D1AuditOutboxRepository, D1ObjectRepository, D1StorageAccountRepository } from '../src/adapters/d1';
 import type { Env } from '../src/env';
 
 interface TestEnv extends Env {
@@ -555,7 +555,7 @@ describe('object D1 repository lifecycle', () => {
     });
 
     await expect(
-      objects.listExpiredUploadsAwaitingCleanup(10),
+      objects.listExpiredUploadsAwaitingCleanup(10, '2026-09-01T00:15:00.000Z'),
     ).resolves.toEqual([
       { objectId: value.object.id, uploadSessionId: value.session.id },
     ]);
@@ -582,7 +582,7 @@ describe('object D1 repository lifecycle', () => {
       uploadSession: { status: 'ABORTED', completedAt: null },
     });
     await expect(
-      objects.listExpiredUploadsAwaitingCleanup(10),
+      objects.listExpiredUploadsAwaitingCleanup(10, '2026-09-01T00:15:00.000Z'),
     ).resolves.toEqual([]);
     await expect(outboxCount('OBJECT_UPLOAD_EXPIRED')).resolves.toBe(1);
     await expect(outboxCount('OBJECT_UPLOAD_ABORTED')).resolves.toBe(1);
@@ -686,6 +686,164 @@ describe('object D1 repository lifecycle', () => {
     expect((await objects.findById(value.object.id))?.object.logicalKey).toBe(
       value.object.logicalKey,
     );
+  });
+});
+
+describe('atomic upload retries', () => {
+  function nextAttempt(previous: Reservation, suffix = 'retry', sizeBytes = 75): Reservation {
+    return {
+      object: { ...previous.object, sizeBytes, contentType: 'text/plain', updatedAt: '2026-09-01T00:01:00.000Z' },
+      location: { ...previous.location, id: `location-${suffix}`, physicalKey: `objects/${suffix}` },
+      session: { ...previous.session, id: `session-${suffix}`, expiresAt: '2026-09-01T00:16:00.000Z' },
+    };
+  }
+
+  function retry(next: Reservation, previousId: string, repository = objects) {
+    return repository.reserveUploadAndCapacity(next.object, next.location, next.session,
+      audit('OBJECT_UPLOAD_RETRIED', next.object.id, next.object.updatedAt), previousId);
+  }
+
+  it.each(['PENDING', 'EXPIRED', 'ABORTED'] as const)('retries %s with exactly one current session and no double release', async (status) => {
+    await setupPlacement();
+    const first = reservation('first');
+    expect(await reserve(first)).toBe('RESERVED');
+    if (status !== 'PENDING') {
+      await objects.expireUploadAndReleaseCapacity(first.object.id, first.session.id, now,
+        audit('OBJECT_UPLOAD_EXPIRED', first.object.id));
+      if (status === 'ABORTED') await objects.finishExpiredUploadCleanup(first.object.id, first.session.id,
+        audit('OBJECT_UPLOAD_ABORTED', first.object.id));
+    }
+    const next = nextAttempt(first);
+    expect(await retry(next, first.session.id)).toBe('RESERVED');
+    expect(await objects.findByLogicalKey('bucket-1', first.object.logicalKey)).toEqual({
+      object: next.object, primaryLocation: next.location, uploadSession: next.session,
+    });
+    expect(await capacity()).toEqual({ account_used: 175, shard_used: 175 });
+    expect(await rowCount('objects')).toBe(1);
+    expect(await rowCount('upload_sessions')).toBe(2);
+    expect(await objects.findUploadCleanupTarget(first.object.id, first.session.id)).toMatchObject({
+      location: { id: first.location.id, physicalKey: first.location.physicalKey, isPrimary: false },
+      session: { status: status === 'ABORTED' ? 'ABORTED' : 'EXPIRED' },
+    });
+    expect(await outboxCount('OBJECT_UPLOAD_RETRIED')).toBe(1);
+  });
+
+  it('allows only one concurrent retry of the same expected session', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    await reserve(first);
+    const results = await Promise.all([
+      retry(nextAttempt(first, 'a'), first.session.id),
+      retry(nextAttempt(first, 'b'), first.session.id),
+    ]);
+    expect(results.sort()).toEqual(['CONFLICT', 'RESERVED']);
+    expect(await capacity()).toEqual({ account_used: 175, shard_used: 175 });
+    expect(await rowCount('upload_sessions')).toBe(2);
+    expect(await rowCount('object_locations')).toBe(2);
+    expect(await outboxCount('OBJECT_UPLOAD_RETRIED')).toBe(1);
+  });
+
+  it('rolls back the old session, primary, size, capacity and audit when new capacity is unavailable', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    await reserve(first);
+    expect(await retry(nextAttempt(first, 'large', 801), first.session.id)).toBe('CAPACITY_UNAVAILABLE');
+    expect(await objects.findById(first.object.id)).toEqual({ object: first.object,
+      primaryLocation: first.location, uploadSession: first.session });
+    expect(await capacity()).toEqual({ account_used: 150, shard_used: 150 });
+    expect(await rowCount('upload_sessions')).toBe(1);
+    expect(await outboxCount('OBJECT_UPLOAD_RETRIED')).toBe(0);
+  });
+
+  it('serializes scheduled expiry against retry and never releases the new reservation', async () => {
+    await setupPlacement();
+    const first = reservation('expiry-race');
+    await reserve(first);
+    const [retried] = await Promise.all([
+      retry(nextAttempt(first), first.session.id),
+      objects.expireUploadAndReleaseCapacity(first.object.id, first.session.id, now,
+        audit('OBJECT_UPLOAD_EXPIRED', first.object.id)),
+    ]);
+    expect(retried).toBe('RESERVED');
+    expect(await capacity()).toEqual({ account_used: 175, shard_used: 175 });
+    expect(await objects.findById(first.object.id)).toMatchObject({
+      object: { sizeBytes: 75 }, uploadSession: { id: 'session-retry', status: 'PENDING' },
+    });
+  });
+
+  it('rolls back a retry when the audit statement fails in the same transaction', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    await reserve(first);
+    const broken = new D1ObjectRepository(testEnv.DB, { statement: () => testEnv.DB.prepare(
+      'INSERT INTO audit_outbox (id) VALUES (NULL)',
+    ) });
+    await expect(retry(nextAttempt(first), first.session.id, broken)).rejects.toThrow();
+    expect(await objects.findById(first.object.id)).toEqual({ object: first.object,
+      primaryLocation: first.location, uploadSession: first.session });
+    expect(await capacity()).toEqual({ account_used: 150, shard_used: 150 });
+    expect(await rowCount('upload_sessions')).toBe(1);
+  });
+
+  it('never completes the new primary with an old session and cleans history even after READY/DELETED', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    await reserve(first);
+    const next = nextAttempt(first);
+    await retry(next, first.session.id);
+    expect(await objects.completeUpload(first.object.id, first.session.id, now, 'stale', null,
+      audit('OBJECT_UPLOAD_COMPLETED', first.object.id))).toBe('INVALID_STATE');
+    expect(await objects.completeUpload(next.object.id, next.session.id, now, 'new-etag', null,
+      audit('OBJECT_UPLOAD_COMPLETED', next.object.id))).toBe('COMPLETED');
+    expect(await retry(nextAttempt(first, 'overwrite'), next.session.id)).toBe('CONFLICT');
+    expect(await objects.listExpiredUploadsAwaitingCleanup(10, '2026-09-01T00:14:59.999Z')).toEqual([]);
+    expect(await objects.listExpiredUploadsAwaitingCleanup(10, '2026-09-01T00:15:00.000Z'))
+      .toEqual([{ objectId: first.object.id, uploadSessionId: first.session.id }]);
+    await objects.beginDelete(next.object.id, now, audit('OBJECT_DELETE_STARTED', next.object.id));
+    await objects.finishDeleteAndReleaseCapacity(next.object.id, now, audit('OBJECT_DELETED', next.object.id));
+    await testEnv.DB.prepare("UPDATE storage_shards SET status = 'RETIRED' WHERE id = 'shard-1'").run();
+    const accounts = new D1StorageAccountRepository(testEnv.DB);
+    expect(await accounts.hasBlockingReferences('account-1')).toBe(true);
+    expect(await objects.listExpiredUploadsAwaitingCleanup(10, '2026-09-01T00:15:00.000Z')).toHaveLength(1);
+    expect(await objects.finishExpiredUploadCleanup(first.object.id, first.session.id,
+      audit('OBJECT_UPLOAD_ABORTED', first.object.id))).toBe('CLEANED');
+    expect(await objects.finishExpiredUploadCleanup(first.object.id, first.session.id,
+      audit('OBJECT_UPLOAD_ABORTED', first.object.id))).toBe('ALREADY_CLEANED');
+    expect(await accounts.hasBlockingReferences('account-1')).toBe(false);
+    expect(await capacity()).toEqual({ account_used: 100, shard_used: 100 });
+    expect(await objects.findById(next.object.id)).toMatchObject({ object: { status: 'DELETED' },
+      primaryLocation: { id: next.location.id, etag: 'new-etag' }, uploadSession: { id: next.session.id } });
+  });
+
+  it('serializes completion against retry without overwriting the winning state', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    await reserve(first);
+    const [completion, retried] = await Promise.all([
+      objects.completeUpload(first.object.id, first.session.id, now, 'old-etag', null,
+        audit('OBJECT_UPLOAD_COMPLETED', first.object.id)),
+      retry(nextAttempt(first), first.session.id),
+    ]);
+    const current = await objects.findById(first.object.id);
+    if (retried === 'RESERVED') {
+      expect(completion).not.toBe('COMPLETED');
+      expect(current?.uploadSession?.id).toBe('session-retry');
+      expect(await capacity()).toEqual({ account_used: 175, shard_used: 175 });
+    } else {
+      expect(completion).toBe('COMPLETED');
+      expect(current?.object.status).toBe('READY');
+      expect(await capacity()).toEqual({ account_used: 150, shard_used: 150 });
+    }
+  });
+
+  it('rejects cross-object session location bindings', async () => {
+    await setupPlacement();
+    const first = reservation('first');
+    const second = reservation('second');
+    await reserve(first);
+    await reserve(second);
+    await expect(testEnv.DB.prepare('UPDATE upload_sessions SET location_id = ? WHERE id = ?')
+      .bind(second.location.id, first.session.id).run()).rejects.toThrow('openpool_object_upload_location_conflict');
   });
 });
 

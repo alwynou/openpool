@@ -92,11 +92,22 @@ function createTestApp(overrides: TestOverrides = {}) {
     credentialEnvelope: 'must-not-leak',
     downloadUrl: 'must-not-leak',
   }));
+  const getUpload = vi.fn(async () => ({
+    id: 'upload-1',
+    objectId: object.id,
+    status: 'PENDING' as const,
+    expiresAt,
+    createdAt: object.createdAt,
+    completedAt: null,
+    physicalKey: 'must-not-leak',
+    credentialEnvelope: 'must-not-leak',
+  }));
   const useCases: ObjectUseCases = {
     createUpload: { execute: createUpload },
     completeUpload: { execute: completeUpload },
     listObjects: { execute: listObjects },
     getObject: { execute: getObject },
+    getUpload: { execute: getUpload },
     createDownload: { execute: createDownload },
     deleteObject: { execute: deleteObject },
     ...overrides.useCases,
@@ -143,6 +154,7 @@ function createTestApp(overrides: TestOverrides = {}) {
     getObject,
     createDownload,
     deleteObject,
+    getUpload,
   };
 }
 
@@ -177,6 +189,7 @@ describe('object HTTP adapter', () => {
     const { app, dependencies } = createTestApp();
     const routes = [
       ['/api/v1/uploads', 'POST'],
+      ['/api/v1/uploads/object-1', 'GET'],
       ['/api/v1/uploads/object-1/complete', 'POST'],
       ['/api/v1/buckets/bucket-1/objects', 'GET'],
       ['/api/v1/objects/object-1', 'GET'],
@@ -233,6 +246,101 @@ describe('object HTTP adapter', () => {
       sizeBytes: 42,
       contentType: 'application/pdf',
     });
+  });
+
+  it('forwards an explicit retry session and exposes only current upload fields', async () => {
+    const { app, createUpload, getUpload } = createTestApp();
+    const retry = await request(
+      app,
+      '/api/v1/uploads',
+      jsonInit('POST', {
+        bucketId: 'bucket-1',
+        logicalKey: 'reports/annual.pdf',
+        sizeBytes: 42,
+        contentType: 'application/pdf',
+        retryUploadSessionId: 'previous-upload-1',
+      }),
+    );
+
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual({
+      data: {
+        objectId: object.id,
+        uploadSessionId: 'upload-1',
+        uploadUrl: 'https://provider.invalid/upload?signature=secret',
+        expiresAt,
+      },
+      requestId: 'request-1',
+    });
+    expect(createUpload).toHaveBeenCalledWith({
+      actorId: administrator.id,
+      actorType: 'ADMIN',
+      bucketId: 'bucket-1',
+      logicalKey: 'reports/annual.pdf',
+      sizeBytes: 42,
+      contentType: 'application/pdf',
+      retryUploadSessionId: 'previous-upload-1',
+    });
+
+    const response = await request(
+      app,
+      `/api/v1/uploads/${object.id}`,
+      authenticatedInit(),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      data: {
+        objectId: object.id,
+        uploadSessionId: 'upload-1',
+        status: 'PENDING',
+        expiresAt,
+      },
+      requestId: 'request-1',
+    });
+    expect(JSON.stringify(body)).not.toContain('must-not-leak');
+    expect(JSON.stringify(body)).not.toContain('createdAt');
+    expect(JSON.stringify(body)).not.toContain('completedAt');
+    expect(getUpload).toHaveBeenCalledWith({ objectId: object.id });
+  });
+
+  it('denies retry and upload-session reads when objects:upload is not authorized', async () => {
+    const authorizeObject = vi.fn(async () => false);
+    const fixture = createTestApp({ authorizeObject });
+
+    const retry = await request(
+      fixture.app,
+      '/api/v1/uploads',
+      jsonInit('POST', {
+        bucketId: 'bucket-1',
+        logicalKey: 'reports/annual.pdf',
+        sizeBytes: 42,
+        contentType: 'application/pdf',
+        retryUploadSessionId: 'previous-upload-1',
+      }),
+    );
+    expect(retry.status).toBe(403);
+
+    const getUpload = await request(
+      fixture.app,
+      `/api/v1/uploads/${object.id}`,
+      authenticatedInit(),
+    );
+    expect(getUpload.status).toBe(403);
+    expect(fixture.createUpload).not.toHaveBeenCalled();
+    expect(fixture.getUpload).not.toHaveBeenCalled();
+    expect(authorizeObject).toHaveBeenCalledTimes(2);
+    expect(authorizeObject).toHaveBeenNthCalledWith(
+      1,
+      env,
+      'request-1',
+      expect.objectContaining({ actorId: administrator.id }),
+      {
+        action: 'objects:upload',
+        logicalBucketId: 'bucket-1',
+        logicalKey: 'reports/annual.pdf',
+      },
+    );
   });
 
   it('completes uploads idempotently without exposing session or placement internals', async () => {
@@ -442,6 +550,21 @@ describe('object HTTP adapter', () => {
       jsonInit('POST', { uploadSessionId: 'upload-1', extra: true }),
     );
     expect(malformedCompletion.status).toBe(400);
+
+    for (const retryUploadSessionId of [123, null, '']) {
+      const malformedRetry = await request(
+        app,
+        '/api/v1/uploads',
+        jsonInit('POST', {
+          bucketId: 'bucket-1',
+          logicalKey: 'reports/annual.pdf',
+          sizeBytes: 42,
+          contentType: 'application/pdf',
+          retryUploadSessionId,
+        }),
+      );
+      expect(malformedRetry.status).toBe(400);
+    }
 
     for (const query of [
       'unknown=value',

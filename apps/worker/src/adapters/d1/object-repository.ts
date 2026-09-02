@@ -134,7 +134,7 @@ function mapObject(row: DatabaseRow): StoredObject {
 }
 
 function mapLocation(row: DatabaseRow): ObjectLocation {
-  if (row.is_primary !== 1) failClosed('location.is_primary');
+  if (row.is_primary !== 1 && row.is_primary !== 0) failClosed('location.is_primary');
   const location: ObjectLocation = {
     id: text(row.id, 'location.id'),
     objectId: text(row.object_id, 'location.object_id'),
@@ -146,7 +146,7 @@ function mapLocation(row: DatabaseRow): ObjectLocation {
     physicalBucket: text(row.physical_bucket, 'location.physical_bucket'),
     physicalKey: text(row.physical_key, 'location.physical_key'),
     etag: nullableText(row.etag, 'location.etag'),
-    isPrimary: true,
+    isPrimary: row.is_primary === 1,
     createdAt: text(row.created_at, 'location.created_at'),
     updatedAt: text(row.updated_at, 'location.updated_at'),
   };
@@ -203,6 +203,7 @@ function aggregateFromRows(
     sessionRow === undefined ? null : mapSession(sessionRow);
   if (
     primaryLocation.objectId !== object.id ||
+    !primaryLocation.isPrimary ||
     (uploadSession !== null && uploadSession.objectId !== object.id)
   ) {
     failClosed('relationship');
@@ -320,11 +321,44 @@ export class D1ObjectRepository implements ObjectRepository {
     location: ObjectLocation,
     session: UploadSession,
     audit: AuditLogEntry,
+    retryUploadSessionId?: string,
   ): Promise<ObjectReservationResult> {
     validateReservation(object, location, session);
+    if (retryUploadSessionId !== undefined && retryUploadSessionId === session.id) {
+      return 'CONFLICT';
+    }
     try {
       await this.db.batch([
-        this.db
+        ...(retryUploadSessionId === undefined ? [] : [
+          this.db.prepare(
+            `UPDATE objects SET updated_at = ?
+             WHERE id = ? AND status = 'PENDING'
+               AND logical_bucket_id = ? AND logical_key = ?
+               AND EXISTS (SELECT 1 FROM upload_sessions
+                 WHERE id = ? AND object_id = objects.id AND is_current = 1
+                   AND status IN ('PENDING', 'EXPIRED', 'ABORTED'))`,
+          ).bind(object.updatedAt, object.id, object.logicalBucketId,
+            object.logicalKey, retryUploadSessionId),
+          this.mutationAssertion(),
+          // Release using the old size and old primary before replacing either.
+          this.db.prepare(
+            `UPDATE upload_sessions SET status = 'EXPIRED'
+             WHERE id = ? AND object_id = ? AND is_current = 1 AND status = 'PENDING'`,
+          ).bind(retryUploadSessionId, object.id),
+          this.db.prepare(
+            `UPDATE upload_sessions SET is_current = 0
+             WHERE id = ? AND object_id = ? AND is_current = 1
+               AND status IN ('EXPIRED', 'ABORTED')`,
+          ).bind(retryUploadSessionId, object.id),
+          this.mutationAssertion(),
+          this.db.prepare(
+            `UPDATE object_locations SET is_primary = 0, updated_at = ?
+             WHERE object_id = ? AND is_primary = 1
+               AND id = (SELECT location_id FROM upload_sessions WHERE id = ?)`,
+          ).bind(object.updatedAt, object.id, retryUploadSessionId),
+          this.mutationAssertion(),
+        ]),
+        retryUploadSessionId === undefined ? this.db
           .prepare(
             `INSERT INTO objects
              (id, logical_bucket_id, logical_key, size_bytes, content_type,
@@ -341,7 +375,11 @@ export class D1ObjectRepository implements ObjectRepository {
             object.status,
             object.createdAt,
             object.updatedAt,
-          ),
+          ) : this.db.prepare(
+            `UPDATE objects SET size_bytes = ?, content_type = ?, checksum = NULL,
+               updated_at = ? WHERE id = ? AND status = 'PENDING'`,
+          ).bind(object.sizeBytes, object.contentType, object.updatedAt, object.id),
+        this.mutationAssertion(),
         this.db
           .prepare(
             `INSERT INTO object_locations
@@ -365,8 +403,8 @@ export class D1ObjectRepository implements ObjectRepository {
         this.db
           .prepare(
             `INSERT INTO upload_sessions
-             (id, object_id, status, expires_at, created_at, completed_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+             (id, object_id, status, expires_at, created_at, completed_at, location_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             session.id,
@@ -375,6 +413,7 @@ export class D1ObjectRepository implements ObjectRepository {
             session.expiresAt,
             session.createdAt,
             session.completedAt,
+            location.id,
           ),
         this.auditStatement(audit),
       ]);
@@ -382,6 +421,10 @@ export class D1ObjectRepository implements ObjectRepository {
     } catch (error) {
       if (isAuditOutboxFailure(error)) throw error;
       if (!isExpectedConstraint(error)) throw error;
+      if (retryUploadSessionId !== undefined) {
+        return error instanceof Error && error.message.includes('openpool_object_reservation_unavailable')
+          ? 'CAPACITY_UNAVAILABLE' : 'CONFLICT';
+      }
       return this.classifyReservationFailure(object, location);
     }
   }
@@ -459,6 +502,7 @@ export class D1ObjectRepository implements ObjectRepository {
          FROM upload_sessions AS session
          JOIN objects AS object ON object.id = session.object_id
          WHERE session.status = 'PENDING'
+           AND session.is_current = 1
            AND object.status = 'PENDING'
            AND session.expires_at <= ?
          ORDER BY session.expires_at ASC, session.id ASC
@@ -477,7 +521,9 @@ export class D1ObjectRepository implements ObjectRepository {
 
   async listExpiredUploadsAwaitingCleanup(
     limit: number,
+    expiredAtOrBefore: string,
   ): Promise<readonly ExpiredUploadCandidate[]> {
+    timestamp(expiredAtOrBefore, 'expired_cleanup.cutoff');
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
       failClosed('expired_cleanup.limit');
     }
@@ -487,11 +533,12 @@ export class D1ObjectRepository implements ObjectRepository {
          FROM upload_sessions AS session
          JOIN objects AS object ON object.id = session.object_id
          WHERE session.status = 'EXPIRED'
-           AND object.status = 'PENDING'
+           AND session.location_id IS NOT NULL
+           AND session.expires_at <= ?
          ORDER BY session.expires_at ASC, session.id ASC
          LIMIT ?`,
       )
-      .bind(limit)
+      .bind(expiredAtOrBefore, limit)
       .all<DatabaseRow>();
     return result.results.map((row) => ({
       objectId: text(row.object_id, 'expired_cleanup.object_id'),
@@ -500,6 +547,22 @@ export class D1ObjectRepository implements ObjectRepository {
         'expired_cleanup.upload_session_id',
       ),
     }));
+  }
+
+  async findUploadCleanupTarget(objectId: string, uploadSessionId: string) {
+    const results = await this.db.batch<DatabaseRow>([
+      this.db.prepare(`SELECT ${sessionColumns} FROM upload_sessions AS session
+        WHERE session.object_id = ? AND session.id = ?`)
+        .bind(objectId, uploadSessionId),
+      this.db.prepare(`SELECT ${locationColumns} FROM object_locations AS location
+        JOIN upload_sessions AS session ON session.location_id = location.id
+        WHERE session.object_id = ? AND session.id = ? AND location.object_id = ?`)
+        .bind(objectId, uploadSessionId, objectId),
+    ]);
+    const session = results[0]?.results[0];
+    const location = results[1]?.results[0];
+    if (!session || !location) return undefined;
+    return { session: mapSession(session), location: mapLocation(location) };
   }
 
   async completeUpload(
@@ -529,7 +592,7 @@ export class D1ObjectRepository implements ObjectRepository {
              WHERE id = ? AND status = 'PENDING'
                AND EXISTS (
                  SELECT 1 FROM upload_sessions
-                 WHERE id = ? AND object_id = ? AND status = 'PENDING'
+                 WHERE id = ? AND object_id = ? AND status = 'PENDING' AND is_current = 1
                )`,
           )
           .bind(
@@ -553,7 +616,8 @@ export class D1ObjectRepository implements ObjectRepository {
                )
                AND EXISTS (
                  SELECT 1 FROM upload_sessions
-                 WHERE id = ? AND object_id = ? AND status = 'PENDING'
+                 WHERE id = ? AND object_id = ? AND status = 'PENDING' AND is_current = 1
+                   AND location_id = object_locations.id
                )`,
           )
           .bind(
@@ -572,7 +636,7 @@ export class D1ObjectRepository implements ObjectRepository {
           .prepare(
             `UPDATE upload_sessions
              SET status = 'COMPLETED', completed_at = ?
-             WHERE id = ? AND object_id = ? AND status = 'PENDING'
+             WHERE id = ? AND object_id = ? AND status = 'PENDING' AND is_current = 1
                AND EXISTS (
                  SELECT 1 FROM objects
                  WHERE id = ? AND status = 'READY' AND checksum IS ?
@@ -620,7 +684,7 @@ export class D1ObjectRepository implements ObjectRepository {
              WHERE id = ? AND status = 'PENDING'
                AND EXISTS (
                  SELECT 1 FROM upload_sessions
-                 WHERE id = ? AND object_id = ? AND status = 'PENDING'
+                 WHERE id = ? AND object_id = ? AND status = 'PENDING' AND is_current = 1
                )`,
           )
           .bind(expiredAt, objectId, uploadSessionId, objectId),
@@ -631,7 +695,7 @@ export class D1ObjectRepository implements ObjectRepository {
           .prepare(
             `UPDATE upload_sessions
              SET status = 'EXPIRED', completed_at = NULL
-             WHERE id = ? AND object_id = ? AND status = 'PENDING'
+             WHERE id = ? AND object_id = ? AND status = 'PENDING' AND is_current = 1
                AND EXISTS (
                  SELECT 1 FROM objects
                  WHERE id = ? AND status = 'PENDING' AND updated_at = ?
@@ -794,7 +858,7 @@ export class D1ObjectRepository implements ObjectRepository {
           `SELECT ${sessionColumns}
            FROM upload_sessions AS session
            JOIN objects AS object ON object.id = session.object_id
-           WHERE ${objectPredicate}
+           WHERE ${objectPredicate} AND session.is_current = 1
            ORDER BY session.created_at ASC, session.id ASC`,
         )
         .bind(...bindings),

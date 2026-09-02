@@ -10,6 +10,7 @@
 - [安全模型](architecture/security.md)：凭证、API Key、上传与日志安全。
 - [架构决策记录](architecture/decisions/)：已经确定的重要取舍。
   - [ADR 0004：事务审计 Outbox](architecture/decisions/0004-transactional-audit-outbox.md)
+  - [ADR 0005：显式上传尝试重试](architecture/decisions/0005-upload-attempt-retries.md)
 
 ## 开发
 

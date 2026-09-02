@@ -404,7 +404,14 @@ export class D1StorageAccountRepository
            SELECT 1
            FROM object_locations AS location
            JOIN objects AS object ON object.id = location.object_id
-           WHERE location.storage_account_id = ? AND object.status <> 'DELETED'
+           WHERE location.storage_account_id = ? AND (
+             EXISTS (SELECT 1 FROM upload_sessions AS session
+               WHERE session.location_id = location.id AND session.status = 'EXPIRED')
+             OR (object.status <> 'DELETED' AND NOT EXISTS (
+               SELECT 1 FROM upload_sessions AS session
+               WHERE session.location_id = location.id AND session.status = 'ABORTED'
+             ))
+           )
          ) AS has_references`,
       )
       .bind(storageAccountId, storageAccountId)

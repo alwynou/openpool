@@ -40,6 +40,7 @@ import {
   CreateDownload,
   DeleteObject,
   GetObjectMetadata,
+  GetUploadSession,
   ListObjectMetadata,
   SweepExpiredUploads,
 } from './object-lifecycle';
@@ -133,6 +134,7 @@ class FakeShards implements StorageShardRepository {
 
 class FakeObjects implements ObjectRepository {
   readonly records = new Map<string, ObjectAggregate>();
+  readonly history = new Map<string, ObjectAggregate>();
   audit?: AuditLog;
   reservationResult: ObjectReservationResult = 'RESERVED';
   completionResult?: CompleteUploadPersistenceResult;
@@ -147,9 +149,22 @@ class FakeObjects implements ObjectRepository {
     primaryLocation: ObjectLocation,
     uploadSession: UploadSession,
     audit: AuditLogEntry,
+    retryUploadSessionId?: string,
   ): Promise<ObjectReservationResult> {
     this.events.push('reserve');
     if (this.reservationResult !== 'RESERVED') return this.reservationResult;
+    if (retryUploadSessionId !== undefined) {
+      const previous = this.records.get(object.id);
+      if (!previous || previous.uploadSession?.id !== retryUploadSessionId ||
+        previous.object.status !== 'PENDING') return 'CONFLICT';
+      if (previous.uploadSession.status === 'PENDING') {
+        this.releasedCapacity += previous.object.sizeBytes;
+      }
+      this.history.set(retryUploadSessionId, { ...previous,
+        primaryLocation: { ...previous.primaryLocation, isPrimary: false },
+        uploadSession: { ...previous.uploadSession,
+          status: previous.uploadSession.status === 'ABORTED' ? 'ABORTED' : 'EXPIRED' } });
+    }
     this.records.set(object.id, { object, primaryLocation, uploadSession });
     await this.audit?.record(audit);
     return 'RESERVED';
@@ -202,17 +217,24 @@ class FakeObjects implements ObjectRepository {
       }));
   }
 
-  async listExpiredUploadsAwaitingCleanup(limit: number) {
-    return [...this.records.values()]
+  async listExpiredUploadsAwaitingCleanup(limit: number, cutoff: string) {
+    return [...this.records.values(), ...this.history.values()]
       .filter(
-        ({ object, uploadSession }) =>
-          object.status === 'PENDING' && uploadSession?.status === 'EXPIRED',
+        ({ uploadSession }) =>
+          uploadSession?.status === 'EXPIRED' &&
+          uploadSession.expiresAt <= cutoff,
       )
       .slice(0, limit)
       .map(({ object, uploadSession }) => ({
         objectId: object.id,
         uploadSessionId: uploadSession?.id ?? '',
       }));
+  }
+
+  async findUploadCleanupTarget(objectId: string, uploadSessionId: string) {
+    const aggregate = this.history.get(uploadSessionId) ?? this.records.get(objectId);
+    if (aggregate?.uploadSession?.id !== uploadSessionId) return undefined;
+    return { location: aggregate.primaryLocation, session: aggregate.uploadSession };
   }
 
   async completeUpload(
@@ -300,7 +322,7 @@ class FakeObjects implements ObjectRepository {
     uploadSessionId: string,
     audit: AuditLogEntry,
   ) {
-    const aggregate = this.records.get(objectId);
+    const aggregate = this.history.get(uploadSessionId) ?? this.records.get(objectId);
     if (!aggregate || aggregate.uploadSession?.id !== uploadSessionId) {
       return 'NOT_FOUND' as const;
     }
@@ -310,7 +332,8 @@ class FakeObjects implements ObjectRepository {
     if (aggregate.uploadSession.status !== 'EXPIRED') {
       return 'INVALID_STATE' as const;
     }
-    this.records.set(objectId, {
+    const target = this.history.has(uploadSessionId) ? this.history : this.records;
+    target.set(this.history.has(uploadSessionId) ? uploadSessionId : objectId, {
       ...aggregate,
       uploadSession: { ...aggregate.uploadSession, status: 'ABORTED' },
     });
@@ -452,7 +475,7 @@ function setup() {
     vault,
     audit,
     clock,
-    ids: { next: () => ['object-1', 'location-1', 'session-1'][id++]! },
+    ids: { next: () => ['object-1', 'location-1', 'session-1'][id++] ?? `retry-${id}` },
     provider,
   };
   return dependencies;
@@ -469,6 +492,90 @@ async function reserve(dependencies: ReturnType<typeof setup>) {
 }
 
 describe('object lifecycle use cases', () => {
+  it('retries a pending upload with a new session/key while preserving the namespace', async () => {
+    const dependencies = setup();
+    const first = await reserve(dependencies);
+    const oldKey = dependencies.provider.lastUpload?.key;
+    dependencies.accounts.findById = async () => ({ ...account, usedBytes: 228 });
+    dependencies.shards.findActiveByLogicalBucketId = async () => ({ ...shard, usedBytes: 228 });
+    const result = await new CreateUpload(dependencies).execute({
+      actorId: 'admin-1', bucketId: 'bucket-1', logicalKey: 'folder/file.bin',
+      sizeBytes: 64, contentType: 'text/plain', retryUploadSessionId: first.uploadSessionId,
+    });
+    expect(result.objectId).toBe(first.objectId);
+    expect(result.uploadSessionId).not.toBe(first.uploadSessionId);
+    expect(dependencies.provider.lastUpload?.key).not.toBe(oldKey);
+    expect(dependencies.objects.releasedCapacity).toBe(128);
+    expect(dependencies.audit.actions).toEqual(['OBJECT_UPLOAD_RESERVED', 'OBJECT_UPLOAD_RETRIED']);
+    await expect(new CompleteUpload(dependencies).execute({ actorId: 'admin-1',
+      objectId: first.objectId, uploadSessionId: first.uploadSessionId }))
+      .rejects.toMatchObject({ code: 'OBJECT_UPLOAD_NOT_FOUND' });
+    expect(dependencies.provider.headCalls).toBe(0);
+    await expect(new GetUploadSession(dependencies.objects).execute({ objectId: first.objectId }))
+      .resolves.toMatchObject({ id: result.uploadSessionId, status: 'PENDING' });
+  });
+
+  it.each(['READY', 'DELETING', 'DELETED'] as const)('never retries a %s object', async (status) => {
+    const dependencies = setup();
+    const first = await reserve(dependencies);
+    const aggregate = dependencies.objects.records.get(first.objectId)!;
+    dependencies.objects.records.set(first.objectId, { ...aggregate,
+      object: { ...aggregate.object, status } });
+    await expect(new CreateUpload(dependencies).execute({ actorId: 'admin-1',
+      bucketId: 'bucket-1', logicalKey: 'folder/file.bin', sizeBytes: 128,
+      contentType: 'text/plain', retryUploadSessionId: first.uploadSessionId }))
+      .rejects.toMatchObject({ code: 'OBJECT_INVALID_STATE' });
+    expect(dependencies.vault.decryptCalls).toBe(1);
+  });
+
+  it('rejects stale retry sessions before signing or releasing capacity', async () => {
+    const dependencies = setup();
+    await reserve(dependencies);
+    await expect(new CreateUpload(dependencies).execute({ actorId: 'admin-1',
+      bucketId: 'bucket-1', logicalKey: 'folder/file.bin', sizeBytes: 128,
+      contentType: 'text/plain', retryUploadSessionId: 'stale-session' }))
+      .rejects.toMatchObject({ code: 'OBJECT_CONFLICT' });
+    expect(dependencies.vault.decryptCalls).toBe(1);
+    expect(dependencies.objects.releasedCapacity).toBe(0);
+  });
+
+  it('credits the old pending reservation when retrying at the soft capacity limit', async () => {
+    const dependencies = setup();
+    const first = await reserve(dependencies);
+    dependencies.accounts.findById = async () => ({ ...account, usedBytes: 9000 });
+    dependencies.shards.findActiveByLogicalBucketId = async () => ({ ...shard, usedBytes: 9000 });
+    await expect(new CreateUpload(dependencies).execute({ actorId: 'admin-1',
+      bucketId: 'bucket-1', logicalKey: 'folder/file.bin', sizeBytes: 128,
+      contentType: 'text/plain', retryUploadSessionId: first.uploadSessionId }))
+      .resolves.toMatchObject({ objectId: first.objectId });
+  });
+
+  it('defers superseded cleanup until the old signature grace ends and preserves new READY bytes', async () => {
+    const dependencies = setup();
+    const first = await reserve(dependencies);
+    const oldKey = dependencies.provider.lastUpload?.key;
+    dependencies.accounts.findById = async () => ({ ...account, usedBytes: 228 });
+    dependencies.shards.findActiveByLogicalBucketId = async () => ({ ...shard, usedBytes: 228 });
+    const retried = await new CreateUpload(dependencies).execute({ actorId: 'admin-1',
+      bucketId: 'bucket-1', logicalKey: 'folder/file.bin', sizeBytes: 128,
+      contentType: 'text/plain', retryUploadSessionId: first.uploadSessionId });
+    await new CompleteUpload(dependencies).execute({ actorId: 'admin-1', objectId: first.objectId,
+      uploadSessionId: retried.uploadSessionId });
+    const sweep = new SweepExpiredUploads(dependencies);
+    dependencies.clock.now = () => new Date('2026-01-01T00:19:59.999Z');
+    expect((await sweep.execute()).cleanupCandidates).toBe(0);
+    dependencies.clock.now = () => new Date('2026-01-01T00:20:00.000Z');
+    const deletedKeys: string[] = [];
+    dependencies.provider.deleteObject = async (request) => { deletedKeys.push(request.key); };
+    expect((await sweep.execute()).cleaned).toBe(1);
+    expect(deletedKeys).toEqual([oldKey]);
+    expect(dependencies.objects.records.get(first.objectId)).toMatchObject({
+      object: { status: 'READY' }, uploadSession: { id: retried.uploadSessionId, status: 'COMPLETED' },
+    });
+    expect(dependencies.objects.releasedCapacity).toBe(128);
+    expect((await sweep.execute()).cleaned).toBe(0);
+  });
+
   it('resolves the physical target only through the active shard and reserves atomically after signing', async () => {
     const dependencies = setup();
     dependencies.provider.events = dependencies.objects.events;

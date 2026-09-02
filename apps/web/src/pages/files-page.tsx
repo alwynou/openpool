@@ -1,4 +1,4 @@
-import { DownloadSimpleIcon, FileIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, DownloadSimpleIcon, FileIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import type { ObjectMetadataResponse } from '@openpool/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
@@ -8,6 +8,19 @@ import { toast } from 'sonner';
 import { api } from '../api';
 import { ConfirmDialog } from '../components/dialogs';
 import { errorRequestId, errorText, formatBytes, formatDate } from '../lib/utils';
+import {
+  canRetryObject,
+  captureUploadInput,
+  retryTargetFromObject,
+  uploadFailureCause,
+  uploadFailureGuidance,
+  retryStepAfterFailure,
+  runUploadWorkflow,
+  UploadStepError,
+  type UploadAttempt,
+  type UploadInputSnapshot,
+  type UploadRetryTarget,
+} from '../lib/upload-workflow';
 import { queryKeys, useBuckets } from '../queries';
 import { Button, EmptyState, ErrorNotice, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
 
@@ -21,24 +34,47 @@ export function FilesPage() {
   const objectsQuery = useQuery({ queryKey: queryKeys.objects(bucketId), queryFn: async () => [...await api.listObjects(bucketId)], enabled: Boolean(bucketId) });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [logicalKey, setLogicalKey] = useState('');
+  const [retryTarget, setRetryTarget] = useState<UploadRetryTarget | null>(null);
+  const [activeAttempt, setActiveAttempt] = useState<UploadAttempt | null>(null);
+  const [uploadError, setUploadError] = useState<{ readonly cause: unknown; readonly step: 'create' | 'upload' | 'complete' } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ObjectMetadataResponse | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedFile || !bucketId) throw new Error('Choose a file before uploading.');
-      const key = logicalKey.trim() || selectedFile.name;
-      const contentType = selectedFile.type || 'application/octet-stream';
-      const signed = await api.createUpload(bucketId, key, selectedFile);
-      await api.uploadDirect(signed.uploadUrl, selectedFile, contentType);
-      return api.completeUpload(signed.objectId, signed.uploadSessionId);
+    mutationFn: async (input: {
+      readonly snapshot: UploadInputSnapshot;
+      readonly mode: 'new' | 'retry' | 'complete';
+      readonly target?: UploadRetryTarget;
+      readonly attempt?: UploadAttempt;
+    }) => {
+      return runUploadWorkflow(api, input, setActiveAttempt);
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, input) => {
+      setActiveAttempt(null);
+      setRetryTarget(null);
+      setUploadError(null);
       setSelectedFile(null);
       setLogicalKey('');
       if (fileInput.current) fileInput.current.value = '';
-      await queryClient.invalidateQueries({ queryKey: queryKeys.objects(bucketId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.objects(input.snapshot.bucketId) });
       toast.success('Upload complete', { description: 'The file moved directly to the active provider shard.' });
+    },
+    onError: async (error, input) => {
+      const workflowError = error instanceof UploadStepError ? error : null;
+      const cause = uploadFailureCause(workflowError?.cause ?? error);
+      const nextStep = workflowError ? retryStepAfterFailure(cause, workflowError.step) : 'create';
+      const attempt = workflowError?.attempt && nextStep === 'upload'
+        ? { ...workflowError.attempt, step: 'upload' as const }
+        : workflowError?.attempt;
+      if (attempt) {
+        setActiveAttempt(attempt);
+        setRetryTarget(attempt.target);
+      }
+      setUploadError({
+        cause,
+        step: workflowError?.step ?? 'create',
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.objects(input.snapshot.bucketId) });
     },
   });
   const downloadMutation = useMutation({
@@ -55,12 +91,54 @@ export function FilesPage() {
     },
   });
 
+  const isBusy = uploadMutation.isPending;
+  const selectRetryTarget = (object: ObjectMetadataResponse) => {
+    if (!canRetryObject(object) || isBusy) return;
+    const target = retryTargetFromObject(bucketId, object);
+    const sameTarget = retryTarget?.objectId === object.id;
+    setActiveAttempt(null);
+    setRetryTarget(target);
+    setLogicalKey(target.logicalKey);
+    setUploadError(null);
+    if (!sameTarget) {
+      setSelectedFile(null);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  };
+  const clearRetryTarget = () => {
+    if (isBusy) return;
+    setRetryTarget(null);
+    setActiveAttempt(null);
+    setUploadError(null);
+  };
+  const submitUpload = () => {
+    if (!selectedFile || !bucketId) return;
+    const target = retryTarget;
+    const snapshot = captureUploadInput(
+      target?.bucketId ?? bucketId,
+      target?.logicalKey ?? logicalKey,
+      selectedFile,
+      target ? { preserveLogicalKey: true } : undefined,
+    );
+    setUploadError(null);
+    if (target && activeAttempt?.target.objectId === target.objectId && activeAttempt.step === 'complete') {
+      uploadMutation.mutate({ snapshot, mode: 'complete', target, attempt: activeAttempt });
+      return;
+    }
+    uploadMutation.mutate({ snapshot, mode: target ? 'retry' : 'new', ...(target ? { target } : {}) });
+  };
+  const uploadButtonLabel = activeAttempt?.step === 'complete' && retryTarget
+    ? 'Retry confirmation'
+    : retryTarget
+      ? 'Retry upload'
+      : 'Upload';
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Files"
         detail="Upload and manage logical objects while bytes transfer directly between the browser and provider."
-        action={buckets.length ? <label><span className="sr-only">Logical bucket</span><select className={`${selectClassName} min-w-52`} value={bucketId} onChange={(event) => setSearchParams({ bucket: event.target.value })}>{buckets.map((bucket) => <option value={bucket.id} key={bucket.id}>{bucket.name}</option>)}</select></label> : undefined}
+        action={buckets.length ? <label><span className="sr-only">Logical bucket</span><select className={`${selectClassName} min-w-52`} value={bucketId} disabled={isBusy || retryTarget !== null} onChange={(event) => setSearchParams({ bucket: event.target.value })}>{buckets.map((bucket) => <option value={bucket.id} key={bucket.id}>{bucket.name}</option>)}</select></label> : undefined}
       />
       {bucketsQuery.error ? <ErrorNotice error={errorText(bucketsQuery.error)} requestId={errorRequestId(bucketsQuery.error)} onRetry={() => void bucketsQuery.refetch()} /> : null}
       {bucketsQuery.isLoading ? <LoadingState rows={3} /> : null}
@@ -70,17 +148,19 @@ export function FilesPage() {
           <section
             className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50/50 p-5 transition-colors focus-within:border-zinc-500"
             onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) setSelectedFile(file); }}
+            onDrop={(event) => { event.preventDefault(); if (isBusy) return; const file = event.dataTransfer.files[0]; if (file) setSelectedFile(file); }}
           >
             <div className="flex flex-col gap-5 xl:flex-row xl:items-end">
               <div className="flex flex-1 items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white"><UploadSimpleIcon className="size-5" aria-hidden /></span><div><h2 className="text-sm font-semibold text-zinc-950">Upload a file</h2><p className="mt-1 text-xs leading-5 text-zinc-500">Drop a file here or choose one below. The Worker never receives its bytes.</p></div></div>
               <div className="grid flex-[1.5] gap-3 sm:grid-cols-[1fr_1.2fr_auto] sm:items-end">
-                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">Logical key<Input value={logicalKey} onChange={(event) => setLogicalKey(event.target.value)} placeholder={selectedFile?.name ?? 'reports/2026.pdf'} /></label>
-                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">File<Input ref={fileInput} type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} /></label>
-                <Button type="button" busy={uploadMutation.isPending} disabled={!selectedFile} onClick={() => uploadMutation.mutate()}>Upload</Button>
+                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">Logical key<Input value={logicalKey} disabled={isBusy || retryTarget !== null} onChange={(event) => setLogicalKey(event.target.value)} placeholder={selectedFile?.name ?? 'reports/2026.pdf'} /></label>
+                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">File<Input ref={fileInput} type="file" disabled={isBusy} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} /></label>
+                <Button type="button" busy={isBusy} disabled={!selectedFile} onClick={submitUpload}>{uploadButtonLabel}</Button>
               </div>
             </div>
-            {uploadMutation.error ? <div className="mt-4"><ErrorNotice error={errorText(uploadMutation.error)} requestId={errorRequestId(uploadMutation.error)} /></div> : null}
+            {retryTarget ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800"><span>Retrying <strong>{retryTarget.logicalKey}</strong>. The logical key and bucket are fixed for this retry.</span><Button type="button" variant="ghost" size="compact" disabled={isBusy} onClick={clearRetryTarget}>Choose a new upload</Button></div> : null}
+            {retryTarget && !selectedFile ? <p className="mt-3 text-xs text-zinc-500">Select the original or replacement file to continue this pending upload. Browsers cannot restore a file after a reload.</p> : null}
+            {uploadError ? <div className="mt-4"><ErrorNotice error={`${errorText(uploadError.cause)} ${uploadFailureGuidance(uploadError.cause, uploadError.step)}`} requestId={errorRequestId(uploadError.cause)} /></div> : null}
           </section>
 
           {objectsQuery.error ? <ErrorNotice error={errorText(objectsQuery.error)} requestId={errorRequestId(objectsQuery.error)} onRetry={() => void objectsQuery.refetch()} /> : null}
@@ -90,7 +170,7 @@ export function FilesPage() {
             <div className="overflow-x-auto rounded-lg border border-zinc-200">
               <table className="w-full min-w-[760px] border-collapse text-left">
                 <thead className="bg-zinc-50/70"><tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase"><th className="px-5 py-3.5">File</th><th className="px-5 py-3.5">Size</th><th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5">Updated</th><th className="px-5 py-3.5"><span className="sr-only">Actions</span></th></tr></thead>
-                <tbody>{objectsQuery.data?.map((object) => <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60" key={object.id}><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md border border-zinc-200"><FileIcon className="size-4" aria-hidden /></span><div className="min-w-0"><p className="max-w-md truncate text-sm font-medium text-zinc-900">{object.logicalKey}</p><p className="mt-1 text-xs text-zinc-500">{object.contentType}</p></div></div></td><td className="px-5 py-4 text-sm text-zinc-700">{formatBytes(object.sizeBytes)}</td><td className="px-5 py-4"><StatusBadge value={object.status} /></td><td className="px-5 py-4 text-sm text-zinc-500">{formatDate(object.updatedAt)}</td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button type="button" size="icon" variant="ghost" aria-label={`Download ${object.logicalKey}`} disabled={object.status !== 'READY'} busy={downloadMutation.isPending && downloadMutation.variables?.id === object.id} onClick={() => downloadMutation.mutate(object)}><DownloadSimpleIcon className="size-4" aria-hidden /></Button><Button type="button" size="icon" variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" aria-label={`Delete ${object.logicalKey}`} disabled={object.status !== 'READY' && object.status !== 'DELETING'} onClick={() => setPendingDelete(object)}><TrashIcon className="size-4" aria-hidden /></Button></div></td></tr>)}</tbody>
+                <tbody>{objectsQuery.data?.map((object) => <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60" key={object.id}><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md border border-zinc-200"><FileIcon className="size-4" aria-hidden /></span><div className="min-w-0"><p className="max-w-md truncate text-sm font-medium text-zinc-900">{object.logicalKey}</p><p className="mt-1 text-xs text-zinc-500">{object.contentType}</p></div></div></td><td className="px-5 py-4 text-sm text-zinc-700">{formatBytes(object.sizeBytes)}</td><td className="px-5 py-4"><StatusBadge value={object.status} /></td><td className="px-5 py-4 text-sm text-zinc-500">{formatDate(object.updatedAt)}</td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button type="button" size="compact" variant="ghost" disabled={!canRetryObject(object) || isBusy} onClick={() => selectRetryTarget(object)}><ArrowClockwiseIcon className="size-4" aria-hidden />Retry</Button><Button type="button" size="icon" variant="ghost" aria-label={`Download ${object.logicalKey}`} disabled={object.status !== 'READY'} busy={downloadMutation.isPending && downloadMutation.variables?.id === object.id} onClick={() => downloadMutation.mutate(object)}><DownloadSimpleIcon className="size-4" aria-hidden /></Button><Button type="button" size="icon" variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" aria-label={`Delete ${object.logicalKey}`} disabled={object.status !== 'READY' && object.status !== 'DELETING'} onClick={() => setPendingDelete(object)}><TrashIcon className="size-4" aria-hidden /></Button></div></td></tr>)}</tbody>
               </table>
             </div>
           ) : null}

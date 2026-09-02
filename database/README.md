@@ -7,9 +7,14 @@
 3. `0003_object_capacity_reservations.sql`：upload session 唯一约束、D1 断言和容量预留/释放触发器；
 4. `0004_shard_migrations.sql`：durable shard migration、对象任务、租约、目标双重容量预留与条件断言。
 5. `0005_transactional_audit_outbox.sql`：事务审计 outbox、lease/退避与 event-id 幂等投递。
+6. `0006_upload_retries.sql`：当前 upload session 部分唯一约束、历史尝试 location 绑定与重试保护。
 
 2026-09-02 已经项目所有者授权，将 staging 从 0003 升至 0005；本地持久化 D1 未在本次操作中迁移。
 `0004`、`0005` 现已发布，后续修复必须新增迁移，不得再编辑原文件。
+
+`0006` 仅在隔离测试数据库验证，尚未应用到本地持久化或 staging D1。应用 0006 后再部署本次
+Worker/Web；旧版本不能读取重试产生的多个 session，启用后应前滚修复，不直接回滚旧 Worker。
+未获得新授权前，不执行任何持久化 migration 或部署；此前 staging 0004/0005 的授权不覆盖本次升级。
 
 ```bash
 npm run db:migrate:local

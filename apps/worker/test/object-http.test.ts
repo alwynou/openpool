@@ -295,6 +295,7 @@ async function createUpload(
   storage: ProvisionedStorage,
   logicalKey: string,
   sizeBytes = 512,
+  retryUploadSessionId?: string,
 ): Promise<{ readonly response: Response; readonly body: UploadResponse }> {
   const response = await jsonRequest(
     '/api/v1/uploads',
@@ -304,6 +305,7 @@ async function createUpload(
       logicalKey,
       sizeBytes,
       contentType: 'application/octet-stream',
+      ...(retryUploadSessionId === undefined ? {} : { retryUploadSessionId }),
     },
     storage.cookie,
   );
@@ -330,6 +332,136 @@ beforeEach(async () => {
 });
 
 describe('object HTTP composition', () => {
+  it('retries a pending upload with the same logical identity and isolates old sessions', async () => {
+    const storage = await provisionStorage(0);
+    const first = await createUpload(storage, 'reports/retry.bin');
+    expect(first.response.status).toBe(201);
+
+    const retry = await createUpload(
+      storage,
+      'reports/retry.bin',
+      512,
+      first.body.data.uploadSessionId,
+    );
+    expect(retry.response.status).toBe(201);
+    expect(retry.body.data.objectId).toBe(first.body.data.objectId);
+    expect(retry.body.data.uploadSessionId).not.toBe(
+      first.body.data.uploadSessionId,
+    );
+    expect(retry.body.data.uploadUrl).toBe(uploadUrl);
+    expect(createUploadUrl).toHaveBeenCalledTimes(2);
+
+    const attempts = await testEnv.DB.prepare(
+      `SELECT session.id, session.status, session.is_current,
+              location.id AS location_id, location.is_primary,
+              location.physical_key
+       FROM upload_sessions AS session
+       JOIN object_locations AS location ON location.id = session.location_id
+       WHERE session.object_id = ?
+       ORDER BY session.created_at ASC, session.id ASC`,
+    )
+      .bind(first.body.data.objectId)
+      .all<{
+        id: string;
+        status: string;
+        is_current: number;
+        location_id: string;
+        is_primary: number;
+        physical_key: string;
+    }>();
+    expect(attempts.results).toHaveLength(2);
+    const oldAttempt = attempts.results.find(
+      (attempt) => attempt.id === first.body.data.uploadSessionId,
+    );
+    const newAttempt = attempts.results.find(
+      (attempt) => attempt.id === retry.body.data.uploadSessionId,
+    );
+    expect(oldAttempt).toMatchObject({
+      id: first.body.data.uploadSessionId,
+      status: 'EXPIRED',
+      is_current: 0,
+      is_primary: 0,
+    });
+    expect(newAttempt).toMatchObject({
+      id: retry.body.data.uploadSessionId,
+      status: 'PENDING',
+      is_current: 1,
+      is_primary: 1,
+    });
+    expect(oldAttempt?.physical_key).not.toBe(newAttempt?.physical_key);
+
+    const counters = await testEnv.DB.prepare(
+      `SELECT account.used_bytes AS account_used_bytes,
+              shard.used_bytes AS shard_used_bytes
+       FROM storage_accounts AS account
+       JOIN storage_shards AS shard ON shard.storage_account_id = account.id
+       WHERE account.id = ? AND shard.id = ?`,
+    )
+      .bind(storage.accountId, storage.shardId)
+      .first<{ account_used_bytes: number; shard_used_bytes: number }>();
+    expect(counters).toEqual({ account_used_bytes: 512, shard_used_bytes: 512 });
+
+    const current = await dispatch(
+      `/api/v1/uploads/${first.body.data.objectId}`,
+      { headers: { cookie: storage.cookie } },
+    );
+    expect(current.status).toBe(200);
+    const currentText = await current.text();
+    expectSafeObjectResponse(current, currentText);
+    expect(JSON.parse(currentText)).toEqual({
+      data: {
+        objectId: first.body.data.objectId,
+        uploadSessionId: retry.body.data.uploadSessionId,
+        status: 'PENDING',
+        expiresAt: uploadExpiresAt,
+      },
+      requestId: expect.any(String),
+    });
+
+    const oldCompletion = await jsonRequest(
+      `/api/v1/uploads/${first.body.data.objectId}/complete`,
+      'POST',
+      { uploadSessionId: first.body.data.uploadSessionId },
+      storage.cookie,
+    );
+    expect(oldCompletion.status).toBe(404);
+    expect(await oldCompletion.json()).toMatchObject({
+      error: { code: 'OBJECT_UPLOAD_NOT_FOUND' },
+    });
+    expect(headObject).not.toHaveBeenCalled();
+
+    const completed = await jsonRequest(
+      `/api/v1/uploads/${retry.body.data.objectId}/complete`,
+      'POST',
+      { uploadSessionId: retry.body.data.uploadSessionId },
+      storage.cookie,
+    );
+    expect(completed.status).toBe(200);
+    const completedText = await completed.text();
+    expectSafeObjectResponse(completed, completedText);
+    expect(JSON.parse(completedText)).toMatchObject({
+      data: {
+        object: {
+          id: first.body.data.objectId,
+          logicalKey: 'reports/retry.bin',
+          status: 'READY',
+        },
+        uploadSessionId: retry.body.data.uploadSessionId,
+        alreadyCompleted: false,
+      },
+    });
+
+    const repeated = await jsonRequest(
+      `/api/v1/uploads/${retry.body.data.objectId}/complete`,
+      'POST',
+      { uploadSessionId: retry.body.data.uploadSessionId },
+      storage.cookie,
+    );
+    expect(repeated.status).toBe(200);
+    expect((await repeated.json()).data.alreadyCompleted).toBe(true);
+    expect(headObject).toHaveBeenCalledOnce();
+  });
+
   it('runs the direct-transfer object lifecycle and releases capacity once', async () => {
     const storage = await provisionStorage();
     const upload = await createUpload(storage, 'reports/annual.bin');

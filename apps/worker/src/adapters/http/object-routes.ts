@@ -5,6 +5,7 @@ import {
   type CreateUpload,
   type DeleteObject,
   type GetObjectMetadata,
+  type GetUploadSession,
   type ListObjectMetadata,
 } from '@openpool/application';
 import type {
@@ -19,6 +20,7 @@ import type {
   ObjectErrorCode,
   ObjectMetadataResponse,
   ObjectStatus,
+  UploadSessionResponse,
 } from '@openpool/contracts';
 import {
   ProviderError,
@@ -48,6 +50,7 @@ export interface ObjectUseCases {
   readonly completeUpload: Pick<CompleteUpload, 'execute'>;
   readonly listObjects: Pick<ListObjectMetadata, 'execute'>;
   readonly getObject: Pick<GetObjectMetadata, 'execute'>;
+  readonly getUpload: Pick<GetUploadSession, 'execute'>;
   readonly createDownload: Pick<CreateDownload, 'execute'>;
   readonly deleteObject: Pick<DeleteObject, 'execute'>;
 }
@@ -114,13 +117,16 @@ function parseCreateUploadRequest(
       'logicalKey',
       'sizeBytes',
       'contentType',
+      ...(Object.hasOwn(value, 'retryUploadSessionId') ? ['retryUploadSessionId'] : []),
     ]) ||
     typeof value.bucketId !== 'string' ||
     typeof value.logicalKey !== 'string' ||
     typeof value.sizeBytes !== 'number' ||
     !Number.isSafeInteger(value.sizeBytes) ||
     value.sizeBytes < 0 ||
-    typeof value.contentType !== 'string'
+    typeof value.contentType !== 'string' ||
+    (Object.hasOwn(value, 'retryUploadSessionId') &&
+      (typeof value.retryUploadSessionId !== 'string' || !value.retryUploadSessionId.trim()))
   ) {
     return undefined;
   }
@@ -129,6 +135,8 @@ function parseCreateUploadRequest(
     logicalKey: value.logicalKey,
     sizeBytes: value.sizeBytes,
     contentType: value.contentType,
+    ...(typeof value.retryUploadSessionId === 'string'
+      ? { retryUploadSessionId: value.retryUploadSessionId } : {}),
   };
 }
 
@@ -570,6 +578,27 @@ export function registerObjectRoutes(
         return context.json(response, 201);
       },
     );
+  });
+
+  app.get('/api/v1/uploads/:objectId', async (context) => {
+    const requestId = context.get('requestId');
+    const principal = await requirePrincipal(context, dependencies, requestId);
+    if (principal instanceof Response) return principal;
+    if (!hasNoQuery(context.req.raw)) return invalidRequest(context, requestId);
+    const useCases = dependencies.createObjectUseCases(context.env, requestId);
+    const objectId = context.req.param('objectId');
+    const object = await loadObject(context, requestId, useCases, objectId);
+    if (object instanceof Response) return object;
+    const forbidden = await requireAuthorization(context, dependencies, requestId, principal, {
+      action: 'objects:upload', logicalBucketId: object.logicalBucketId, logicalKey: object.logicalKey,
+    });
+    if (forbidden) return forbidden;
+    return runObjectOperation(context, requestId, () => useCases.getUpload.execute({ objectId }),
+      (session) => {
+        const data: UploadSessionResponse = { objectId: session.objectId,
+          uploadSessionId: session.id, status: session.status, expiresAt: session.expiresAt };
+        return context.json({ data, requestId } satisfies ApiEnvelope<UploadSessionResponse>);
+      });
   });
 
   app.post('/api/v1/uploads/:objectId/complete', async (context) => {

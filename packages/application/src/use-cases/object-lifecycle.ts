@@ -63,7 +63,7 @@ async function requireProviderContext(
     ObjectProviderDependencies,
     'accounts' | 'providers'
   >,
-  aggregate: ObjectAggregate,
+  aggregate: Pick<ObjectAggregate, 'primaryLocation'>,
   capability: 'presignedDownload' | 'headObject' | 'deleteObject',
 ) {
   const account = await dependencies.accounts.findById(
@@ -303,21 +303,23 @@ export class SweepExpiredUploads {
     const cleanup =
       await this.dependencies.objects.listExpiredUploadsAwaitingCleanup(
         EXPIRY_SWEEP_BATCH_LIMIT,
+        cutoff,
       );
     for (const candidate of cleanup) {
       try {
-        const aggregate = await requireAggregate(
-          this.dependencies.objects,
+        const target = await this.dependencies.objects.findUploadCleanupTarget(
           candidate.objectId,
-        );
-        const session = requireUploadSession(
-          aggregate,
           candidate.uploadSessionId,
         );
-        if (session.status !== 'EXPIRED') continue;
+        if (!target || target.session.status !== 'EXPIRED') continue;
+        const signatureExpiry = Date.parse(target.session.expiresAt);
+        if (!Number.isFinite(signatureExpiry)) {
+          throw objectError('OBJECT_PROVIDER_RESPONSE_INVALID', 'Upload expiry is invalid');
+        }
+        if (signatureExpiry > Date.parse(cutoff)) continue;
         const { account, provider } = await requireProviderContext(
           this.dependencies,
-          aggregate,
+          { primaryLocation: target.location },
           'deleteObject',
         );
         await provider.deleteObject({
@@ -325,8 +327,8 @@ export class SweepExpiredUploads {
           credentials: await this.dependencies.vault.decrypt(
             account.credentialEnvelope,
           ),
-          bucket: aggregate.primaryLocation.physicalBucket,
-          key: aggregate.primaryLocation.physicalKey,
+          bucket: target.location.physicalBucket,
+          key: target.location.physicalKey,
         });
         const result =
           await this.dependencies.objects.finishExpiredUploadCleanup(
@@ -357,6 +359,19 @@ export class SweepExpiredUploads {
       cleaned,
       failed,
     };
+  }
+}
+
+export class GetUploadSession {
+  constructor(private readonly objects: Pick<ObjectRepository, 'findById'>) {}
+
+  async execute(query: { readonly objectId: string }): Promise<UploadSession> {
+    assertIdentifier(query.objectId, 'Object');
+    const aggregate = await requireAggregate(this.objects, query.objectId);
+    if (!aggregate.uploadSession) {
+      throw objectError('OBJECT_UPLOAD_NOT_FOUND', 'Upload session was not found');
+    }
+    return aggregate.uploadSession;
   }
 }
 

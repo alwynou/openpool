@@ -86,6 +86,25 @@ const response = await client.downloadObject(completed.object.id);
 SDK 不自动重试请求。调用方可以按服务端既有幂等语义重试 `completeUpload` 和 `deleteObject`；不要
 默认重试 reserve 等非幂等控制请求。
 
+新 Worker 与 `0006` 支持显式重试未完成上传。`getUpload(objectId)` 返回当前 session 摘要；调用
+`createUpload` 时传 `retryUploadSessionId`，然后使用返回的**新** URL/session 直传与完成：
+
+```ts
+const session = await client.getUpload(objectId);
+const retry = await client.createUpload({
+  bucketId,
+  logicalKey,
+  sizeBytes: file.size,
+  contentType: file.type || 'application/octet-stream',
+  retryUploadSessionId: session.uploadSessionId,
+});
+await client.uploadDirect(retry.uploadUrl, file, file.type || 'application/octet-stream');
+await client.completeUpload(retry.objectId, { uploadSessionId: retry.uploadSessionId });
+```
+
+仅未完成 object 可重试；若 session 已 COMPLETED，应确认完成状态，而非执行上面的重传流程。
+相同 expected session 的重试只有一个成功；响应不明时先查询，SDK 不自动创建新尝试。
+
 当前方法覆盖 health/setup 状态、Storage Account、Logical Bucket、Storage Shard、API Key、审计查询，
 以及对象列表/元数据、reserve/complete、签名下载和删除。Web 管理控制台复用同一客户端，登录/初始化
 和 Shard Migration 暂时保留专用请求路径。公开发布、Node 管理员认证、自动重试与通用 CLI 仍需单独

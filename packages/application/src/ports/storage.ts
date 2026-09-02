@@ -194,12 +194,15 @@ export interface ObjectRepository {
    * Atomically inserts all upload records and reserves sizeBytes against both
    * the shard and account. The adapter must enforce namespace and capacity
    * constraints inside the same transaction.
+   * With retryUploadSessionId, conditionally replaces that current unfinished
+   * attempt, releasing its old reservation before updating size/placement.
    */
   reserveUploadAndCapacity(
     object: StoredObject,
     location: ObjectLocation,
     session: UploadSession,
     audit: AuditLogEntry,
+    retryUploadSessionId?: string,
   ): Promise<ObjectReservationResult>;
   findById(id: string): Promise<ObjectAggregate | undefined>;
   findByLogicalKey(
@@ -212,10 +215,16 @@ export interface ObjectRepository {
     expiredAtOrBefore: string,
     limit: number,
   ): Promise<readonly ExpiredUploadCandidate[]>;
-  /** Returns expired sessions whose provider object still needs cleanup. */
+  /** Includes superseded attempts; cutoff must include the signed-URL grace. */
   listExpiredUploadsAwaitingCleanup(
     limit: number,
+    expiredAtOrBefore: string,
   ): Promise<readonly ExpiredUploadCandidate[]>;
+  /** Uses the attempt's immutable location, never the object's current primary. */
+  findUploadCleanupTarget(
+    objectId: string,
+    uploadSessionId: string,
+  ): Promise<{ readonly location: ObjectLocation; readonly session: UploadSession } | undefined>;
   /** Atomically transitions PENDING/READY and PENDING/COMPLETED. */
   completeUpload(
     objectId: string,

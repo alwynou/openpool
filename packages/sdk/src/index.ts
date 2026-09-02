@@ -24,4 +24,5 @@ export type {
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
+  UploadSessionResponse,
 } from '@openpool/contracts';

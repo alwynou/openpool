@@ -5,6 +5,15 @@ export interface CreateUploadRequest {
   readonly logicalKey: string;
   readonly sizeBytes: number;
   readonly contentType: string;
+  /** Explicitly replace this current unfinished session; never overwrite READY. */
+  readonly retryUploadSessionId?: string;
+}
+
+export interface UploadSessionResponse {
+  readonly objectId: string;
+  readonly uploadSessionId: string;
+  readonly status: 'PENDING' | 'COMPLETED' | 'EXPIRED' | 'ABORTED';
+  readonly expiresAt: string;
 }
 
 /** A signed URL is returned only for the direct provider upload. */

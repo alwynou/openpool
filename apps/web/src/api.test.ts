@@ -114,4 +114,46 @@ describe('web API adapter', () => {
     expect(new Headers(calls[0]?.init?.headers).get('content-type')).toBe('text/plain');
     expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBeNull();
   });
+
+  it('passes an explicit prior upload session when creating a retry', async () => {
+    const file = new File(['object bytes'], 'notes.txt', { type: 'text/plain' });
+    const reservation = {
+      objectId: 'object-1',
+      uploadSessionId: 'upload-session-2',
+      uploadUrl: 'https://provider.example/object-1?signature=retry',
+      expiresAt: '2026-09-01T00:10:00.000Z',
+    };
+    fetchMock.mockImplementationOnce(async (input, init) => {
+      calls.push({ input, init });
+      return responseWithBody({ data: reservation, requestId: 'request-retry' }, 201);
+    });
+
+    await expect(webApi.api.createUpload('bucket-1', 'notes.txt', file, 'upload-session-1')).resolves.toEqual(reservation);
+
+    expect(String(calls[0]?.input)).toBe('https://web.example/api/v1/uploads');
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      bucketId: 'bucket-1',
+      logicalKey: 'notes.txt',
+      sizeBytes: file.size,
+      contentType: 'text/plain',
+      retryUploadSessionId: 'upload-session-1',
+    });
+  });
+
+  it('gets upload session state through the encoded control-plane route', async () => {
+    const session = {
+      objectId: 'object/1',
+      uploadSessionId: 'upload-session-1',
+      status: 'PENDING',
+      expiresAt: '2026-09-01T00:10:00.000Z',
+    };
+    fetchMock.mockImplementationOnce(async (input, init) => {
+      calls.push({ input, init });
+      return responseWithBody({ data: session, requestId: 'request-session' });
+    });
+
+    await expect(webApi.api.getUpload('object/1')).resolves.toEqual(session);
+    expect(String(calls[0]?.input)).toBe('https://web.example/api/v1/uploads/object%2F1');
+    expect(calls[0]?.init?.method).toBe('GET');
+  });
 });

@@ -23,6 +23,7 @@ import type {
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
+  UploadSessionResponse,
 } from '@openpool/contracts';
 
 import {
@@ -206,6 +207,10 @@ export class OpenPoolClient {
 
   health(options: OpenPoolRequestOptions = {}): Promise<HealthResponse> {
     return this.request('/api/v1/health', 'GET', undefined, options);
+  }
+
+  getUpload(objectId: string, options: OpenPoolRequestOptions = {}): Promise<UploadSessionResponse> {
+    return this.request(`/api/v1/uploads/${encodeURIComponent(objectId)}`, 'GET', undefined, options);
   }
 
   setupStatus(

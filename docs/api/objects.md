@@ -48,6 +48,46 @@ upload session，并同时预留 Storage Account 与 shard 容量。若预留发
 再经过 5 分钟 grace 的 `PENDING` session 会原子标为 `EXPIRED` 并只释放一次预留容量，随后尝试删除
 Provider 残留，成功后标为 `ABORTED`。Provider 删除失败时保留 `EXPIRED`，由下次 cron 重试。
 
+### 失败／过期后重试（需要 0006 migration 与新 Worker）
+
+`GET /api/v1/uploads/:objectId` 返回当前尝试摘要：
+
+```json
+{
+  "data": {
+    "objectId": "object-id",
+    "uploadSessionId": "previous-session-id",
+    "status": "ABORTED",
+    "expiresAt": "2026-09-01T00:15:00.000Z"
+  },
+  "requestId": "request-id"
+}
+```
+
+该查询也要求 `objects:upload` scope 和相应 Bucket/path 授权，不返回签名 URL 或物理位置。
+若 PUT 成功但 complete 响应丢失，先重试原 complete；若需要重新发送文件，显式创建新尝试：
+
+```json
+{
+  "bucketId": "logical-bucket-id",
+  "logicalKey": "reports/2026.pdf",
+  "sizeBytes": 123456,
+  "contentType": "application/pdf",
+  "retryUploadSessionId": "previous-session-id"
+}
+```
+
+仍发送到 `POST /api/v1/uploads`，成功仍为 `201 CreateUploadResponse`。只允许 object 为 PENDING，
+当前 session 为 PENDING/EXPIRED/ABORTED；新文件可有不同大小或 contentType，但 object ID、Bucket、
+logical key 保持不变。新 session ID 和 physical key 独立；旧 session 不能完成新上传，旧清理不会
+删除新位置。旧 signed PUT 原有效期加 grace 结束后才清理旧文件，即使新对象已经 READY/DELETED。
+
+携带过时 session ID 返回 `409 OBJECT_CONFLICT`；READY/DELETING/DELETED 返回
+`409 OBJECT_INVALID_STATE`。不带 retry ID 的同路径创建仍返回 `409 OBJECT_ALREADY_EXISTS`。
+重试事务失败不释放旧预留、不改变旧会话、不追加成功审计；成功时旧预留只释放一次，新预留和
+`OBJECT_UPLOAD_RETRIED` 审计同事务提交。并发相同 retry 请求仅一个成功，不能将其当作幂等创建；
+若响应丢失，先查询当前状态再决定是否创建下一次尝试。此功能不允许覆盖已完成文件或复用 DELETED 路径。
+
 ## 查询、下载与删除
 
 - `GET /api/v1/buckets/:bucketId/objects`：按 logical key 稳定排序；支持 `status`、`prefix`、

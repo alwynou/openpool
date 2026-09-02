@@ -20,6 +20,7 @@ import {
   GetSetupStatus,
   GetLogicalBucket,
   GetObjectMetadata,
+  GetUploadSession,
   InitializeAdministrator,
   ListStorageAccounts,
   ListApiKeys,
@@ -225,6 +226,7 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       completeUpload: new CompleteUpload(common),
       listObjects: new ListObjectMetadata(objects),
       getObject: new GetObjectMetadata(objects),
+      getUpload: new GetUploadSession(objects),
       createDownload: new CreateDownload({ ...common, audit: auditOutbox }),
       deleteObject: new DeleteObject(common),
     };

@@ -77,8 +77,9 @@ V1 控制面支持单管理员、R2/B2/Generic S3、逻辑 Bucket、文件元数
 完整 S3 Gateway、GitHub Provider、自动迁移、多副本、多用户、计费与复杂 RBAC 不属于
 V1。
 
-V1 的已知限制：过期 `PENDING` tombstone 会保留以供审计，因此同一 logical key 不能立即复用；
-后续需要 retry/version namespace design。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
+上传失败／过期后的显式重试已本地实现：保留同一 object ID/logical key，生成新 session/物理位置，
+旧尝试独立清理。需要 `0006` migration 和新 Worker/Web，尚未部署到 staging；不支持覆盖 READY
+或复用 DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
 只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
 对象字节始终不会经过 Worker。
 

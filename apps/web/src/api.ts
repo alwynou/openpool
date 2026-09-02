@@ -141,13 +141,20 @@ export const api = {
 
   listObjects: (bucketId: string) =>
     sdkRequest(client.listObjects(bucketId, { limit: 1000 })),
-  createUpload: (bucketId: string, logicalKey: string, file: File) =>
+  createUpload: (
+    bucketId: string,
+    logicalKey: string,
+    file: File,
+    retryUploadSessionId?: string,
+  ) =>
     sdkRequest(client.createUpload({
       bucketId,
       logicalKey,
       sizeBytes: file.size,
       contentType: file.type || 'application/octet-stream',
+      ...(retryUploadSessionId ? { retryUploadSessionId } : {}),
     })),
+  getUpload: (objectId: string) => sdkRequest(client.getUpload(objectId)),
   uploadDirect: (uploadUrl: string, file: File, contentType: string) =>
     sdkRequest(client.uploadDirect(uploadUrl, file, contentType)),
   completeUpload: (objectId: string, uploadSessionId: string) =>
