@@ -1,29 +1,25 @@
 import type {
   ApiEnvelope,
   ApiError,
-  ApiKeyResponse,
-  CreateDownloadResponse,
+  CreateApiKeyRequest,
   CreateStorageAccountRequest,
-  CreateUploadResponse,
-  CreatedApiKeyResponse,
   CreateLogicalBucketRequest,
   CreateStorageShardRequest,
-  HealthResponse,
   ListAuditLogsQuery,
-  ListAuditLogsResponse,
   LoginResponse,
-  LogicalBucketResponse,
-  ObjectMetadataResponse,
   SessionResponse,
   ShardMigrationResponse,
   StartShardMigrationRequest,
-  SetupStatusResponse,
-  StorageAccountResponse,
-  StorageShardResponse,
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
 } from '@openpool/contracts';
+import {
+  OpenPoolApiError,
+  OpenPoolClient,
+  OpenPoolProtocolError,
+  OpenPoolTransferError,
+} from '@openpool/sdk';
 
 export class ApiClientError extends Error {
   readonly code: string;
@@ -38,6 +34,10 @@ export class ApiClientError extends Error {
 }
 
 const requestOptions = { credentials: 'same-origin' as const };
+const client = new OpenPoolClient({
+  baseUrl: globalThis.location?.origin ?? 'http://localhost',
+  credentials: requestOptions.credentials,
+});
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.ok && response.status === 204) {
@@ -78,11 +78,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return parseResponse<T>(response);
 }
 
+async function sdkRequest<T>(operation: Promise<T>): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    if (error instanceof OpenPoolApiError) {
+      throw new ApiClientError(error.message, error.code, error.requestId);
+    }
+    if (
+      error instanceof OpenPoolProtocolError ||
+      error instanceof OpenPoolTransferError
+    ) {
+      throw new ApiClientError(error.message);
+    }
+    throw error;
+  }
+}
+
 const jsonHeaders = { 'content-type': 'application/json' };
 
 export const api = {
-  health: () => request<HealthResponse>('/api/v1/health'),
-  setupStatus: () => request<SetupStatusResponse>('/api/v1/setup/status'),
+  health: () => sdkRequest(client.health()),
+  setupStatus: () => sdkRequest(client.setupStatus()),
   session: () => request<SessionResponse>('/api/v1/auth/session'),
   setup: (username: string, password: string, bootstrapToken: string) =>
     request<unknown>('/api/v1/setup', {
@@ -97,61 +114,53 @@ export const api = {
     ),
   logout: () => request<unknown>('/api/v1/auth/session', { method: 'DELETE' }),
 
-  listAccounts: () => request<readonly StorageAccountResponse[]>('/api/v1/storage-accounts'),
+  listAccounts: () => sdkRequest(client.listAccounts()),
   createAccount: (input: CreateStorageAccountRequest) =>
-    request<StorageAccountResponse>('/api/v1/storage-accounts', {
-      method: 'POST', headers: jsonHeaders, body: JSON.stringify(input),
-    }),
+    sdkRequest(client.createAccount(input)),
   updateAccountConfiguration: (
     id: string,
     input: UpdateStorageAccountConfigurationRequest,
   ) =>
-    request<StorageAccountResponse>(
-      `/api/v1/storage-accounts/${encodeURIComponent(id)}/configuration`,
-      {
-        method: 'PATCH',
-        headers: jsonHeaders,
-        body: JSON.stringify(input),
-      },
-    ),
-  verifyAccount: (id: string) => request<StorageAccountResponse>(`/api/v1/storage-accounts/${encodeURIComponent(id)}/verify`, { method: 'POST' }),
-  healthAccount: (id: string) => request<StorageAccountResponse>(`/api/v1/storage-accounts/${encodeURIComponent(id)}/health`, { method: 'POST' }),
+    sdkRequest(client.updateAccountConfiguration(id, input)),
+  verifyAccount: (id: string) => sdkRequest(client.verifyAccount(id)),
+  healthAccount: (id: string) => sdkRequest(client.healthAccount(id)),
   updateAccountStatus: (id: string, input: UpdateStorageAccountStatusRequest) =>
-    request<StorageAccountResponse>(`/api/v1/storage-accounts/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(input) }),
+    sdkRequest(client.updateAccountStatus(id, input)),
 
-  listBuckets: () => request<readonly LogicalBucketResponse[]>('/api/v1/buckets'),
-  createBucket: (input: CreateLogicalBucketRequest) => request<LogicalBucketResponse>('/api/v1/buckets', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
-  listShards: (bucketId: string) => request<readonly StorageShardResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shards`),
-  createShard: (bucketId: string, input: CreateStorageShardRequest) => request<StorageShardResponse>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shards`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
-  updateShardStatus: (id: string, input: UpdateStorageShardStatusRequest) => request<StorageShardResponse>(`/api/v1/shards/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify(input) }),
+  listBuckets: () => sdkRequest(client.listBuckets()),
+  createBucket: (input: CreateLogicalBucketRequest) =>
+    sdkRequest(client.createBucket(input)),
+  listShards: (bucketId: string) => sdkRequest(client.listShards(bucketId)),
+  createShard: (bucketId: string, input: CreateStorageShardRequest) =>
+    sdkRequest(client.createShard(bucketId, input)),
+  updateShardStatus: (id: string, input: UpdateStorageShardStatusRequest) =>
+    sdkRequest(client.updateShardStatus(id, input)),
   listShardMigrations: (bucketId: string) => request<readonly ShardMigrationResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/shard-migrations`),
   startShardMigration: (input: StartShardMigrationRequest) => request<ShardMigrationResponse>('/api/v1/shard-migrations', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
   getShardMigration: (id: string) => request<ShardMigrationResponse>(`/api/v1/shard-migrations/${encodeURIComponent(id)}`),
 
-  listObjects: (bucketId: string) => request<readonly ObjectMetadataResponse[]>(`/api/v1/buckets/${encodeURIComponent(bucketId)}/objects?limit=1000`),
-  createUpload: (bucketId: string, logicalKey: string, file: File) => request<CreateUploadResponse>('/api/v1/uploads', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ bucketId, logicalKey, sizeBytes: file.size, contentType: file.type || 'application/octet-stream' }) }),
-  uploadDirect: async (uploadUrl: string, file: File, contentType: string): Promise<void> => {
-    const response = await fetch(uploadUrl, { method: 'PUT', headers: { 'content-type': contentType }, body: file });
-    if (!response.ok) throw new ApiClientError('The provider rejected the direct upload.');
-  },
-  completeUpload: (objectId: string, uploadSessionId: string) => request<{ object: ObjectMetadataResponse; uploadSessionId: string; alreadyCompleted: boolean }>(`/api/v1/uploads/${encodeURIComponent(objectId)}/complete`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ uploadSessionId }) }),
-  downloadObject: (id: string) => request<CreateDownloadResponse>(`/api/v1/objects/${encodeURIComponent(id)}/download`, { method: 'POST' }),
-  deleteObject: (id: string) => request<ObjectMetadataResponse>(`/api/v1/objects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listObjects: (bucketId: string) =>
+    sdkRequest(client.listObjects(bucketId, { limit: 1000 })),
+  createUpload: (bucketId: string, logicalKey: string, file: File) =>
+    sdkRequest(client.createUpload({
+      bucketId,
+      logicalKey,
+      sizeBytes: file.size,
+      contentType: file.type || 'application/octet-stream',
+    })),
+  uploadDirect: (uploadUrl: string, file: File, contentType: string) =>
+    sdkRequest(client.uploadDirect(uploadUrl, file, contentType)),
+  completeUpload: (objectId: string, uploadSessionId: string) =>
+    sdkRequest(client.completeUpload(objectId, { uploadSessionId })),
+  downloadObject: (id: string) => sdkRequest(client.createDownload(id)),
+  deleteObject: (id: string) => sdkRequest(client.deleteObject(id)),
 
-  listApiKeys: () => request<readonly ApiKeyResponse[]>('/api/v1/api-keys'),
-  createApiKey: (input: { name: string; scopes: readonly string[]; logicalBucketId?: string | null; pathPrefix?: string | null; expiresAt?: string | null }) => request<CreatedApiKeyResponse>('/api/v1/api-keys', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(input) }),
-  revokeApiKey: (id: string) => request<ApiKeyResponse>(`/api/v1/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  listAuditLogs: (query: ListAuditLogsQuery = { limit: 100 }) => {
-    const parameters = new URLSearchParams();
-    if (query.limit !== undefined) parameters.set('limit', String(query.limit));
-    if (query.actorType !== undefined) parameters.set('actorType', query.actorType);
-    if (query.action !== undefined) parameters.set('action', query.action);
-    if (query.resourceType !== undefined) parameters.set('resourceType', query.resourceType);
-    if (query.resourceId !== undefined) parameters.set('resourceId', query.resourceId);
-    if (query.afterCreatedAt !== undefined) parameters.set('afterCreatedAt', query.afterCreatedAt);
-    if (query.afterId !== undefined) parameters.set('afterId', query.afterId);
-    return request<ListAuditLogsResponse>(`/api/v1/audit-logs?${parameters.toString()}`);
-  },
+  listApiKeys: () => sdkRequest(client.listApiKeys()),
+  createApiKey: (input: CreateApiKeyRequest) =>
+    sdkRequest(client.createApiKey(input)),
+  revokeApiKey: (id: string) => sdkRequest(client.revokeApiKey(id)),
+  listAuditLogs: (query: ListAuditLogsQuery = { limit: 100 }) =>
+    sdkRequest(client.listAuditLogs(query)),
 };
 
 export function isUnauthorized(error: unknown): boolean {

@@ -22,8 +22,29 @@ const client = new OpenPoolClient({
 ```
 
 机器客户端推荐使用带最小 scope 的 API Key。浏览器若已经通过同源管理员 session 登录，可省略
-`apiKey` 并显式设置 `credentials: 'include'`。SDK 不读取 HttpOnly Cookie，不实现 Node Cookie jar，
-也不负责登录或保存管理员密码。
+`apiKey` 并显式设置 `credentials: 'include'`（同源控制台也可使用 `same-origin`）。SDK 不读取 HttpOnly
+Cookie，不实现 Node Cookie jar，也不负责登录或保存管理员密码。
+
+## 管理面
+
+SDK 已覆盖现有 Storage Account、Logical Bucket、Storage Shard、API Key 和审计查询接口。它们是
+管理员 session-only API；调用方必须提供已经登录的浏览器 session，API Key 不能借此提升为管理员。
+
+```ts
+const admin = new OpenPoolClient({
+  baseUrl: window.location.origin,
+  credentials: 'same-origin',
+});
+
+const accounts = await admin.listAccounts();
+const bucket = await admin.createBucket({ name: 'documents' });
+const auditPage = await admin.listAuditLogs({ limit: 50, actorType: 'ADMIN' });
+```
+
+Storage Account credential 只作为 `createAccount` 或 `updateAccountConfiguration` 的请求参数发送；响应
+类型不包含 credential 或加密信封。`createApiKey` 返回的一次性 token 由调用方立即安全保存，SDK 不会
+持久化、记录或自动采用它。Shard Migration 仍由管理后台和专用 migrator 使用现有接口，不属于这批
+通用 SDK 方法。
 
 ## 对象查询与直接传输
 
@@ -65,5 +86,7 @@ const response = await client.downloadObject(completed.object.id);
 SDK 不自动重试请求。调用方可以按服务端既有幂等语义重试 `completeUpload` 和 `deleteObject`；不要
 默认重试 reserve 等非幂等控制请求。
 
-当前方法覆盖 health/setup 状态、Bucket 列表、对象列表/元数据、reserve/complete、签名下载和删除。
-管理员账号、Shard Migration 与 audit 管理面将在认证、发布和重试策略确定后分批加入。
+当前方法覆盖 health/setup 状态、Storage Account、Logical Bucket、Storage Shard、API Key、审计查询，
+以及对象列表/元数据、reserve/complete、签名下载和删除。Web 管理控制台复用同一客户端，登录/初始化
+和 Shard Migration 暂时保留专用请求路径。公开发布、Node 管理员认证、自动重试与通用 CLI 仍需单独
+确定兼容和安全策略。

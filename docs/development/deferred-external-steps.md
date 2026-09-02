@@ -71,8 +71,9 @@
   以及是否允许进入普通写 placement；在此之前不能把 GitHub 伪装成 Generic S3。
 - [ ] replication/repair：决定副本数、Provider/故障域分散、checksum 缺失行为、删除传播、容量计费、
   修复触发和限流；在此之前只保留现有 client-mediated shard migration，不启用自动复制/修复。
-- [ ] SDK/CLI：当前先保留 workspace-private、Fetch/object-only SDK；公开包名和版本承诺、管理员 Cookie
-  策略、自动重试、通用对象 CLI 及 migration 最小权限授权仍待决定。
+- [ ] SDK/CLI：当前保留 workspace-private Fetch SDK，已覆盖对象及现有 session-only 管理 API 并由 Web
+  控制台复用；公开包名和版本承诺、Node 管理员 Cookie 策略、自动重试、通用对象 CLI 及 migration
+  最小权限授权仍待决定。
 - [ ] limited S3 gateway：必须继续遵守对象字节不经过 Worker 的 ADR；需决定支持的 metadata、
   presigned redirect、鉴权、Range/multipart 和兼容范围后才能实现。
 - [ ] multi-user/quota/RBAC：决定 tenant 层级、默认 owner 迁移、角色/共享、API Key 继承以及 hard/soft
