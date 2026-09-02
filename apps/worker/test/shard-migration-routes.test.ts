@@ -294,6 +294,63 @@ describe('shard migration HTTP adapter', () => {
     expect(withQuery.status).toBe(400);
   });
 
+  it.each([false, true])('accepts an empty streamed POST claim (Content-Length present: %s)', async (declaredEmpty) => {
+    const { app, claimMigrationTransfer } = createTestApp();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const response = await request(
+      app,
+      '/api/v1/shard-migrations/migration-1/transfers',
+      {
+        method: 'POST',
+        headers: {
+          cookie: 'openpool_session=valid-session',
+          ...(declaredEmpty ? { 'content-length': '0' } : {}),
+        },
+        body,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' },
+    );
+    expect(response.status).toBe(200);
+    expect(claimMigrationTransfer).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a non-empty claim body even when its declared length is zero', async () => {
+    const { app, claimMigrationTransfer } = createTestApp();
+    const response = await request(
+      app,
+      '/api/v1/shard-migrations/migration-1/transfers',
+      {
+        ...jsonRequest('POST', {}),
+        headers: { cookie: 'openpool_session=valid-session', 'content-length': '0' },
+      },
+    );
+    expect(response.status).toBe(400);
+    expect(claimMigrationTransfer).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a claim body stream cannot be read', async () => {
+    const { app, claimMigrationTransfer } = createTestApp();
+    const response = await request(
+      app,
+      '/api/v1/shard-migrations/migration-1/transfers',
+      {
+        ...authenticatedRequest('POST'),
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(new Error('unreadable request'));
+          },
+        }),
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' },
+    );
+    expect(response.status).toBe(400);
+    expect(claimMigrationTransfer).not.toHaveBeenCalled();
+  });
+
   it('strictly validates complete body and forwards only lease token', async () => {
     const { app, completeMigrationTransfer } = createTestApp();
     for (const body of [

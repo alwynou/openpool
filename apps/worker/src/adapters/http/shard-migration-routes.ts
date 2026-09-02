@@ -122,6 +122,30 @@ function hasNoQuery(request: Request): boolean {
   return new URL(request.url).search.length === 0;
 }
 
+async function hasEmptyBody(request: Request): Promise<boolean> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null && declaredLength !== '0') return false;
+  if (request.body === null) return true;
+
+  // Worker ingress can represent a zero-byte POST as a non-null stream.
+  // Check actual bytes as well; a zero Content-Length alone is not sufficient.
+  const reader = request.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return true;
+      if (value.byteLength > 0) {
+        await reader.cancel();
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function migrationResponse(result: ShardMigrationResult): ShardMigrationResponse {
   return {
     id: result.migration.id,
@@ -535,7 +559,7 @@ export function registerShardMigrationRoutes(
       requestId,
     );
     if (administrator instanceof Response) return administrator;
-    if (!hasNoQuery(context.req.raw) || context.req.raw.body !== null) {
+    if (!hasNoQuery(context.req.raw) || !(await hasEmptyBody(context.req.raw))) {
       return invalidRequest(context, requestId);
     }
     return runOperation(

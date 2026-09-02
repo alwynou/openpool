@@ -33,7 +33,8 @@ migration；CAS timestamp 过期时返回 `409 SHARD_MIGRATION_CONFLICT`，不�
 
 ## 搬运 claim 与 complete
 
-`POST /api/v1/shard-migrations/:id/transfers` 不接受请求体。成功时返回一个短期任务：
+`POST /api/v1/shard-migrations/:id/transfers` 不接受请求体内容。无 body 和零字节 body stream 均有效，
+但非空 body（即使声明 `Content-Length: 0`）或读取失败均拒绝。成功时返回一个短期任务：
 
 ```json
 {
