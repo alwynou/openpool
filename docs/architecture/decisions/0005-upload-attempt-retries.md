@@ -1,7 +1,10 @@
 # ADR 0005：显式上传尝试重试
 
-- 状态：Accepted（本地实现；staging 尚未升级）
+- 状态：Accepted（本地实现及 staging R2/B2 API/Provider 验收完成）
 - 日期：2026-09-02
+
+`0006` 和配套 Worker/Web 已获所有者授权发布到 staging；实际验收证据见
+[staging 上传重试验收](../../development/staging-upload-retry-acceptance.md)。
 
 ## 决策
 

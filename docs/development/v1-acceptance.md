@@ -3,6 +3,7 @@
 这是一份可执行的 runbook。勾选项代表项目所有者或验收者已经取得证据；2026-09-01 已完成的
 staging 远端操作记录在第 7 节。真实 R2/B2 smoke 已完成，Generic S3 仍需项目所有者提供资源。
 2026-09-02 的 0004/0005 前滚、迁移 CLI 和事务审计 outbox 证据另见[升级验收记录](staging-upgrade-acceptance.md)。
+同日 `0006` 和配套 Worker/Web 已发布到 staging，真实 R2/B2 测试见[上传重试验收](staging-upload-retry-acceptance.md)。
 
 ## 1. 本地前置条件
 
@@ -77,9 +78,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 列表支持 `status`、`prefix`、`afterKey`、`limit`（1–1000）并按 logical key 稳定排序；
   公开响应不包含 account、shard、physical bucket/key、credential 或签名 URL。
 - [x] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；普通同路径 reservation 仍冲突。
-  本地 `0006` 新增显式 retry：同一 object/key、全新 session/物理位置、旧会话隔离、容量/审计原子
+  `0006` 新增显式 retry：同一 object/key、全新 session/物理位置、旧会话隔离、容量/审计原子
   交换，支持 PENDING/EXPIRED/ABORTED 当前尝试。已用用例、D1、HTTP、SDK/Web 工作流测试验证；
-  staging 仍在 0005，重试功能的远端升级和真实直传验收待授权。
+  staging 已应用 0006 并部署配套 Worker/Web，实际远端证据见[上传重试验收](staging-upload-retry-acceptance.md)。
 - [x] 用 `npm run dev:worker:scheduled` 启动本地 Worker，并访问
   `http://localhost:8787/cdn-cgi/handler/scheduled?format=json` 触发一次 scheduled maintenance：验证
   outcome 为 `ok`，并通过 scheduled/repository tests 验证签名 expiry 后 5 分钟

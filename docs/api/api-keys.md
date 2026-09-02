@@ -69,7 +69,7 @@ API Key 可调用的路径和 scope 如下：
 | --- | --- |
 | `objects:list` | `GET /api/v1/buckets/:bucketId/objects` |
 | `objects:read` | `GET /api/v1/objects/:id`、`POST /api/v1/objects/:id/download` |
-| `objects:upload` | `POST /api/v1/uploads`、`POST /api/v1/uploads/:objectId/complete` |
+| `objects:upload` | `POST /api/v1/uploads`、`GET /api/v1/uploads/:objectId`、`POST /api/v1/uploads/:objectId/complete` |
 | `objects:delete` | `DELETE /api/v1/objects/:id` |
 
 Key 必须未撤销且未过期，同时满足 Bucket 限制和 path prefix 限制。管理员 session 仍可访问这些
@@ -81,6 +81,7 @@ Key 必须未撤销且未过期，同时满足 Bucket 限制和 path prefix 限�
 它也必须落在限制内。`GET` 列表默认按 logical key 稳定排序，其他对象请求的完整参数和状态见
 [对象 API](objects.md)。未认证返回 `401 UNAUTHORIZED`，认证成功但 scope、Bucket 或 key 不符
 返回 `403 FORBIDDEN`。
+管理员专用接口不接受 Bearer Key 作为 session，因此只提供 API Key 时返回 `401 UNAUTHORIZED`。
 
 ## 安全操作
 

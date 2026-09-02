@@ -13,8 +13,10 @@
 2. AES-GCM credential vault（本地完成）；
 3. R2 Provider 验证与签名上传/下载（本地及真实 staging R2 smoke 完成）；
 4. logical bucket、对象 reserve/complete/delete（本地完成；对象字节直传 Provider）；
-   上传失败／过期后的显式 retry、历史尝试清理与 Web 重试入口本地实现完成，`0006` 和新版本部署
-   尚待授权，见 [ADR 0005](architecture/decisions/0005-upload-attempt-retries.md)；
+   上传失败／过期后的显式 retry、历史尝试清理与 Web 重试入口已实现，`0006` 和新版本已部署到
+   staging，R2/B2 立即、过期和清理后重试均已通过 API/Provider 验收；证据见
+   [上传重试验收](development/staging-upload-retry-acceptance.md)，设计见
+   [ADR 0005](architecture/decisions/0005-upload-attempt-retries.md)；
 5. Storage Account、验证失败配置/credential 纠错、容量、健康检查和简单 Placement（本地完成）；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
@@ -51,7 +53,7 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 
 - Worker 每 5 分钟扫描超过签名 expiry 5 分钟 grace 的 direct-upload session。`0006` 支持显式替换
   PENDING object 的当前尝试，新 session/物理位置与旧尝试隔离，旧预留只释放一次；旧残留清理失败
-  保持 EXPIRED、成功变 ABORTED。staging 尚在 0005，因此仍保留不能重试的旧行为；新行为仅本地验收。
+  保持 EXPIRED、成功变 ABORTED。staging 已升级至 0006，支持显式重试。
   不支持覆盖 READY、删除后复用路径、版本历史浏览或 multipart 断点续传。
 - 没有无人值守的自动 migration、自动 replication、自动修复或完整 S3 gateway；发布命令可串联
   迁移但仍需用户明确授权。对象内容始终由客户端通过短期签名 URL 直传/直取 Provider。

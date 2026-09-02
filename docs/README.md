@@ -32,3 +32,5 @@
 - [Provider 指南](providers/README.md)：Provider 端口、能力和实现顺序。
 - [Cloudflare 运维](operations/cloudflare.md)：D1、Secret、部署与回滚。
 - [V1 验收清单](development/v1-acceptance.md)：本地验收、迁移前滚/回滚和发布前检查。
+- [Staging 升级验收](development/staging-upgrade-acceptance.md)：0004/0005、双向迁移与事务审计证据。
+- [Staging 上传重试验收](development/staging-upload-retry-acceptance.md)：0006、R2/B2 重试与旧尝试清理证据。

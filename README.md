@@ -11,7 +11,8 @@ Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管�
 以及覆盖这些管理面的 Web 控制台已经实现。Phase 2 的 account drain/shard migration 控制面、流式
 搬运 CLI 与恢复清理已实现。独立 Cloudflare staging、D1、Secret、部署、真实 R2/B2 直传、双向小文件
 迁移和事务审计 outbox 已验收；Generic S3、production、CI/CD 与更广的故障/压力验收仍需项目所有者
-参与或授权。最近一次升级证据见[staging 验收记录](docs/development/staging-upgrade-acceptance.md)。
+参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
+[上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
 
 ## 架构原则
 
@@ -77,9 +78,10 @@ V1 控制面支持单管理员、R2/B2/Generic S3、逻辑 Bucket、文件元数
 完整 S3 Gateway、GitHub Provider、自动迁移、多副本、多用户、计费与复杂 RBAC 不属于
 V1。
 
-上传失败／过期后的显式重试已本地实现：保留同一 object ID/logical key，生成新 session/物理位置，
-旧尝试独立清理。需要 `0006` migration 和新 Worker/Web，尚未部署到 staging；不支持覆盖 READY
-或复用 DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
+上传失败／过期后的显式重试已实现并随 `0006` 和配套 Worker/Web 部署到 staging：保留同一
+object ID/logical key，生成新 session/物理位置，旧尝试独立清理。真实 R2/B2 验收见
+[上传重试验收记录](docs/development/staging-upload-retry-acceptance.md)；不支持覆盖 READY 或复用
+DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
 只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
 对象字节始终不会经过 Worker。
 

@@ -13,8 +13,9 @@ tail 捕获到 `*/5 * * * *` scheduled event，outcome 为 `ok`，无 exception 
 审计 outbox 与 SDK 复用版本。所有者因测试数据不重要而明确要求本次跳过备份；这不改变后续有价值
 数据升级前的备份要求。此次升级、测试及恢复边界见[staging 升级验收记录](../development/staging-upgrade-acceptance.md)。
 
-上传重试版本及 `0006_upload_retries.sql` 已本地实现，尚未应用或部署到 staging。需新的 migration
-和部署授权，先应用 0006 再发布 Worker/Web。产生多次尝试的记录后，旧 Worker 的单 session 假设
+同日经所有者重新授权并明确要求本次不备份，已先应用 `0006_upload_retries.sql`，再发布上传重试
+Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 测试记录见
+[上传重试验收](../development/staging-upload-retry-acceptance.md)。产生多次尝试的记录后，旧 Worker 的单 session 假设
 不再成立，应前滚修复，不能直接回滚到旧版。重试和独立清理语义见
 [ADR 0005](../architecture/decisions/0005-upload-attempt-retries.md)。
 
@@ -78,7 +79,7 @@ security find-generic-password -a admin \
    reservation/expiry/deletion capacity triggers；
 4. `0004_shard_migrations.sql`：持久化迁移任务、对象租约与目标容量预留；
 5. `0005_transactional_audit_outbox.sql`：同事务审计 outbox、幂等投递与重试。
-6. `0006_upload_retries.sql`：每对象一个 current session、历史上传 location 绑定与重试约束（待授权）。
+6. `0006_upload_retries.sql`：每对象一个 current session、历史上传 location 绑定与重试约束。
 
 不要单独跳过或手工重排迁移，也不要编辑已经在共享/远端环境执行过的 SQL。迁移前由所有者确认账号、
 D1 database ID、当前版本和维护窗口，保存受保护的 D1 export（导出含 schema、metadata、audit 和
