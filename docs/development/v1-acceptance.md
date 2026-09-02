@@ -1,7 +1,8 @@
 # V1 本地验收与发布清单
 
 这是一份可执行的 runbook。勾选项代表项目所有者或验收者已经取得证据；2026-09-01 已完成的
-staging 远端操作记录在第 7 节。真实 R2 smoke 已完成，B2 与 Generic S3 仍需项目所有者提供资源。
+staging 远端操作记录在第 7 节。真实 R2/B2 smoke 已完成，Generic S3 仍需项目所有者提供资源。
+2026-09-02 的 0004/0005 前滚、迁移 CLI 和事务审计 outbox 证据另见[升级验收记录](staging-upgrade-acceptance.md)。
 
 ## 1. 本地前置条件
 
@@ -98,8 +99,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 抽查 53 条远端 audit：metadata 只有字符串，不含完整 raw token、credential、authorization
   header、signed URL 或 credential envelope；API_KEY actor 的授权与对象生命周期事件完整
   （2026-09-01）。
-- [x] 已接受 V1 audit 的明确边界：业务写入与 audit insert 非同一事务；监控 5xx，遇到 audit 写失败
-  时先查询资源当前状态再决定是否重试。需要合规级完整性时不得把 V1 日志当作唯一账本。
+- [x] 2026-09-01 的原始 V1 audit 使用独立 append；2026-09-02 staging 升级为业务写入与 outbox
+  同事务提交，已验证投递前后可见性、稳定 event id 与去重。审计仍不是防篡改合规账本；遇到不确定
+  响应时仍应先查询业务资源状态，再按幂等语义决定是否重试。
 
 ## 6. 真实 Provider smoke（必须 opt-in）
 
@@ -184,4 +186,5 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
 当前剩余外部事项是 Generic S3 资源及其 CORS、CI/CD token、production/自定义域名决策，以及
-下一次有数据的 schema 升级所需受保护备份位置和恢复负责人；在 owner 提供证据前保持未勾选。
+未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。2026-09-02 所有者明确要求本次
+staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。

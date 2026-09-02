@@ -13,7 +13,8 @@ delivered logs，按统一游标排序；投递前后沿用同一公开 `id`，�
 当前实现原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
 Object 与 Shard Migration 的全部现有 business mutation。没有对应业务写入的审计事件（例如签名下载
 和 API Key 授权）直接 append 到 outbox，不伪造事务边界。
-`0005` migration 不在本地或远端执行；staging 迁移与部署必须分别取得授权。
+`0005` migration 与 Worker 已于 2026-09-02 经项目所有者授权应用和部署到 staging；本地持久化 D1
+未在此次操作中迁移。未来 migration 与部署仍需分别取得授权。
 
 ## 后果
 

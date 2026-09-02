@@ -9,6 +9,10 @@ D1 创建、0001→0003 migration、首次部署所需的三个 staging Secrets 
 `ADMIN_BOOTSTRAP_TOKEN`，当前只保留 `CREDENTIAL_MASTER_KEY` 和 `API_KEY_PEPPER`。同日通过 live
 tail 捕获到 `*/5 * * * *` scheduled event，outcome 为 `ok`，无 exception 或应用日志。
 
+2026-09-02 经项目所有者明确授权，staging 已前滚应用 `0004`、`0005` 并部署 shard migration、事务
+审计 outbox 与 SDK 复用版本。所有者因测试数据不重要而明确要求本次跳过备份；这不改变后续有价值
+数据升级前的备份要求。此次升级、测试及恢复边界见[staging 升级验收记录](../development/staging-upgrade-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留
@@ -66,7 +70,9 @@ security find-generic-password -a admin \
    upload session、API key 和 audit log schema；
 2. `0002_storage_account_metadata.sql`：Storage Account capabilities 与 `capacity_accuracy`；
 3. `0003_object_capacity_reservations.sql`：每对象一个 upload session 的约束、D1 断言 guard 和
-   reservation/expiry/deletion capacity triggers。
+   reservation/expiry/deletion capacity triggers；
+4. `0004_shard_migrations.sql`：持久化迁移任务、对象租约与目标容量预留；
+5. `0005_transactional_audit_outbox.sql`：同事务审计 outbox、幂等投递与重试。
 
 不要单独跳过或手工重排迁移，也不要编辑已经在共享/远端环境执行过的 SQL。迁移前由所有者确认账号、
 D1 database ID、当前版本和维护窗口，保存受保护的 D1 export（导出含 schema、metadata、audit 和
@@ -76,11 +82,11 @@ D1 database ID、当前版本和维护窗口，保存受保护的 D1 export（�
 npx wrangler whoami --json
 npx wrangler d1 info DB --env staging --config apps/worker/wrangler.jsonc
 npx wrangler d1 migrations list DB --remote --env staging --config apps/worker/wrangler.jsonc
-npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-0003.sql --config apps/worker/wrangler.jsonc
+npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-upgrade.sql --config apps/worker/wrangler.jsonc
 ```
 
 `<secure-path>` 必须是仓库外、访问受限且有保留策略的位置；不要把导出文件提交或粘贴到聊天。需要
-把 migration history 从 0001 推进到 0003 时，先逐项核对将执行的文件，再明确授权：
+升级 migration history 时，先逐项核对将执行的文件，再明确授权：
 
 ```bash
 npm install

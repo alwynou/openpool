@@ -22,7 +22,7 @@
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
 “staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 Generic S3 或 production。
 
-核心 V1 控制面退出条件已经达到：本地 `npm run verify` 通过；本地流程、独立 staging 部署、R2
+核心 V1 控制面退出条件已经达到：本地 `npm run verify` 通过；本地流程、独立 staging 部署、
 R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单](development/v1-acceptance.md)取得证据。
 完整的 V1 Provider 兼容性声明仍需 Generic S3 的 opt-in smoke。production、CI/CD token、受保护
 备份位置和恢复演练也继续由项目所有者决定，不复用 staging 资源。
@@ -30,11 +30,13 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 ## Phase 2
 
 - account drain 与 shard migration（本地实现完成：持久化任务、原子 cutover、双重容量预留、管理
-  界面、流式 CLI 和 scheduled source cleanup；staging 0004 migration/deploy 与真实跨 Provider smoke
-  待项目所有者授权，设计见 [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)）；
-- 业务写入与审计事件的事务 outbox/强一致 append（本地实现完成）；
+  界面、流式 CLI 和 scheduled source cleanup；staging 0004 migration/deploy、R2 ↔ B2 小文件真实
+  搬运及租约到期重试已验收，详见[升级验收记录](development/staging-upgrade-acceptance.md)，设计见
+  [ADR 0003](architecture/decisions/0003-client-mediated-shard-migration.md)）；
+- 业务写入与审计事件的事务 outbox/强一致 append（本地实现及 staging 升级验收完成）；
   已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
-  Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy 待项目所有者授权。
+  Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy、投递前后可见性、
+  稳定 event id 与去重已验证。
 - GitHub/static tier；
 - replication 与校验修复；
 - SDK、CLI 与有限 S3 compatibility gateway（对象及现有管理 API 的 TypeScript SDK 私有预览已本地

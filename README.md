@@ -9,8 +9,9 @@ OpenPool 把用户合法拥有的多个 Cloudflare R2、Backblaze B2 和 S3-comp
 credential vault、Storage Account 生命周期、R2/B2/Generic S3 验证与签名、D1 模型、Placement
 Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管理与 audit-log 查询 API
 以及覆盖这些管理面的 Web 控制台已经实现。Phase 2 的 account drain/shard migration 控制面、流式
-搬运 CLI 与恢复清理已在本地实现。独立 Cloudflare staging、D1、Secret、部署及真实 R2/B2 直传
-smoke 已验收；Generic S3、production、CI/CD 和 migration 的远端验收仍需项目所有者授权。
+搬运 CLI 与恢复清理已实现。独立 Cloudflare staging、D1、Secret、部署、真实 R2/B2 直传、双向小文件
+迁移和事务审计 outbox 已验收；Generic S3、production、CI/CD 与更广的故障/压力验收仍需项目所有者
+参与或授权。最近一次升级证据见[staging 验收记录](docs/development/staging-upgrade-acceptance.md)。
 
 ## 架构原则
 

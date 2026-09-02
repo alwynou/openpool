@@ -6,8 +6,10 @@
 2. `0002_storage_account_metadata.sql`：Storage Account capabilities、容量准确性；
 3. `0003_object_capacity_reservations.sql`：upload session 唯一约束、D1 断言和容量预留/释放触发器；
 4. `0004_shard_migrations.sql`：durable shard migration、对象任务、租约、目标双重容量预留与条件断言。
-5. `0005_transactional_audit_outbox.sql`：事务审计 outbox、lease/退避与 event-id 幂等投递；文件已
-   实现，但尚未在本地或远端执行。
+5. `0005_transactional_audit_outbox.sql`：事务审计 outbox、lease/退避与 event-id 幂等投递。
+
+2026-09-02 已经项目所有者授权，将 staging 从 0003 升至 0005；本地持久化 D1 未在本次操作中迁移。
+`0004`、`0005` 现已发布，后续修复必须新增迁移，不得再编辑原文件。
 
 ```bash
 npm run db:migrate:local

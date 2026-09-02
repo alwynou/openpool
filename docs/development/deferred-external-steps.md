@@ -17,11 +17,10 @@
   key 和 pepper；不要在 V1 期间更换已有 vault key。
 - [x] 已获授权并执行 V1 `npm run db:migrate:staging`；0001→0003 均已应用（2026-09-01）。仓库目前
   没有 production migration 命令。
-- [ ] Phase 2 的 `0004_shard_migrations.sql` 尚未应用到 staging，相关 Worker/Web 也尚未部署。执行前
-  需项目所有者指定受限 D1 export 保存位置，并分别明确授权 remote migration 与 staging deploy；
-  不得用当前对话中的开发授权推定远端变更授权。
-- [ ] Phase 2 `0005` transactional audit outbox 尚未在本地或远端执行；staging 迁移、Worker 部署及
-  含既有数据的验证需项目所有者分别明确授权，并在迁移前指定受限 D1 export 保存位置。
+- [x] Phase 2 `0004_shard_migrations.sql` 与 `0005_transactional_audit_outbox.sql` 已经所有者明确授权，
+  按顺序应用到独立 staging D1，相关 Worker/Web 已部署，migration history 无待办（2026-09-02）。
+  所有者因数据不重要而明确要求本次跳过备份；本地持久化 D1 和 production 未改动，未来升级不能
+  继承这次免备份例外。详细证据见[升级验收记录](staging-upgrade-acceptance.md)。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration
@@ -59,11 +58,14 @@
   的临时全账户 application key 已立即撤销（2026-09-01）。
 - [ ] Generic S3 bucket 仍需配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/直取所需
   method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
-- [ ] 在 staging 0004/deploy 完成后，用独立 R2/B2 测试 shard 执行一次真实 drain → migration：确认
-  CLI 流式传输、目标 HEAD、primary 切换、源删除、容量计数、scheduled cleanup 和源 shard retirement。
-  该验收会改变远端 D1 与 Provider 对象，必须单独授权。
+- [x] 经所有者授权，独立测试账号/shard 的 R2 ↔ B2 drain → migration 已完成：每方向 45 B 文本与
+  64 KiB 二进制文件，CLI 流式传输、目标 HEAD、SHA-256 对比、primary 切换、源删除、容量计数和源
+  shard retirement 均通过；一次中断任务在租约到期后由 CLI 成功恢复（2026-09-02）。
+  正常 Cron/outbox 投递已取得远端证据；未对共享凭据注入源删除失败，相关故障恢复仍由本地测试覆盖。
 - [x] 已在 Backblaze 浏览器中永久删除 B2 smoke 遗留的 52 B upload version、hide marker 和此前重试
   产生的隐藏版本；测试 bucket 已恢复为空（2026-09-02）。
+- [x] 后续双向迁移 smoke 的 4 个 B2 物理 key、8 个 upload/hide versions（131,162 字节）已使用
+  既有 bucket-scoped key 精确清理，并逐 key 验证没有残留；未扩大权限或改动其他版本（2026-09-02）。
 
 ## 待项目所有者决定的产品与架构边界
 
