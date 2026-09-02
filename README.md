@@ -58,6 +58,7 @@ apps/migrator/        Shard migration 流式数据搬运 CLI
 packages/domain/      纯领域模型与 Placement 规则
 packages/application/ 用例与端口（接口）
 packages/contracts/   Worker 与 Web 共用的 API 契约
+packages/sdk/         私有预览 TypeScript 对象 API 客户端
 database/migrations/  D1 迁移；只追加，不回写已发布迁移
 docs/                 架构、开发、Provider 与运维文档
 ```
@@ -79,6 +80,9 @@ V1 的已知限制：过期 `PENDING` tombstone 会保留以供审计，因此�
 后续需要 retry/version namespace design。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
 只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
 对象字节始终不会经过 Worker。
+
+现有对象控制 API 的 Fetch 客户端见 [TypeScript SDK](docs/sdk/typescript.md)。它保持 reserve/complete
+控制流与 Provider signed transfer 分离，当前作为 workspace 内私有预览，不代表公开 npm 发布承诺。
 
 ## License
 

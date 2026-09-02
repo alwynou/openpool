@@ -37,7 +37,8 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
   Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy 待项目所有者授权。
 - GitHub/static tier；
 - replication 与校验修复；
-- SDK、CLI 与有限 S3 compatibility gateway；
+- SDK、CLI 与有限 S3 compatibility gateway（对象 TypeScript SDK 私有预览已本地实现；管理面、公开
+  发布策略、通用对象 CLI 与 gateway 仍待后续决策/实现）；
 - multi-user、quota 和细粒度 RBAC。
 
 在 V1 真实使用证明需要之前，不引入复杂一致性哈希、自动分层、完整 S3 API 或计费系统。

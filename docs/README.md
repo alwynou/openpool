@@ -27,6 +27,7 @@
 - [Bucket 与 Shard API](api/buckets.md)：逻辑命名空间和物理 Bucket 映射。
 - [Shard Migration API 与搬运器](api/shard-migrations.md)：account drain、持久化迁移和流式 CLI。
 - [对象 API](api/objects.md)：reserve、complete、签名下载和幂等删除。
+- [TypeScript SDK](sdk/typescript.md)：私有预览对象客户端与签名直传/直取边界。
 - [Provider 指南](providers/README.md)：Provider 端口、能力和实现顺序。
 - [Cloudflare 运维](operations/cloudflare.md)：D1、Secret、部署与回滚。
 - [V1 验收清单](development/v1-acceptance.md)：本地验收、迁移前滚/回滚和发布前检查。

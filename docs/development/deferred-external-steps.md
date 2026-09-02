@@ -50,7 +50,7 @@
 - [x] 已创建私有 B2 隔离 bucket `openpool-b2-staging-5dfebd7d02` 和 bucket-scoped Read & Write
   application key；使用 `us-east-005` 完成账号验证、逻辑 Bucket/ACTIVE shard、浏览器签名 PUT、
   complete、签名 GET 字节比对和 DELETE smoke，OpenPool 容量回到 0（2026-09-01）。B2 的
-  `Keep all versions` 会在 S3 DELETE 后保留历史版本，后续是否永久清除由 bucket lifecycle 决定。
+  `Keep all versions` 会在 S3 DELETE 后保留历史版本；本次 smoke 的遗留版本已按下方记录手工清理。
 - [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
 - [x] 已从 staging 控制台浏览器实际完成 R2 文件上传、下载和删除，确认 signed PUT/GET 与最小化
   CORS policy 生效（2026-09-01）。
@@ -62,9 +62,21 @@
 - [ ] 在 staging 0004/deploy 完成后，用独立 R2/B2 测试 shard 执行一次真实 drain → migration：确认
   CLI 流式传输、目标 HEAD、primary 切换、源删除、容量计数、scheduled cleanup 和源 shard retirement。
   该验收会改变远端 D1 与 Provider 对象，必须单独授权。
-- [ ] B2 smoke 的 S3 DELETE 已留下一个 52 B 对象的历史 upload version 与 hide marker；用户已确认
-  永久删除，但 Backblaze 浏览器会话在操作前过期。需重新登录 Backblaze 后删除全部两个版本，或为
-  测试 bucket 配置合适的 lifecycle；这不影响 OpenPool 中已完成的逻辑删除。
+- [x] 已在 Backblaze 浏览器中永久删除 B2 smoke 遗留的 52 B upload version、hide marker 和此前重试
+  产生的隐藏版本；测试 bucket 已恢复为空（2026-09-02）。
+
+## 待项目所有者决定的产品与架构边界
+
+- [ ] GitHub/static tier：决定其作为只读 source 还是 publish target、repo/ref/path 映射、版本/删除语义，
+  以及是否允许进入普通写 placement；在此之前不能把 GitHub 伪装成 Generic S3。
+- [ ] replication/repair：决定副本数、Provider/故障域分散、checksum 缺失行为、删除传播、容量计费、
+  修复触发和限流；在此之前只保留现有 client-mediated shard migration，不启用自动复制/修复。
+- [ ] SDK/CLI：当前先保留 workspace-private、Fetch/object-only SDK；公开包名和版本承诺、管理员 Cookie
+  策略、自动重试、通用对象 CLI 及 migration 最小权限授权仍待决定。
+- [ ] limited S3 gateway：必须继续遵守对象字节不经过 Worker 的 ADR；需决定支持的 metadata、
+  presigned redirect、鉴权、Range/multipart 和兼容范围后才能实现。
+- [ ] multi-user/quota/RBAC：决定 tenant 层级、默认 owner 迁移、角色/共享、API Key 继承以及 hard/soft
+  quota 与 replica 计费，再新增 schema 和授权模型。
 
 所有 secret 都只能通过本地忽略文件、交互式命令、Cloudflare Secret 或外部 secret manager 注入，不能写入
 仓库、测试快照、日志或聊天记录。
