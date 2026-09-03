@@ -19,6 +19,12 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 不再成立，应前滚修复，不能直接回滚到旧版。重试和独立清理语义见
 [ADR 0005](../architecture/decisions/0005-upload-attempt-retries.md)。
 
+2026-09-03 经所有者授权，Web 上传恢复及账号纠错修复已部署为
+`3ca24b95-40cc-4753-842a-fbd4344828e8`，未修改 Worker 逻辑或 schema，未执行 migration。
+发布核对、R2 真实恢复交互与清理证据见[Web staging 验收](../development/staging-web-recovery-acceptance.md)。
+此次 Wrangler 只读 migration history 查询返回 D1 `7403` 授权错误；未来涉及 schema 的升级必须
+先解决该权限并重新核对历史，不应将本次 Web-only 发布当作 migration 权限验收。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留

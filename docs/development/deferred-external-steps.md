@@ -72,7 +72,8 @@
 - [x] `0006` 的 R2/B2 立即、过期及 ABORTED 后同路径重试均通过真实 API/Provider 验收，包含
   并发冲突、旧签名写入隔离、真实 grace/Cron 清理、容量和稳定审计。六个测试文件已删除，两个测试
   shard 已退休，B2 六个物理 key 的 13 个 upload/hide versions（67,788 字节）已永久清理；原有记录
-  不变。额外浏览器重试交互因扩展未连接未验证，见[上传重试验收](staging-upload-retry-acceptance.md)。
+  不变。该轮额外浏览器重试因扩展未连接跳过，见[上传重试验收](staging-upload-retry-acceptance.md)；
+  随后已完成限定 R2 的[Web 恢复交互验收](staging-web-recovery-acceptance.md)，不将其扩大为 B2 全分支回归。
 
 ## 待项目所有者决定的产品与架构边界
 
@@ -94,10 +95,17 @@
   ABORTED，38 条对象 outbox 全部投递，七个 B2 历史版本已永久清理。证据见
   [50 MB 验收记录](staging-cli-50mb-acceptance.md)。提供[可重复脚本](cli-smoke.md)，
   不把本次授权扩展为之后自动执行远端写测试的授权。
-- [ ] 发布本地 Web 上传恢复与账号纠错修复并进行真实浏览器回归，需单独授权 staging 部署及测试写入。
-  本地已增加 14 个页面交互测试和 1 个工作流测试，见[回归记录](web-upload-recovery.md)；
-  另有[账号纠错交互回归](web-account-recovery.md)，覆盖版本冲突恢复与凭据留空/替换。
-  这些不替代此前未完成的真实浏览器重试验收，也不表示线上页面已经更新。
+- [x] 所有者授权 Web 上传恢复与账号纠错修复的 staging 部署及测试写入；2026-09-03 已发布
+  `3ca24b95-40cc-4753-842a-fbd4344828e8`，未执行 migration，静态资源哈希与本地构建一致。
+  本地覆盖见[上传恢复](web-upload-recovery.md)与[账号纠错](web-account-recovery.md)。
+- [x] 完成此次[Web staging 交互验收](staging-web-recovery-acceptance.md)及测试数据清理（2026-09-03）。
+  所有者开启 Kimi 文件访问并在一次性账号表单填写有效 R2 凭据；验证失败纠错、并发配置重载、
+  换文件重试、confirmation-only、重复提交保护与 72 B 下载哈希通过。唯一对象已 DELETED，旧 session
+  已由 Cron 清理为 ABORTED，容量归零，无 shard 测试账号已 REMOVED；原 ACTIVE 账号配置不变。
+- [ ] 如所有者为上述验收另建了专用 R2 API Token，验收后撤销该专用 Token（或单独授权精确撤销）；
+  不影响原 Staging R2 的 Token。OpenPool REMOVED 状态不等于撤销 Cloudflare 凭据。
+- [ ] 后续 schema 升级前解决 Wrangler 的 D1 query 授权：2026-09-03 只读 migration history 查询
+  返回 Cloudflare `7403`；D1 info、现有应用 API 与 Web-only 发布正常，本轮未绕过该限制或执行 migration。
 - [ ] SDK/CLI 后续：公开包名和版本承诺、Node 管理员 Cookie 策略、自动重试及 migration 最小权限
   授权仍待决定。通用对象 CLI 超过 50 MB 的文件、物理断网、并发及压力/长时间验收需另行确认范围；不自动
   复用此前 staging 测试或部署授权。

@@ -18,6 +18,7 @@
 - [开发工作流](development/workflow.md)：代码约定、测试和完成标准。
 - [Web 上传恢复交互回归](development/web-upload-recovery.md)：本地页面测试、确认重试和输入状态边界。
 - [Web 账号纠错交互回归](development/web-account-recovery.md)：验证失败后编辑、凭据留空/替换和并发冲突恢复。
+- [Staging Web 恢复验收](development/staging-web-recovery-acceptance.md)：两轮 Web 修复的发布、R2 真实交互及清理证据。
 - [Deferred 外部步骤](development/deferred-external-steps.md)：需要账号、凭证或远端授权的待办。
 - [路线图](roadmap.md)：V1 范围与后续阶段。
 

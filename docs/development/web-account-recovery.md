@@ -49,4 +49,6 @@ Worker 构建仅为 `wrangler deploy --dry-run`，没有发布或执行 migratio
 
 这些是本地组件交互回归，不是实际浏览器、Provider 验证或加密存储的端到端验收。
 没有修改 Worker、公共 API、contract 或 migration；不因本地检查通过而标记 staging 已更新。
-本轮修复与[上传恢复修复](web-upload-recovery.md)后续发布及真实浏览器测试仍需单独授权。
+本轮修复与[上传恢复修复](web-upload-recovery.md)随后经所有者授权，于 2026-09-03 发布到 staging；
+R2 真实配置纠错、凭据留空保留、并发重载和清理证据另见[Web staging 记录](staging-web-recovery-acceptance.md)；
+更多 credential 替换等分支仍以本地组件测试为证据，不扩充为全部真实凭据分支已验收。

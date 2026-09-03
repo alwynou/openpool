@@ -47,5 +47,6 @@ lookup 失败被误报为创建失败，再修复提示分类。其余正常、�
 新增 14 个页面交互测试和 1 个工作流测试，Web 共 39 个测试通过；改动范围的 Oxlint、Web 类型检查通过。
 完整 `npm run verify` 通过：共 669 个测试（根目录 184、Worker 306、Migrator 7、CLI 172），
 全仓 lint、类型检查和构建通过；Worker 构建仅执行本地 `wrangler deploy --dry-run`。
-本轮修复仅在本地，没有部署、migration 或真实浏览器操作；下一次 staging 发布与真实浏览器回归
-仍需单独授权，不能把本地通过记录为线上已经生效。
+上述开发轮次仅在本地，没有部署、migration 或真实浏览器操作。随后经所有者授权，2026-09-03
+已部署这些修复；R2 真实浏览器恢复验收与清理证据另见[Web staging 记录](staging-web-recovery-acceptance.md)，
+不能将本地测试直接记为真实交互已通过。

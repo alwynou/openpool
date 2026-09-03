@@ -18,10 +18,11 @@
    [上传重试验收](development/staging-upload-retry-acceptance.md)，设计见
    [ADR 0005](architecture/decisions/0005-upload-attempt-retries.md)；
    后续[页面恢复交互回归](development/web-upload-recovery.md)已在本地补齐，并修复确认重试、文件锁定及
-   新上传重置问题；这些页面修复尚未部署到 staging；
+   新上传重置问题；2026-09-03 已部署到 staging，R2 真实恢复交互及清理已通过，见
+   [Web staging 验收](development/staging-web-recovery-acceptance.md)；
 5. Storage Account、验证失败配置/credential 纠错、容量、健康检查和简单 Placement（本地完成）；
    [账号纠错页面回归](development/web-account-recovery.md)补齐凭据留空/替换、保存后再验证与冲突恢复；
-   本轮页面修复尚未部署到 staging；
+   2026-09-03 已部署，R2 真实配置纠错、凭据留空保留与并发重载验收通过，见同一 Web staging 记录；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
