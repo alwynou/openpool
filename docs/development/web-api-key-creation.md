@@ -46,3 +46,6 @@ npm run verify
 
 本次仅加固 Web 创建与展示流程，不修改 Worker、SDK、contract、migration 或 Provider 配置。
 本地页面测试不替代真实浏览器的剪贴板权限验收；staging 发布与真实 Key 操作须后续单独授权。
+
+2026-09-03 后续经所有者重新授权，本修复已发布，真实浏览器创建/复制/撤销一个受限 Key 及客户端
+故障验收通过。更多列表刷新分支仍只记为本地覆盖；范围见[Web 创建验收](staging-web-creation-acceptance.md)。

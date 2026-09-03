@@ -104,10 +104,12 @@
   已由 Cron 清理为 ABORTED，容量归零，无 shard 测试账号已 REMOVED；原 ACTIVE 账号配置不变。
 - [x] 所有者确认已删除上述验收的专用 R2 API Token（2026-09-03，所有者回报，未再次登录
   Cloudflare 独立核对）。OpenPool REMOVED 状态本身不等于撤销 Cloudflare 凭据。
-- [ ] [Web 新增账号表单加固](web-account-creation.md)的 staging 发布与真实交互验收需后续单独授权；
-  不包含在较早的 Web 恢复验收中，不复用该轮部署和测试写入授权。
-- [ ] [Web API Key 创建交互加固](web-api-key-creation.md)的 staging 发布与真实 Key/剪贴板权限验收
-  需后续单独授权；目前仅本地实现与页面回归，不创建或撤销真实 Key。
+- [x] 所有者重新授权两轮创建表单修复的 staging 发布与验收；2026-09-03 已发布
+  `9431a58b-ef8f-492d-9308-05e1e7e8d5ad`，未执行 migration。[API Key 表单](web-api-key-creation.md)
+  的真实创建/复制/撤销通过，唯一临时 Key 已撤销，原账号/Bucket/Key 不变；[账号创建表单](web-account-creation.md)
+  的客户端故障与成功响应模拟通过，无真实新增账号。详细范围见[Web 创建验收](staging-web-creation-acceptance.md)。
+- [ ] 如果要进一步重验账号创建加固后的真实 Provider 成功路径，所有者需提供新的隔离凭据；
+  VERIFYING 不能直接移除，不使用假凭据创建无法正常清理的远端账号，也不直接删除 D1 来完成此验收。
 - [ ] 后续 schema 升级前解决 Wrangler 的 D1 query 授权：2026-09-03 只读 migration history 查询
   返回 Cloudflare `7403`；D1 info、现有应用 API 与 Web-only 发布正常，本轮未绕过该限制或执行 migration。
 - [ ] SDK/CLI 后续：公开包名和版本承诺、Node 管理员 Cookie 策略、自动重试及 migration 最小权限

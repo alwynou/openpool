@@ -25,6 +25,11 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 此次 Wrangler 只读 migration history 查询返回 D1 `7403` 授权错误；未来涉及 schema 的升级必须
 先解决该权限并重新核对历史，不应将本次 Web-only 发布当作 migration 权限验收。
 
+同日 17:12（Asia/Shanghai）经所有者重新授权，账号创建与 API Key 表单加固发布为
+`9431a58b-ef8f-492d-9308-05e1e7e8d5ad`，仍未改变 Worker 逻辑/schema 或执行 migration。
+真实临时 Key 创建/复制/撤销、账号表单的客户端模拟与清理范围见
+[Web 创建验收](../development/staging-web-creation-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留

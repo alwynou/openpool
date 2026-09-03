@@ -48,3 +48,6 @@ Worker 构建仅执行本地 dry-run，没有部署或执行 migration。Markdow
 
 本次只修改 Web 创建表单与本地测试，不修改 Worker、SDK、contract、migration 或 Provider 配置。
 已有 staging Web 验收对应较早提交，不包含这次创建表单修复；后续部署及真实写入验收仍须单独授权。
+
+2026-09-03 后续经所有者重新授权，本修复已发布到 staging。浏览器故障/成功响应模拟与清理通过，
+没有提供新的有效 Provider 凭据，因此未创建真实账号；范围见[Web 创建验收](staging-web-creation-acceptance.md)。
