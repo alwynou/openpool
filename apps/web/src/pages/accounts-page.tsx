@@ -23,12 +23,12 @@ import type {
   UpdateStorageAccountConfigurationRequest,
 } from '@openpool/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { api } from '../api';
+import { api, ApiClientError } from '../api';
 import { ConfirmDialog, Dialog } from '../components/dialogs';
 import {
   capacityPercent,
@@ -268,6 +268,10 @@ export function AccountsPage() {
             setActionFailure({ accountId: editingAccount.id, error });
           }}
           onChanged={refresh}
+          onReload={async () => {
+            const result = await accountsQuery.refetch({ throwOnError: true });
+            return result.data?.find((account) => account.id === editingAccount.id) ?? null;
+          }}
           onOpenChange={(open) => {
             if (!open) setEditingAccount(null);
           }}
@@ -403,7 +407,7 @@ function AccountRows({
               <ShieldWarningIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
               <div className="min-w-0 flex-1"><p>{errorText(failure)}</p>{errorRequestId(failure) ? <p className="mt-1 font-mono text-[11px] text-amber-700">Request ID: {errorRequestId(failure)}</p> : null}</div>
               <div className="flex shrink-0 flex-wrap gap-2">
-                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" onClick={() => onEdit(account)}>Edit &amp; retry</Button> : null}
+                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" disabled={actionMutation.isPending} onClick={() => onEdit(account)}>Edit &amp; retry</Button> : null}
                 <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>Retry</Button>
               </div>
             </div>
@@ -428,7 +432,7 @@ function AccountMenu({
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${account.name}`}><DotsThreeVerticalIcon className="size-5" weight="bold" aria-hidden /></Button>
+        <Button type="button" variant="ghost" size="icon" disabled={actionMutation.isPending} aria-label={`Actions for ${account.name}`}><DotsThreeVerticalIcon className="size-5" weight="bold" aria-hidden /></Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-48 rounded-md border border-zinc-200 bg-white p-1 shadow-lg outline-none data-[state=open]:animate-enter">
@@ -519,21 +523,36 @@ function EditAccountDialog({
   onAccountUpdated,
   onVerificationFailed,
   onChanged,
+  onReload,
   onOpenChange,
 }: {
   readonly account: StorageAccountResponse;
   readonly onAccountUpdated: (account: StorageAccountResponse) => void;
   readonly onVerificationFailed: (error: unknown) => void;
   readonly onChanged: () => Promise<unknown>;
+  readonly onReload: () => Promise<StorageAccountResponse | null>;
   readonly onOpenChange: (open: boolean) => void;
 }) {
   const form = useForm<EditAccountFormValues>({
     resolver: zodResolver(editAccountSchema),
     defaultValues: editAccountValues(account),
   });
+  // Credentials belong only to the form and the in-flight API call, never mutation variables.
+  const pendingInput = useRef<UpdateStorageAccountConfigurationRequest | null>(null);
+  const submitting = useRef(false);
+  const [configurationSaved, setConfigurationSaved] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadError, setReloadError] = useState<unknown>(null);
   const mutation = useMutation({
-    mutationFn: async (input: UpdateStorageAccountConfigurationRequest) => {
+    retry: false,
+    gcTime: 0,
+    mutationFn: async () => {
+      const input = pendingInput.current;
+      pendingInput.current = null;
+      if (!input) throw new Error('No account configuration was submitted.');
       const updated = await api.updateAccountConfiguration(account.id, input);
+      form.reset(editAccountValues(updated));
+      setConfigurationSaved(true);
       onAccountUpdated(updated);
       try {
         return await api.verifyAccount(updated.id);
@@ -550,9 +569,36 @@ function EditAccountDialog({
     onError: async () => {
       await onChanged();
     },
+    onSettled: () => { submitting.current = false; },
   });
+  const needsReload = mutation.error instanceof ApiClientError && [
+    'STORAGE_ACCOUNT_CONFLICT', 'STORAGE_ACCOUNT_NOT_VERIFYING', 'STORAGE_ACCOUNT_NOT_FOUND',
+  ].includes(mutation.error.code);
+  const isBusy = mutation.isPending || reloading;
 
-  const submit = form.handleSubmit((values) => {
+  const reload = async () => {
+    if (submitting.current || reloading) return;
+    setReloading(true);
+    setReloadError(null);
+    try {
+      const latest = await onReload();
+      if (!latest || latest.status !== 'VERIFYING') {
+        onOpenChange(false);
+        return;
+      }
+      form.reset(editAccountValues(latest));
+      onAccountUpdated(latest);
+      mutation.reset();
+      setConfigurationSaved(false);
+    } catch (error) {
+      setReloadError(error);
+    } finally {
+      setReloading(false);
+    }
+  };
+
+  const submit = (values: EditAccountFormValues) => {
+    if (submitting.current || isBusy || needsReload) return;
     const providerConfig: Record<
       string,
       string | number | boolean | null
@@ -578,7 +624,7 @@ function EditAccountDialog({
       values.secretAccessKey ||
       values.sessionToken,
     );
-    mutation.mutate({
+    pendingInput.current = {
       providerConfig,
       expectedUpdatedAt: account.updatedAt,
       ...(replacesCredentials
@@ -592,120 +638,128 @@ function EditAccountDialog({
             },
           }
         : {}),
-    });
-  });
+    };
+    submitting.current = true;
+    setConfigurationSaved(false);
+    mutation.mutate();
+  };
 
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!mutation.isPending) onOpenChange(open);
+        if (!submitting.current && !isBusy) onOpenChange(open);
       }}
       title={`Edit ${account.name}`}
       description="Correct the provider settings, optionally replace the write-only credentials, and retry verification. This is available only before activation."
     >
       <form
-        className="grid gap-4 sm:grid-cols-2"
-        onSubmit={(event) => void submit(event)}
+        className="grid gap-4"
+        onSubmit={(event) => void form.handleSubmit(submit)(event)}
       >
         <input type="hidden" {...form.register('provider')} />
         {mutation.error ? (
-          <div className="sm:col-span-2">
+          <div className="space-y-3">
             <ErrorNotice
               error={errorText(mutation.error)}
               requestId={errorRequestId(mutation.error)}
             />
+            {configurationSaved ? <p className="text-sm text-amber-800">Configuration saved, but verification failed. The saved credentials are retained; correct the settings or enter a new replacement before retrying.</p> : null}
+            {needsReload ? <div className="space-y-2"><p className="text-sm text-amber-800">This account changed. Reload its latest configuration before saving again. Reloading discards unsaved edits and clears replacement credentials.</p><Button type="button" variant="secondary" busy={reloading} onClick={() => void reload()}>Reload latest configuration</Button></div> : null}
+            {reloadError ? <ErrorNotice error={errorText(reloadError)} requestId={errorRequestId(reloadError)} /> : null}
           </div>
         ) : null}
-        <Field label="Provider" hint="Provider type cannot change after creation.">
-          <Input value={providerLabel(account.provider)} disabled readOnly />
-        </Field>
-        {account.provider === 'r2' ? (
-          <Field
-            label="Cloudflare account ID"
-            error={form.formState.errors.accountId?.message}
-          >
-            <Input autoComplete="off" {...form.register('accountId')} />
+        <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy || needsReload}>
+          <Field label="Provider" hint="Provider type cannot change after creation.">
+            <Input value={providerLabel(account.provider)} disabled readOnly />
           </Field>
-        ) : null}
-        {account.provider === 's3' ? (
-          <Field
-            label="HTTPS endpoint"
-            error={form.formState.errors.endpoint?.message}
-          >
-            <Input type="url" {...form.register('endpoint')} />
-          </Field>
-        ) : null}
-        {account.provider !== 'r2' ? (
-          <Field
-            label="Region"
-            error={form.formState.errors.region?.message}
-          >
-            <Input {...form.register('region')} />
-          </Field>
-        ) : (
-          <Field label="Jurisdiction">
-            <select
-              className={selectClassName}
-              {...form.register('jurisdiction')}
+          {account.provider === 'r2' ? (
+            <Field
+              label="Cloudflare account ID"
+              error={form.formState.errors.accountId?.message}
             >
-              <option value="">Default</option>
-              <option value="eu">EU</option>
-              <option value="fedramp">FedRAMP</option>
-            </select>
+              <Input autoComplete="off" {...form.register('accountId')} />
+            </Field>
+          ) : null}
+          {account.provider === 's3' ? (
+            <Field
+              label="HTTPS endpoint"
+              error={form.formState.errors.endpoint?.message}
+            >
+              <Input type="url" {...form.register('endpoint')} />
+            </Field>
+          ) : null}
+          {account.provider !== 'r2' ? (
+            <Field
+              label="Region"
+              error={form.formState.errors.region?.message}
+            >
+              <Input {...form.register('region')} />
+            </Field>
+          ) : (
+            <Field label="Jurisdiction">
+              <select
+                className={selectClassName}
+                {...form.register('jurisdiction')}
+              >
+                <option value="">Default</option>
+                <option value="eu">EU</option>
+                <option value="fedramp">FedRAMP</option>
+              </select>
+            </Field>
+          )}
+          <Field
+            label="Validation bucket"
+            hint="An existing physical bucket this key can access."
+            error={form.formState.errors.validationBucket?.message}
+          >
+            <Input {...form.register('validationBucket')} />
           </Field>
-        )}
-        <Field
-          label="Validation bucket"
-          hint="An existing physical bucket this key can access."
-          error={form.formState.errors.validationBucket?.message}
-        >
-          <Input {...form.register('validationBucket')} />
-        </Field>
-        <div className="border-t border-zinc-100 pt-4 sm:col-span-2">
-          <p className="text-sm font-medium text-zinc-900">
-            Replace credentials (optional)
-          </p>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">
-            Leave all three fields blank to keep the encrypted credentials already saved.
-          </p>
-        </div>
-        <Field
-          label={account.provider === 'b2' ? 'Key ID' : 'Access key ID'}
-          error={form.formState.errors.accessKeyId?.message}
-        >
-          <Input autoComplete="off" {...form.register('accessKeyId')} />
-        </Field>
-        <Field
-          label={account.provider === 'b2' ? 'Application key' : 'Secret access key'}
-          error={form.formState.errors.secretAccessKey?.message}
-        >
-          <Input
-            type="password"
-            autoComplete="new-password"
-            {...form.register('secretAccessKey')}
-          />
-        </Field>
-        <Field
-          label="Session token"
-          hint="Optional; leaving it blank clears it when replacing the other credentials."
-        >
-          <Input
-            type="password"
-            autoComplete="off"
-            {...form.register('sessionToken')}
-          />
-        </Field>
-        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5 sm:col-span-2">
+          <div className="border-t border-zinc-100 pt-4 sm:col-span-2">
+            <p className="text-sm font-medium text-zinc-900">
+              Replace credentials (optional)
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              Leave all three fields blank to keep the encrypted credentials already saved.
+            </p>
+          </div>
+          <Field
+            label={account.provider === 'b2' ? 'Key ID' : 'Access key ID'}
+            error={form.formState.errors.accessKeyId?.message}
+          >
+            <Input autoComplete="off" {...form.register('accessKeyId')} />
+          </Field>
+          <Field
+            label={account.provider === 'b2' ? 'Application key' : 'Secret access key'}
+            error={form.formState.errors.secretAccessKey?.message}
+          >
+            <Input
+              type="password"
+              autoComplete="new-password"
+              {...form.register('secretAccessKey')}
+            />
+          </Field>
+          <Field
+            label="Session token"
+            hint="Optional; leaving it blank clears it when replacing the other credentials."
+          >
+            <Input
+              type="password"
+              autoComplete="off"
+              {...form.register('sessionToken')}
+            />
+          </Field>
+        </fieldset>
+        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5">
           <Button
             type="button"
             variant="secondary"
             onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
+            disabled={isBusy}
           >
             Cancel
           </Button>
-          <Button type="submit" busy={mutation.isPending}>
+          <Button type="submit" busy={isBusy} disabled={needsReload}>
             Save and retry verification
           </Button>
         </div>
