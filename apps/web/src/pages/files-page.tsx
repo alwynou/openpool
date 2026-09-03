@@ -20,6 +20,7 @@ import {
   type UploadAttempt,
   type UploadInputSnapshot,
   type UploadRetryTarget,
+  type UploadFailureStep,
 } from '../lib/upload-workflow';
 import { queryKeys, useBuckets } from '../queries';
 import { Button, EmptyState, ErrorNotice, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
@@ -36,7 +37,7 @@ export function FilesPage() {
   const [logicalKey, setLogicalKey] = useState('');
   const [retryTarget, setRetryTarget] = useState<UploadRetryTarget | null>(null);
   const [activeAttempt, setActiveAttempt] = useState<UploadAttempt | null>(null);
-  const [uploadError, setUploadError] = useState<{ readonly cause: unknown; readonly step: 'create' | 'upload' | 'complete' } | null>(null);
+  const [uploadError, setUploadError] = useState<{ readonly cause: unknown; readonly step: UploadFailureStep } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ObjectMetadataResponse | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -92,27 +93,30 @@ export function FilesPage() {
   });
 
   const isBusy = uploadMutation.isPending;
+  const confirmationOnly = retryTarget !== null && activeAttempt?.target.objectId === retryTarget.objectId && activeAttempt.step === 'complete';
   const selectRetryTarget = (object: ObjectMetadataResponse) => {
     if (!canRetryObject(object) || isBusy) return;
+    // Re-selecting this row must not discard a transferred session awaiting confirmation.
+    if (retryTarget?.objectId === object.id) return;
     const target = retryTargetFromObject(bucketId, object);
-    const sameTarget = retryTarget?.objectId === object.id;
     setActiveAttempt(null);
     setRetryTarget(target);
     setLogicalKey(target.logicalKey);
     setUploadError(null);
-    if (!sameTarget) {
-      setSelectedFile(null);
-      if (fileInput.current) fileInput.current.value = '';
-    }
+    setSelectedFile(null);
+    if (fileInput.current) fileInput.current.value = '';
   };
   const clearRetryTarget = () => {
     if (isBusy) return;
     setRetryTarget(null);
     setActiveAttempt(null);
     setUploadError(null);
+    setLogicalKey('');
+    setSelectedFile(null);
+    if (fileInput.current) fileInput.current.value = '';
   };
   const submitUpload = () => {
-    if (!selectedFile || !bucketId) return;
+    if (isBusy || !selectedFile || !bucketId) return;
     const target = retryTarget;
     const snapshot = captureUploadInput(
       target?.bucketId ?? bucketId,
@@ -121,13 +125,13 @@ export function FilesPage() {
       target ? { preserveLogicalKey: true } : undefined,
     );
     setUploadError(null);
-    if (target && activeAttempt?.target.objectId === target.objectId && activeAttempt.step === 'complete') {
+    if (confirmationOnly && target && activeAttempt) {
       uploadMutation.mutate({ snapshot, mode: 'complete', target, attempt: activeAttempt });
       return;
     }
     uploadMutation.mutate({ snapshot, mode: target ? 'retry' : 'new', ...(target ? { target } : {}) });
   };
-  const uploadButtonLabel = activeAttempt?.step === 'complete' && retryTarget
+  const uploadButtonLabel = confirmationOnly
     ? 'Retry confirmation'
     : retryTarget
       ? 'Retry upload'
@@ -148,18 +152,19 @@ export function FilesPage() {
           <section
             className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50/50 p-5 transition-colors focus-within:border-zinc-500"
             onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => { event.preventDefault(); if (isBusy) return; const file = event.dataTransfer.files[0]; if (file) setSelectedFile(file); }}
+            onDrop={(event) => { event.preventDefault(); if (isBusy || confirmationOnly) return; const file = event.dataTransfer.files[0]; if (file) setSelectedFile(file); }}
           >
             <div className="flex flex-col gap-5 xl:flex-row xl:items-end">
               <div className="flex flex-1 items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-md border border-zinc-200 bg-white"><UploadSimpleIcon className="size-5" aria-hidden /></span><div><h2 className="text-sm font-semibold text-zinc-950">Upload a file</h2><p className="mt-1 text-xs leading-5 text-zinc-500">Drop a file here or choose one below. The Worker never receives its bytes.</p></div></div>
               <div className="grid flex-[1.5] gap-3 sm:grid-cols-[1fr_1.2fr_auto] sm:items-end">
                 <label className="grid gap-1.5 text-xs font-medium text-zinc-700">Logical key<Input value={logicalKey} disabled={isBusy || retryTarget !== null} onChange={(event) => setLogicalKey(event.target.value)} placeholder={selectedFile?.name ?? 'reports/2026.pdf'} /></label>
-                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">File<Input ref={fileInput} type="file" disabled={isBusy} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} /></label>
+                <label className="grid gap-1.5 text-xs font-medium text-zinc-700">File<Input ref={fileInput} type="file" disabled={isBusy || confirmationOnly} aria-describedby={confirmationOnly ? 'upload-confirmation-hint' : undefined} onChange={(event) => { if (!isBusy && !confirmationOnly) setSelectedFile(event.target.files?.[0] ?? null); }} /></label>
                 <Button type="button" busy={isBusy} disabled={!selectedFile} onClick={submitUpload}>{uploadButtonLabel}</Button>
               </div>
             </div>
             {retryTarget ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800"><span>Retrying <strong>{retryTarget.logicalKey}</strong>. The logical key and bucket are fixed for this retry.</span><Button type="button" variant="ghost" size="compact" disabled={isBusy} onClick={clearRetryTarget}>Choose a new upload</Button></div> : null}
             {retryTarget && !selectedFile ? <p className="mt-3 text-xs text-zinc-500">Select the original or replacement file to continue this pending upload. Browsers cannot restore a file after a reload.</p> : null}
+            {confirmationOnly ? <p id="upload-confirmation-hint" className="mt-3 text-xs text-zinc-500">File already transferred. Retry confirmation without uploading it again, or choose a new upload.</p> : null}
             {uploadError ? <div className="mt-4"><ErrorNotice error={`${errorText(uploadError.cause)} ${uploadFailureGuidance(uploadError.cause, uploadError.step)}`} requestId={errorRequestId(uploadError.cause)} /></div> : null}
           </section>
 

@@ -17,6 +17,8 @@
    staging，R2/B2 立即、过期和清理后重试均已通过 API/Provider 验收；证据见
    [上传重试验收](development/staging-upload-retry-acceptance.md)，设计见
    [ADR 0005](architecture/decisions/0005-upload-attempt-retries.md)；
+   后续[页面恢复交互回归](development/web-upload-recovery.md)已在本地补齐，并修复确认重试、文件锁定及
+   新上传重置问题；这些页面修复尚未部署到 staging；
 5. Storage Account、验证失败配置/credential 纠错、容量、健康检查和简单 Placement（本地完成）；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；

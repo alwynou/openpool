@@ -161,6 +161,29 @@ describe('upload workflow', () => {
     expect(calls).toEqual(['get', 'complete']);
   });
 
+  it('surfaces lookup failures without starting a new upload', async () => {
+    const calls: string[] = [];
+    const lookupError = Object.assign(new Error('upload session unavailable'), { code: 'OBJECT_UPLOAD_NOT_FOUND' });
+    const port = {
+      getUpload: async () => { calls.push('get'); throw lookupError; },
+      createUpload: async () => { calls.push('create'); return reservation; },
+      uploadDirect: async () => { calls.push('put'); },
+      completeUpload: async () => { calls.push('complete'); return completion; },
+    };
+
+    await expect(runUploadWorkflow(port, {
+      mode: 'retry',
+      target: retryTargetFromObject('bucket-1', pendingObject),
+      snapshot: captureUploadInput('bucket-1', 'replacement.bin', new File(['replacement'], 'replacement.bin')),
+    })).rejects.toMatchObject({
+      name: 'UploadStepError',
+      step: 'lookup',
+      cause: lookupError,
+    });
+    expect(calls).toEqual(['get']);
+    expect(uploadFailureGuidance(lookupError, 'lookup')).toContain('No new upload was started');
+  });
+
   it.each([
     'OBJECT_INVALID_STATE',
     'OBJECT_UPLOAD_NOT_FOUND',

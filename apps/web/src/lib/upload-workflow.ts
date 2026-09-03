@@ -87,7 +87,7 @@ export function canRetryObject(object: ObjectMetadataResponse): boolean {
   return object.status === 'PENDING';
 }
 
-export type UploadFailureStep = 'create' | 'upload' | 'complete';
+export type UploadFailureStep = 'lookup' | 'create' | 'upload' | 'complete';
 
 const COMPLETION_REUPLOAD_CODES = new Set([
   'OBJECT_INVALID_STATE',
@@ -107,6 +107,9 @@ export function uploadFailureGuidance(
   error: unknown,
   step: UploadFailureStep,
 ): string {
+  if (step === 'lookup') {
+    return 'The current upload session could not be checked. No new upload was started. Refresh the file list or retry the status check.';
+  }
   const code = uploadFailureCode(error);
   if (code === 'OBJECT_UPLOAD_EXPIRED') {
     return 'The upload session expired. Select the file to use and retry this pending upload.';
@@ -153,9 +156,14 @@ export async function runUploadWorkflow(
   if (input.mode === 'retry' && !input.target) {
     throw new Error('Choose a pending upload before retrying.');
   }
-  const existingSession = input.mode === 'retry'
-    ? await port.getUpload(input.target?.objectId ?? '')
-    : undefined;
+  let existingSession: UploadSessionResponse | undefined;
+  if (input.mode === 'retry') {
+    try {
+      existingSession = await port.getUpload(input.target?.objectId ?? '');
+    } catch (error) {
+      throw new UploadStepError(error, undefined, 'lookup');
+    }
+  }
   if (existingSession?.status === 'COMPLETED' && input.target) {
     const completionAttempt: UploadAttempt = {
       target: input.target,
