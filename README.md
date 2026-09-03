@@ -91,7 +91,9 @@ DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintena
 只使用受限 API Key，不登录管理员或保存凭据。SDK/CLI 保持 reserve/complete 控制流与 Provider
 signed transfer 分离，目前均为 workspace 内私有预览，不代表公开 npm 发布承诺。
 构建后的 CLI 已完成 [staging R2/B2 小文件验收](docs/development/staging-cli-acceptance.md)，
-覆盖哈希比对、权限、分页、防覆盖、显式恢复和删除；大文件与压力测试仍待后续验收。
+覆盖哈希比对、权限、分页、防覆盖、显式恢复和删除；另已通过
+[50 MB 文件与中途取消验收](docs/development/staging-cli-50mb-acceptance.md)，提供显式 opt-in 的
+[可重复 smoke 脚本](docs/development/cli-smoke.md)。更大文件、并发/压力和长期测试仍未验收。
 
 ## License
 

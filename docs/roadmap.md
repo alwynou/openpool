@@ -46,8 +46,10 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 - SDK、CLI 与有限 S3 compatibility gateway（对象及现有管理 API 的 TypeScript SDK 私有预览已本地
   实现，Web 控制台已复用；[通用对象 CLI](cli/objects.md) 已本地实现上传/下载/列表/详情/删除、上传
   状态、幂等完成与显式重试，API Key-only、不自动重试或覆盖；真实 R2/B2 小文件 CLI 流程已
-  [验收](development/staging-cli-acceptance.md)，旧失败 session 后台收敛边界另列；大文件/压力、公开
-  发布策略和 gateway 仍待后续授权/决策/实现）；
+  [验收](development/staging-cli-acceptance.md)，该轮旧 session/Cron/B2 收尾已闭环；后续
+  [50 MB 文件验收](development/staging-cli-50mb-acceptance.md) 已覆盖实际传输中途取消、显式恢复及
+  内存观察，并提供[可重复 smoke](development/cli-smoke.md)。更大文件、并发/压力、公开发布策略和
+  gateway 仍待后续授权/决策/实现）；
 - multi-user、quota 和细粒度 RBAC。
 
 在 V1 真实使用证明需要之前，不引入复杂一致性哈希、自动分层、完整 S3 API 或计费系统。

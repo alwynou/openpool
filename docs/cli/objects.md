@@ -229,12 +229,17 @@ Shard Migration、自动重试或 READY/DELETED 路径覆盖。
 ## 验收边界
 
 2026-09-03 本地验收通过：`npm run verify` 完成 Oxlint、所有 workspace 类型检查、
-582 个测试和全部构建，其中 CLI 有 100 个测试。覆盖实际本机 HTTP 连接上的二进制文件
+654 个测试和全部构建，其中 CLI 有 172 个测试（包含新增 smoke 安全与编排测试）。覆盖实际本机 HTTP 连接上的二进制文件
 往返、complete 响应断开后的同 session 恢复、显式 retry、下载防覆盖与失败清理，以及
 构建产物的超时、SIGINT/SIGTERM 和输出管道关闭处理。Worker 构建仅执行 dry-run。
 
 同日经所有者授权，构建后的 CLI 已完成 staging R2/B2 小文件直传/直取、哈希比对、权限、分页、
 防覆盖、幂等完成、客户端注入故障后的显式恢复和删除验收，详见
 [staging CLI 验收记录](../development/staging-cli-acceptance.md)。没有部署或执行数据库迁移；
-旧失败 session 的 Cron 收敛与 B2 后续删除标记边界单独记录，不视作已完成。
-这不代表大文件/压力测试、真实半包断网、Generic S3 或 production 验收。
+该轮旧失败 session 的 Cron 收敛与 B2 后续删除标记已完成跟进清理。
+
+后续 [50 MB 验收](../development/staging-cli-50mb-acceptance.md) 覆盖 R2/B2 的 50,000,000 字节
+随机文件、实际传输开始后的 SIGINT、下载半成品清理、显式完整重传和内存观察。
+[可重复 smoke 脚本](../development/cli-smoke.md) 需要每轮明确授权与受限 Key，不在普通 verify 中
+执行；历史 session/Cron、版本化 Provider 的清理与临时 Key 撤销不能只看 `PASSED`。
+这不代表更大文件、并发/压力、物理断网、Generic S3 或 production 验收。

@@ -36,3 +36,5 @@
 - [Staging 升级验收](development/staging-upgrade-acceptance.md)：0004/0005、双向迁移与事务审计证据。
 - [Staging 上传重试验收](development/staging-upload-retry-acceptance.md)：0006、R2/B2 重试与旧尝试清理证据。
 - [Staging 对象 CLI 验收](development/staging-cli-acceptance.md)：真实 R2/B2 命令、权限、文件校验与失败恢复。
+- [可重复 CLI smoke](development/cli-smoke.md)：显式授权、50 MB 上限、真实传输取消、报告和清理边界。
+- [Staging CLI 50 MB 验收](development/staging-cli-50mb-acceptance.md)：R2/B2 部分传输中断、显式重试及内存观察。

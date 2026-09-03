@@ -57,16 +57,21 @@
   版本清理语义依据 [Backblaze 文件版本列表](https://www.backblaze.com/apidocs/b2-list-file-versions)
   与[删除指定版本](https://www.backblaze.com/apidocs/b2-delete-file-version)。
 
-## 尚未观察到的后台收敛与边界
+## 后台收敛跟进与边界
 
 - 10:32 检查时，三个旧失败 session 均为 EXPIRED、非 current，原签名分别在 10:41:58、10:43:46、
   10:44:16 到期。这些旧 PUT 被测试观察层在发送前阻止，没有上传字节，容量已释放。
-  仍需原签名到期后再过五分钟 grace，才由正常 Cron 删除旧位置并转为 ABORTED；本轮不提前清理、
-  不手改时钟或 D1 状态，也不把此前 Cron 验收替代为本轮完成证据。
+  当时仍需原签名到期后再过五分钟 grace，才由正常 Cron 删除旧位置并转为 ABORTED；未提前清理、
+  未手改时钟或 D1 状态。
 - 后续 Cron 对未写入的 B2 旧位置执行删除时，可能留下零字节 hide marker；10:32 的版本清理结果
   仅表示当时无残留，不承诺未来也没有标记。这不影响本次逻辑容量或已完成的文件哈希验收。
 - 10:32 的对象 outbox 快照为 30 条 DELIVERED、21 条 PENDING；合并审计查询已验证可见与去重，
-  但没有在本轮等待全部投递完成。
+  当时没有等待全部投递完成。
+- 10:58 跟进时，只读 D1 确认三个旧 session 全部 ABORTED、非 current；十个对象仍 DELETED，
+  十三个 location 仍与原 allowlist 一致。对象 outbox 的 54 条事件全部 DELIVERED，包含新增的
+  三条 abort 事件，没有 PENDING。
+- 同次跟进精确清理 Cron 新产生的一个 B2 零字节 hide marker，四个物理 key 逐一列版本均为空。
+  旧尝试已 ABORTED，不再留下本轮待执行的旧位置删除。此前记录的 session/版本后台收敛现已闭环。
 - 单独只读预检的临时管理员 session 因脚本误用登出路径未撤销；其 token 仅存在于已结束进程，
   未落盘或输出，将按默认八小时有效期过期。没有为清理该记录直接改写 D1；后续正式执行器已使用
   正确的 DELETE session 接口。

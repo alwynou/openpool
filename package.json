@@ -27,6 +27,7 @@
     "lint": "oxlint .",
     "migrate:shard": "npm run build --workspace=@openpool/migrator && node apps/migrator/dist/cli.js",
     "openpool": "node apps/cli/bin/openpool.mjs",
+    "smoke:cli": "npm run build --workspace=@openpool/cli && node apps/cli/dist/smoke-cli.js",
     "test": "vitest run && npm run test --workspace=@openpool/worker && npm run test --workspace=@openpool/migrator && npm run test --workspace=@openpool/cli",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
