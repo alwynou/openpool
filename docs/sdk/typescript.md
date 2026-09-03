@@ -107,5 +107,6 @@ await client.completeUpload(retry.objectId, { uploadSessionId: retry.uploadSessi
 
 当前方法覆盖 health/setup 状态、Storage Account、Logical Bucket、Storage Shard、API Key、审计查询，
 以及对象列表/元数据、reserve/complete、签名下载和删除。Web 管理控制台复用同一客户端，登录/初始化
-和 Shard Migration 暂时保留专用请求路径。公开发布、Node 管理员认证、自动重试与通用 CLI 仍需单独
-确定兼容和安全策略。
+和 Shard Migration 暂时保留专用请求路径。[通用对象 CLI](../cli/objects.md) 已复用对象接口，采用
+API Key-only、显式重试和 workspace-private 边界；Node 文件操作只在 CLI 中实现。公开发布、Node
+管理员认证、自动重试和 migration 最小权限授权仍需单独确定兼容和安全策略。

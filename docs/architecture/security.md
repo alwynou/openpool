@@ -40,8 +40,14 @@ write-only credential。省略 credential 时保留原加密信封；替换值�
 Shard migration claim 同样只返回 15 分钟的一次性源 `GET` 和目标 `PUT`。目标签名绑定精确大小与
 content type；搬运器流式转发字节，Worker 不读取对象内容。claim/complete 只接受管理员 session，
 短期 lease token 还必须与 task 匹配；signed URL、lease token 和 session Cookie 不进入 audit、日志、
-Web query cache 或命令行参数。CLI 仅从 `OPENPOOL_SESSION_COOKIE` 环境变量读取单个
+Web query cache 或命令行参数。迁移 CLI 仅从 `OPENPOOL_SESSION_COOKIE` 环境变量读取单个
 `openpool_session=...` Cookie，并要求远端 control-plane URL 使用 HTTPS。
+
+通用对象 CLI 则仅从 `OPENPOOL_API_KEY` 环境变量读取受限 OpenPool Key，不支持管理员 Cookie、
+密码登录或 credential 文件。控制请求拒绝重定向；signed transfer 不附带控制面鉴权、Cookie 或
+referrer，且不允许返回控制面 origin。上传回执只输出 logical bucket/key、object/session ID，不输出
+signed URL；失败不自动重试 reservation。下载只写入私有临时目录，校验字节数后原子发布且不覆盖
+已有路径；下载 SHA-256 供调用方校验，不把 Provider 的不透明 ETag 当作内容哈希。
 
 ## HTTP 与审计边界
 

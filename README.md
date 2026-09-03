@@ -57,6 +57,7 @@ npm run verify
 apps/worker/          Cloudflare Worker、HTTP 适配器、组合根
 apps/web/             React 管理控制台
 apps/migrator/        Shard migration 流式数据搬运 CLI
+apps/cli/             API Key 鉴权的通用对象 CLI
 packages/domain/      纯领域模型与 Placement 规则
 packages/application/ 用例与端口（接口）
 packages/contracts/   Worker 与 Web 共用的 API 契约
@@ -85,8 +86,10 @@ DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintena
 只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
 对象字节始终不会经过 Worker。
 
-现有对象控制 API 的 Fetch 客户端见 [TypeScript SDK](docs/sdk/typescript.md)。它保持 reserve/complete
-控制流与 Provider signed transfer 分离，当前作为 workspace 内私有预览，不代表公开 npm 发布承诺。
+现有对象控制 API 的 Fetch 客户端见 [TypeScript SDK](docs/sdk/typescript.md)，命令行使用见
+[对象 CLI](docs/cli/objects.md)。CLI 支持列表、详情、上传、下载、删除、上传状态、幂等完成和显式重试，
+只使用受限 API Key，不登录管理员或保存凭据。SDK/CLI 保持 reserve/complete 控制流与 Provider
+signed transfer 分离，目前均为 workspace 内私有预览，不代表公开 npm 发布承诺。
 
 ## License
 
