@@ -88,3 +88,7 @@ Key 必须未撤销且未过期，同时满足 Bucket 限制和 path prefix 限�
 token 是不可恢复的 bearer secret：不要写入 git、浏览器 local storage、日志、audit metadata 或
 聊天记录。泄露时立即调用撤销接口并重新创建最小 scope、最小 Bucket/path 范围和有限期限的 key。
 V1 没有 key rotation endpoint；轮换应采用“创建新 key → 更新客户端 → 撤销旧 key”。
+
+Web 创建表单不自动重试或缓存 raw token；列表刷新失败不丢弃已经返回的 token，关闭展示弹窗
+或离开页面后不能再次查看。复制失败时可在弹窗中手动复制。如果创建请求结果不确定，先刷新列表，
+撤销拿不到 token 的多余 Key，再决定是否重新创建。交互回归见[Web API Key 创建](../development/web-api-key-creation.md)。

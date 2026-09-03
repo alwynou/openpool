@@ -27,6 +27,8 @@
    仅本地完成，尚未部署；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
+   后续[API Key 创建交互加固](development/web-api-key-creation.md)补齐一次性 token 缓存隔离、
+   重复发放保护与复制失败处理，仅本地完成，尚未部署；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
    和浏览器 R2/B2 直传均已验收，production 尚未创建）。
 

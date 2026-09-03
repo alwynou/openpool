@@ -25,6 +25,9 @@ Web 新增账号同样不能把完整凭据作为请求缓存的 mutation variab
 ## API Key 与会话
 
 - API Key 使用高熵随机值，数据库只保存 prefix 和带服务端 pepper 的哈希。
+- Web 创建 API Key 时，raw token 只交给当前一次性展示弹窗，不作为 query/mutation data 或
+  缓存回调参数；关闭或离开页面后不可恢复。创建不自动重试，同步提交锁防止重复发放。复制只有
+  在剪贴板写入成功后才显示成功提示；错误不包含 token。见[页面回归](../development/web-api-key-creation.md)。
 - 管理员初始化要求 Worker Secret `ADMIN_BOOTSTRAP_TOKEN`，并使用常量时间比较；该 token 不写入
   D1 或浏览器存储。
 - 管理员密码使用带 16 字节随机 salt、100,000 次迭代的 PBKDF2-SHA256 哈希；这是 Cloudflare
