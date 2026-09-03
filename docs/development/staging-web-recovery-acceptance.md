@@ -98,6 +98,6 @@ Provider 配置；成功路径仍请求真实控制 API，并由浏览器直接 
 真实 credential 替换后失败再恢复、部分凭据表单校验、重新加载失败等更多分支继续由本地组件测试覆盖；
 未为它们反复读取或索取真实 secret。没有重复 B2、Generic S3、50 MB 或压力测试。
 
-如果所有者为此轮另建了专用 R2 API Token，可在验收后撤销该专用 Token；不要撤销原 Staging R2 使用的
-Token。本轮未自动修改 Cloudflare Token，账号 REMOVED 不会替所有者在 Cloudflare 撤销凭据。
+所有者随后确认已删除此轮专用 R2 API Token（2026-09-03）；这是所有者回报，未再次登录 Cloudflare
+独立核对。本轮未自动修改 Cloudflare Token，账号 REMOVED 本身不会在 Cloudflare 撤销凭据。
 D1 query 的 `7403` 权限问题仍需在下一次 schema 升级前解决，未因本轮成功而视为恢复。

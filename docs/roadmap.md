@@ -23,6 +23,8 @@
 5. Storage Account、验证失败配置/credential 纠错、容量、健康检查和简单 Placement（本地完成）；
    [账号纠错页面回归](development/web-account-recovery.md)补齐凭据留空/替换、保存后再验证与冲突恢复；
    2026-09-03 已部署，R2 真实配置纠错、凭据留空保留与并发重载验收通过，见同一 Web staging 记录；
+   后续[新增账号表单加固](development/web-account-creation.md)已补齐凭据清理、取消重置和重复提交保护，
+   仅本地完成，尚未部署；
 6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron

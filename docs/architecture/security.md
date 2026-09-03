@@ -17,6 +17,11 @@ write-only credential。省略 credential 时保留原加密信封；替换值�
 错误或 audit metadata。该纠错路径使用账号 `updatedAt` 条件写入，并与配置、信封一起原子更新，
 防止并发验证覆盖新 credential；V1 不把它扩展为已激活账号的通用 credential rotation。
 
+Web 新增账号同样不能把完整凭据作为请求缓存的 mutation variables。明文只留在当前表单和
+正在发送的请求中；取消或成功后清空，失败时仅在当前表单保留供用户修改。创建不自动重试，
+同步提交保护覆盖输入校验、创建与列表刷新；关闭弹窗会丢弃未提交输入和旧错误。
+本地覆盖见[账号创建回归](../development/web-account-creation.md)。
+
 ## API Key 与会话
 
 - API Key 使用高熵随机值，数据库只保存 prefix 和带服务端 pepper 的哈希。

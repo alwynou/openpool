@@ -102,8 +102,10 @@
   所有者开启 Kimi 文件访问并在一次性账号表单填写有效 R2 凭据；验证失败纠错、并发配置重载、
   换文件重试、confirmation-only、重复提交保护与 72 B 下载哈希通过。唯一对象已 DELETED，旧 session
   已由 Cron 清理为 ABORTED，容量归零，无 shard 测试账号已 REMOVED；原 ACTIVE 账号配置不变。
-- [ ] 如所有者为上述验收另建了专用 R2 API Token，验收后撤销该专用 Token（或单独授权精确撤销）；
-  不影响原 Staging R2 的 Token。OpenPool REMOVED 状态不等于撤销 Cloudflare 凭据。
+- [x] 所有者确认已删除上述验收的专用 R2 API Token（2026-09-03，所有者回报，未再次登录
+  Cloudflare 独立核对）。OpenPool REMOVED 状态本身不等于撤销 Cloudflare 凭据。
+- [ ] [Web 新增账号表单加固](web-account-creation.md)的 staging 发布与真实交互验收需后续单独授权；
+  不包含在较早的 Web 恢复验收中，不复用该轮部署和测试写入授权。
 - [ ] 后续 schema 升级前解决 Wrangler 的 D1 query 授权：2026-09-03 只读 migration history 查询
   返回 Cloudflare `7403`；D1 info、现有应用 API 与 Web-only 发布正常，本轮未绕过该限制或执行 migration。
 - [ ] SDK/CLI 后续：公开包名和版本承诺、Node 管理员 Cookie 策略、自动重试及 migration 最小权限

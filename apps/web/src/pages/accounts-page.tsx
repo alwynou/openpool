@@ -23,7 +23,7 @@ import type {
   UpdateStorageAccountConfigurationRequest,
 } from '@openpool/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -455,63 +455,103 @@ function MenuItem({ icon: Icon, danger = false, onSelect, children }: { readonly
 function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onCreated: () => Promise<unknown> }) {
   const form = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema), defaultValues: defaultAccountValues });
   const provider = useWatch({ control: form.control, name: 'provider' });
+  const pendingInput = useRef<CreateStorageAccountRequest | null>(null);
+  const submitting = useRef(false);
   const mutation = useMutation({
-    mutationFn: (input: CreateStorageAccountRequest) => api.createAccount(input),
+    retry: false,
+    gcTime: 0,
+    mutationFn: async () => {
+      // Consume credentials without retaining them as mutation variables.
+      const input = pendingInput.current;
+      pendingInput.current = null;
+      if (!input) throw new Error('No account creation was submitted.');
+      return api.createAccount(input);
+    },
     onSuccess: async () => {
       form.reset(defaultAccountValues);
       await onCreated();
       onOpenChange(false);
       toast.success('Storage account created', { description: 'Verify the account before using it for placement.' });
     },
+    onSettled: () => {
+      pendingInput.current = null;
+      submitting.current = false;
+    },
   });
+  const isBusy = mutation.isPending || form.formState.isSubmitting;
 
-  const submit = form.handleSubmit((values) => {
-    const providerConfig: Record<string, string> = { validationBucket: values.validationBucket.trim() };
-    if (values.provider === 'r2') {
-      providerConfig.accountId = values.accountId.trim();
-      if (values.jurisdiction) providerConfig.jurisdiction = values.jurisdiction;
+  const changeOpen = (nextOpen: boolean) => {
+    if (submitting.current || isBusy) return;
+    if (!nextOpen) {
+      pendingInput.current = null;
+      form.reset(defaultAccountValues);
+      mutation.reset();
     }
-    if (values.provider === 'b2') providerConfig.region = values.region.trim();
-    if (values.provider === 's3') {
-      providerConfig.endpoint = values.endpoint.trim();
-      providerConfig.region = values.region.trim();
+    onOpenChange(nextOpen);
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!open || submitting.current || isBusy) return;
+    // Lock before asynchronous validation so submit/dismiss cannot race it.
+    submitting.current = true;
+    let requested = false;
+    try {
+      await form.handleSubmit((values) => {
+        const providerConfig: Record<string, string> = { validationBucket: values.validationBucket.trim() };
+        if (values.provider === 'r2') {
+          providerConfig.accountId = values.accountId.trim();
+          if (values.jurisdiction) providerConfig.jurisdiction = values.jurisdiction;
+        }
+        if (values.provider === 'b2') providerConfig.region = values.region.trim();
+        if (values.provider === 's3') {
+          providerConfig.endpoint = values.endpoint.trim();
+          providerConfig.region = values.region.trim();
+        }
+        pendingInput.current = {
+          name: values.name.trim(),
+          provider: values.provider,
+          providerConfig,
+          credentials: {
+            accessKeyId: values.accessKeyId.trim(),
+            secretAccessKey: values.secretAccessKey,
+            ...(values.sessionToken ? { sessionToken: values.sessionToken } : {}),
+          },
+          priority: Number(values.priority),
+          ...(values.capacityBytes ? { capacityBytes: Number(values.capacityBytes) } : {}),
+        };
+        requested = true;
+        mutation.mutate();
+      })(event);
+    } finally {
+      if (!requested) submitting.current = false;
     }
-    mutation.mutate({
-      name: values.name.trim(),
-      provider: values.provider,
-      providerConfig,
-      credentials: {
-        accessKeyId: values.accessKeyId.trim(),
-        secretAccessKey: values.secretAccessKey,
-        ...(values.sessionToken ? { sessionToken: values.sessionToken } : {}),
-      },
-      priority: Number(values.priority),
-      ...(values.capacityBytes ? { capacityBytes: Number(values.capacityBytes) } : {}),
-    });
-  });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => { if (!mutation.isPending) onOpenChange(nextOpen); }} title="Add storage account" description="Credentials are encrypted before they are persisted and never returned by the API.">
-      <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
-        {mutation.error ? <div className="sm:col-span-2"><ErrorNotice error={errorText(mutation.error)} requestId={errorRequestId(mutation.error)} /></div> : null}
-        <Field label="Display name" error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
-        <Field label="Provider" error={form.formState.errors.provider?.message}>
-          <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">Generic S3-compatible</option></select>
-        </Field>
-        {provider === 'r2' ? <Field label="Cloudflare account ID" error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
-        {provider === 's3' ? <Field label="HTTPS endpoint" error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
-        {provider !== 'r2' ? <Field label="Region" error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
-          <Field label="Jurisdiction"><select className={selectClassName} {...form.register('jurisdiction')}><option value="">Default</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
-        )}
-        <Field label="Validation bucket" hint="An existing physical bucket this key can access." error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>
-        <Field label={provider === 'b2' ? 'Key ID' : 'Access key ID'} error={form.formState.errors.accessKeyId?.message}><Input autoComplete="off" {...form.register('accessKeyId')} /></Field>
-        <Field label={provider === 'b2' ? 'Application key' : 'Secret access key'} error={form.formState.errors.secretAccessKey?.message}><Input type="password" autoComplete="new-password" {...form.register('secretAccessKey')} /></Field>
-        <Field label="Session token" hint="Optional for temporary S3 credentials."><Input type="password" autoComplete="off" {...form.register('sessionToken')} /></Field>
-        <Field label="Priority" error={form.formState.errors.priority?.message}><Input inputMode="numeric" {...form.register('priority')} /></Field>
-        <Field label="Capacity in bytes" hint={provider === 'r2' ? 'Required for R2 placement.' : 'Optional when usage is observable.'} error={form.formState.errors.capacityBytes?.message}><Input inputMode="numeric" placeholder="10737418240" {...form.register('capacityBytes')} /></Field>
-        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5 sm:col-span-2">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button type="submit" busy={mutation.isPending}>Create account</Button>
+    <Dialog open={open} onOpenChange={changeOpen} title="Add storage account" description="Credentials are encrypted before they are persisted and never returned by the API.">
+      <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+        {mutation.error ? <ErrorNotice error={errorText(mutation.error)} requestId={errorRequestId(mutation.error)} /> : null}
+        <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy}>
+          <Field label="Display name" error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
+          <Field label="Provider" error={form.formState.errors.provider?.message}>
+            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">Generic S3-compatible</option></select>
+          </Field>
+          {provider === 'r2' ? <Field label="Cloudflare account ID" error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
+          {provider === 's3' ? <Field label="HTTPS endpoint" error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
+          {provider !== 'r2' ? <Field label="Region" error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
+            <Field label="Jurisdiction"><select className={selectClassName} {...form.register('jurisdiction')}><option value="">Default</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
+          )}
+          <Field label="Validation bucket" hint="An existing physical bucket this key can access." error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>
+          <Field label={provider === 'b2' ? 'Key ID' : 'Access key ID'} error={form.formState.errors.accessKeyId?.message}><Input autoComplete="off" {...form.register('accessKeyId')} /></Field>
+          <Field label={provider === 'b2' ? 'Application key' : 'Secret access key'} error={form.formState.errors.secretAccessKey?.message}><Input type="password" autoComplete="new-password" {...form.register('secretAccessKey')} /></Field>
+          <Field label="Session token" hint="Optional for temporary S3 credentials."><Input type="password" autoComplete="off" {...form.register('sessionToken')} /></Field>
+          <Field label="Priority" error={form.formState.errors.priority?.message}><Input inputMode="numeric" {...form.register('priority')} /></Field>
+          <Field label="Capacity in bytes" hint={provider === 'r2' ? 'Required for R2 placement.' : 'Optional when usage is observable.'} error={form.formState.errors.capacityBytes?.message}><Input inputMode="numeric" placeholder="10737418240" {...form.register('capacityBytes')} /></Field>
+        </fieldset>
+        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5">
+          <Button type="button" variant="secondary" onClick={() => changeOpen(false)} disabled={isBusy}>Cancel</Button>
+          <Button type="submit" busy={isBusy}>Create account</Button>
         </div>
       </form>
     </Dialog>
