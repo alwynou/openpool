@@ -233,5 +233,8 @@ Shard Migration、自动重试或 READY/DELETED 路径覆盖。
 往返、complete 响应断开后的同 session 恢复、显式 retry、下载防覆盖与失败清理，以及
 构建产物的超时、SIGINT/SIGTERM 和输出管道关闭处理。Worker 构建仅执行 dry-run。
 
-本轮 CLI 验证仅覆盖本地模拟网络和文件系统测试；未获授权执行真实 Provider smoke、远端
-部署、远端迁移或数据库迁移，因此本文不宣称真实 R2、B2 或 S3-compatible Provider 验收。
+同日经所有者授权，构建后的 CLI 已完成 staging R2/B2 小文件直传/直取、哈希比对、权限、分页、
+防覆盖、幂等完成、客户端注入故障后的显式恢复和删除验收，详见
+[staging CLI 验收记录](../development/staging-cli-acceptance.md)。没有部署或执行数据库迁移；
+旧失败 session 的 Cron 收敛与 B2 后续删除标记边界单独记录，不视作已完成。
+这不代表大文件/压力测试、真实半包断网、Generic S3 或 production 验收。
