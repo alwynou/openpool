@@ -17,6 +17,20 @@ const account = (
     writeEnabled: true,
     capacityBytes: 1_000,
     usedBytes: 0,
+    healthStatus: 'HEALTHY',
+    capacityAccuracy: 'EXACT',
+    providerConfig: {},
+    capabilities: {
+      presignedUpload: true,
+      presignedDownload: true,
+      headObject: true,
+      deleteObject: true,
+      bucketProbe: true,
+      usageProbe: true,
+    },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    lastHealthCheckedAt: null,
     ...rest,
   };
 };
@@ -51,6 +65,33 @@ describe('selectStorageAccount', () => {
       [
         account({ id: 'draining', status: 'DRAINING' }),
         account({ id: 'read-only', writeEnabled: false }),
+      ],
+      1,
+    );
+
+    expect(selected).toBeUndefined();
+  });
+
+  it('excludes non-healthy and unknown-capacity accounts', () => {
+    const selected = selectStorageAccount(
+      [
+        account({ id: 'degraded', healthStatus: 'DEGRADED' }),
+        account({ id: 'unknown', capacityAccuracy: 'UNKNOWN' }),
+      ],
+      1,
+    );
+
+    expect(selected).toBeUndefined();
+  });
+
+  it('rejects unsafe projected usage instead of overflowing', () => {
+    const selected = selectStorageAccount(
+      [
+        account({
+          id: 'overflow',
+          capacityBytes: Number.MAX_SAFE_INTEGER,
+          usedBytes: Number.MAX_SAFE_INTEGER,
+        }),
       ],
       1,
     );

@@ -6,10 +6,25 @@
   "observability": {
     "enabled": true,
   },
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
   "vars": {
     "APP_ENV": "development",
     "APP_VERSION": "0.1.0",
   },
+  "ratelimits": [
+    {
+      "name": "AUTH_GLOBAL_RATE_LIMITER",
+      "namespace_id": "9101001",
+      "simple": { "limit": 30, "period": 60 },
+    },
+    {
+      "name": "AUTH_IDENTITY_RATE_LIMITER",
+      "namespace_id": "9101002",
+      "simple": { "limit": 5, "period": 60 },
+    },
+  ],
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
@@ -24,4 +39,34 @@
       "migrations_dir": "../../database/migrations",
     },
   ],
+  "env": {
+    "staging": {
+      "workers_dev": true,
+      "vars": {
+        "APP_ENV": "staging",
+        "APP_VERSION": "0.1.0",
+        "CREDENTIAL_MASTER_KEY_ID": "primary-v1",
+      },
+      "ratelimits": [
+        {
+          "name": "AUTH_GLOBAL_RATE_LIMITER",
+          "namespace_id": "9101001",
+          "simple": { "limit": 30, "period": 60 },
+        },
+        {
+          "name": "AUTH_IDENTITY_RATE_LIMITER",
+          "namespace_id": "9101002",
+          "simple": { "limit": 5, "period": 60 },
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "openpool-staging",
+          "database_id": "da285616-0bb8-47a9-b67e-7fcfde8f7b83",
+          "migrations_dir": "../../database/migrations",
+        },
+      ],
+    },
+  },
 }

@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development. Never commit real values.
+ADMIN_BOOTSTRAP_TOKEN=replace-with-a-high-entropy-one-time-token
+CREDENTIAL_MASTER_KEY=replace-with-canonical-base64-for-exactly-32-random-bytes
+CREDENTIAL_MASTER_KEY_ID=primary-v1
+API_KEY_PEPPER=replace-with-separate-canonical-base64-for-exactly-32-random-bytes

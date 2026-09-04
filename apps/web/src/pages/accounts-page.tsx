@@ -1,0 +1,834 @@
+import {
+  CheckCircleIcon,
+  CloudIcon,
+  CopyIcon,
+  DotsThreeVerticalIcon,
+  FireIcon,
+  HardDrivesIcon,
+  HeartbeatIcon,
+  MagnifyingGlassIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  ProhibitIcon,
+  ShieldWarningIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { zodResolver } from '@hookform/resolvers/zod';
+import type {
+  CreateStorageAccountRequest,
+  ProviderConfigRequest,
+  StorageAccountResponse,
+  StorageProviderKind,
+  UpdateStorageAccountConfigurationRequest,
+} from '@openpool/contracts';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { type FormEvent, useMemo, useRef, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { api, ApiClientError } from '../api';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
+import { useI18n, type Translate } from '../i18n';
+import {
+  capacityPercent,
+  cn,
+  errorRequestId,
+  errorText,
+  formatBytes,
+  formatDate,
+  providerLabel,
+  relativeDate,
+} from '../lib/utils';
+import { queryKeys, useAccounts } from '../queries';
+import {
+  Button,
+  EmptyState,
+  ErrorNotice,
+  Field,
+  Input,
+  LoadingState,
+  PageHeader,
+  selectClassName,
+  StatusBadge,
+} from '../components/ui';
+
+function createAccountSchema(t: Translate) {
+  return z.object({
+  name: z.string().trim().min(1, t('Enter a display name.')).max(100, t('Display name must be 100 characters or fewer.')),
+  provider: z.enum(['r2', 'b2', 's3']),
+  accountId: z.string(),
+  region: z.string(),
+  endpoint: z.string(),
+  jurisdiction: z.string(),
+  validationBucket: z.string().trim().min(1, t('Enter the existing physical bucket name.')),
+  accessKeyId: z.string().trim().min(1, t('Enter the access key ID.')),
+  secretAccessKey: z.string().min(1, t('Enter the secret access key.')),
+  sessionToken: z.string(),
+  priority: z.string().regex(/^\d+$/u, t('Priority must be a non-negative integer.')),
+  capacityBytes: z.string().refine((value) => value === '' || /^\d+$/u.test(value), t('Capacity must be a non-negative integer.')),
+}).superRefine((value, context) => {
+  if (value.provider === 'r2' && !value.accountId.trim()) {
+    context.addIssue({ code: 'custom', path: ['accountId'], message: t('Enter the Cloudflare account ID.') });
+  }
+  if (value.provider !== 'r2' && !value.region.trim()) {
+    context.addIssue({ code: 'custom', path: ['region'], message: t('Enter the provider region.') });
+  }
+  if (value.provider === 's3') {
+    try {
+      const endpoint = new URL(value.endpoint);
+      if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
+    } catch {
+      context.addIssue({ code: 'custom', path: ['endpoint'], message: t('Enter a valid HTTPS endpoint.') });
+    }
+  }
+  if (value.provider === 'r2' && !value.capacityBytes) {
+    context.addIssue({ code: 'custom', path: ['capacityBytes'], message: t('R2 requires a configured capacity.') });
+  }
+});
+}
+
+type AccountFormValues = z.input<ReturnType<typeof createAccountSchema>>;
+
+const defaultAccountValues: AccountFormValues = {
+  name: '',
+  provider: 'r2',
+  accountId: '',
+  region: '',
+  endpoint: '',
+  jurisdiction: '',
+  validationBucket: '',
+  accessKeyId: '',
+  secretAccessKey: '',
+  sessionToken: '',
+  priority: '100',
+  capacityBytes: '',
+};
+
+function createEditAccountSchema(t: Translate) {
+  return z.object({
+  provider: z.enum(['r2', 'b2', 's3']),
+  accountId: z.string(),
+  region: z.string(),
+  endpoint: z.string(),
+  jurisdiction: z.string(),
+  validationBucket: z.string().trim().min(1, t('Enter the existing physical bucket name.')),
+  accessKeyId: z.string(),
+  secretAccessKey: z.string(),
+  sessionToken: z.string(),
+}).superRefine((value, context) => {
+  if (value.provider === 'r2' && !value.accountId.trim()) {
+    context.addIssue({ code: 'custom', path: ['accountId'], message: t('Enter the Cloudflare account ID.') });
+  }
+  if (value.provider !== 'r2' && !value.region.trim()) {
+    context.addIssue({ code: 'custom', path: ['region'], message: t('Enter the provider region.') });
+  }
+  if (value.provider === 's3') {
+    try {
+      const endpoint = new URL(value.endpoint);
+      if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
+    } catch {
+      context.addIssue({ code: 'custom', path: ['endpoint'], message: t('Enter a valid HTTPS endpoint.') });
+    }
+  }
+  const replacesCredentials = Boolean(
+    value.accessKeyId.trim() ||
+    value.secretAccessKey ||
+    value.sessionToken,
+  );
+  if (replacesCredentials && !value.accessKeyId.trim()) {
+    context.addIssue({ code: 'custom', path: ['accessKeyId'], message: t('Enter the replacement access key ID.') });
+  }
+  if (replacesCredentials && !value.secretAccessKey) {
+    context.addIssue({ code: 'custom', path: ['secretAccessKey'], message: t('Enter the replacement secret access key.') });
+  }
+});
+}
+
+type EditAccountFormValues = z.input<ReturnType<typeof createEditAccountSchema>>;
+
+function configString(
+  config: ProviderConfigRequest,
+  key: string,
+): string {
+  const value = config[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function editAccountValues(
+  account: StorageAccountResponse,
+): EditAccountFormValues {
+  return {
+    provider: account.provider,
+    accountId: configString(account.providerConfig, 'accountId'),
+    region: configString(account.providerConfig, 'region'),
+    endpoint: configString(account.providerConfig, 'endpoint'),
+    jurisdiction: configString(account.providerConfig, 'jurisdiction'),
+    validationBucket: configString(
+      account.providerConfig,
+      'validationBucket',
+    ),
+    accessKeyId: '',
+    secretAccessKey: '',
+    sessionToken: '',
+  };
+}
+
+interface PendingTransition {
+  readonly account: StorageAccountResponse;
+  readonly status: 'DRAINING' | 'READ_ONLY' | 'REMOVED';
+}
+
+export function AccountsPage() {
+  const { t } = useI18n();
+  const accountsQuery = useAccounts();
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [provider, setProvider] = useState<'all' | StorageProviderKind>('all');
+  const [status, setStatus] = useState('all');
+  const [health, setHealth] = useState('all');
+  const [actionFailure, setActionFailure] = useState<{ accountId: string; error: unknown } | null>(null);
+  const [editingAccount, setEditingAccount] = useState<StorageAccountResponse | null>(null);
+  const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null);
+
+  const refresh = async () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts });
+  const actionMutation = useMutation({
+    mutationFn: async ({ account, action }: { account: StorageAccountResponse; action: 'verify' | 'health' }) => {
+      if (action === 'verify') return api.verifyAccount(account.id);
+      return api.healthAccount(account.id);
+    },
+    onSuccess: async (_, variables) => {
+      setActionFailure(null);
+      await refresh();
+      toast.success(t(variables.action === 'verify' ? 'Account verified' : 'Health check completed'));
+    },
+    onError: (error, variables) => setActionFailure({ accountId: variables.account.id, error }),
+  });
+  const transitionMutation = useMutation({
+    mutationFn: async ({ account, status: nextStatus }: PendingTransition) => api.updateAccountStatus(account.id, { status: nextStatus }),
+    onSuccess: async (_, variables) => {
+      setPendingTransition(null);
+      await refresh();
+      toast.success(t('{{name}} is now {{status}}', { name: variables.account.name, status: t(variables.status.replaceAll('_', ' ')) }));
+    },
+    onError: (error, variables) => setActionFailure({ accountId: variables.account.id, error }),
+  });
+
+  const accounts = accountsQuery.data ?? [];
+  const term = search.trim().toLowerCase();
+  const filtered = accounts.filter((account) => {
+    if (term && !`${account.name} ${account.provider}`.toLowerCase().includes(term)) return false;
+    if (provider !== 'all' && account.provider !== provider) return false;
+    if (status !== 'all' && account.status !== status) return false;
+    return health === 'all' || account.healthStatus === health;
+  });
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title={t('Storage accounts')}
+        detail={t('Connect and manage the object storage providers that make up your pool.')}
+        action={<Button type="button" onClick={() => setCreateOpen(true)}><PlusIcon className="size-4" aria-hidden />{t('Add account')}</Button>}
+      />
+
+      <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_180px_180px_180px_auto]">
+        <label className="relative">
+          <span className="sr-only">{t('Search accounts')}</span>
+          <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
+          <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search accounts by name or provider…')} />
+        </label>
+        <FilterSelect label={t('Provider')} value={provider} onChange={setProvider} options={[['all', t('All providers')], ['r2', 'Cloudflare R2'], ['b2', 'Backblaze B2'], ['s3', t('S3 Compatible')]]} />
+        <FilterSelect label={t('Status')} value={status} onChange={setStatus} options={[['all', t('All statuses')], ['VERIFYING', t('Verifying')], ['ACTIVE', t('Active')], ['DRAINING', t('Draining')], ['READ_ONLY', t('Read only')], ['REMOVED', t('Removed')]]} />
+        <FilterSelect label={t('Health')} value={health} onChange={setHealth} options={[['all', t('All health')], ['UNKNOWN', t('Unknown')], ['HEALTHY', t('Healthy')], ['DEGRADED', t('Degraded')], ['UNHEALTHY', t('Unhealthy')]]} />
+        <Button type="button" variant="secondary" onClick={() => void accountsQuery.refetch()} busy={accountsQuery.isFetching}>{t('Refresh')}</Button>
+      </div>
+
+      {accountsQuery.error ? <ErrorNotice error={errorText(accountsQuery.error)} requestId={errorRequestId(accountsQuery.error)} onRetry={() => void accountsQuery.refetch()} /> : null}
+      {accountsQuery.isLoading ? <LoadingState rows={3} /> : null}
+      {!accountsQuery.isLoading && accounts.length === 0 ? (
+        <EmptyState title={t('No storage accounts yet')} detail={t('Connect an R2, Backblaze B2, or S3-compatible provider to start building the pool.')} action={<Button type="button" onClick={() => setCreateOpen(true)}>{t('Add account')}</Button>} />
+      ) : null}
+      {!accountsQuery.isLoading && accounts.length > 0 ? (
+        <AccountsTable
+          accounts={filtered}
+          total={accounts.length}
+          actionFailure={actionFailure}
+          actionMutation={actionMutation}
+          onEdit={setEditingAccount}
+          onTransition={setPendingTransition}
+        />
+      ) : null}
+
+      <CreateAccountDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={refresh} />
+      {editingAccount ? (
+        <EditAccountDialog
+          key={editingAccount.id}
+          account={editingAccount}
+          onAccountUpdated={(updated) => {
+            setEditingAccount(updated);
+            setActionFailure(null);
+          }}
+          onVerificationFailed={(error) => {
+            setActionFailure({ accountId: editingAccount.id, error });
+          }}
+          onChanged={refresh}
+          onReload={async () => {
+            const result = await accountsQuery.refetch({ throwOnError: true });
+            return result.data?.find((account) => account.id === editingAccount.id) ?? null;
+          }}
+          onOpenChange={(open) => {
+            if (!open) setEditingAccount(null);
+          }}
+        />
+      ) : null}
+      <ConfirmDialog
+        open={pendingTransition !== null}
+        onOpenChange={(open) => { if (!open) setPendingTransition(null); }}
+        title={pendingTransition ? `${transitionLabel(pendingTransition.status, t)} ${pendingTransition.account.name}?` : t('Change account state?')}
+        description={pendingTransition ? transitionDescription(pendingTransition.status, t) : ''}
+        confirmLabel={pendingTransition ? transitionLabel(pendingTransition.status, t) : t('Continue')}
+        busy={transitionMutation.isPending}
+        onConfirm={() => { if (pendingTransition) transitionMutation.mutate(pendingTransition); }}
+      />
+    </div>
+  );
+}
+
+function FilterSelect<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  readonly label: string;
+  readonly value: T;
+  readonly onChange: (value: T) => void;
+  readonly options: ReadonlyArray<readonly [T, string]>;
+}) {
+  return (
+    <label>
+      <span className="sr-only">{label}</span>
+      <select className={selectClassName} value={value} onChange={(event) => onChange(event.target.value as T)}>
+        {options.map(([optionValue, optionLabel]) => <option value={optionValue} key={optionValue}>{optionLabel}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function AccountsTable({
+  accounts,
+  total,
+  actionFailure,
+  actionMutation,
+  onEdit,
+  onTransition,
+}: {
+  readonly accounts: StorageAccountResponse[];
+  readonly total: number;
+  readonly actionFailure: { accountId: string; error: unknown } | null;
+  readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
+  readonly onTransition: (transition: PendingTransition) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-lg border border-zinc-200">
+        <table className="w-full min-w-[940px] border-collapse text-left">
+          <thead className="bg-zinc-50/70">
+            <tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
+              <th className="px-5 py-3.5">{t('Account')}</th>
+              <th className="px-5 py-3.5">{t('Provider')}</th>
+              <th className="px-5 py-3.5">{t('Status')}</th>
+              <th className="px-5 py-3.5">{t('Health')}</th>
+              <th className="px-5 py-3.5">{t('Capacity')}</th>
+              <th className="px-5 py-3.5">{t('Last check')}</th>
+              <th className="w-16 px-5 py-3.5"><span className="sr-only">{t('Actions')}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((account) => (
+              <AccountRows
+                key={account.id}
+                account={account}
+                failure={actionFailure?.accountId === account.id ? actionFailure.error : null}
+                actionMutation={actionMutation}
+                onEdit={onEdit}
+                onTransition={onTransition}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-xs text-zinc-500">{t('Showing {{visible}} of {{total}} accounts', { visible: accounts.length, total })}</p>
+    </div>
+  );
+}
+
+function AccountRows({
+  account,
+  failure,
+  actionMutation,
+  onEdit,
+  onTransition,
+}: {
+  readonly account: StorageAccountResponse;
+  readonly failure: unknown;
+  readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
+  readonly onTransition: (transition: PendingTransition) => void;
+}) {
+  const { locale, t } = useI18n();
+  const percentage = capacityPercent(account.usedBytes, account.capacityBytes);
+  const ProviderIcon = account.provider === 'r2' ? CloudIcon : account.provider === 'b2' ? FireIcon : HardDrivesIcon;
+  return (
+    <>
+      <tr className="border-b border-zinc-100 align-middle transition-colors hover:bg-zinc-50/60">
+        <td className="px-5 py-5">
+          <p className="font-medium text-zinc-950">{account.name}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
+            {account.provider} · {t('priority {{priority}}', { priority: account.priority })}
+            <button type="button" className="rounded p-0.5 hover:bg-zinc-100" aria-label={t('Copy {{name}} account ID', { name: account.name })} onClick={() => void navigator.clipboard?.writeText(account.id)}>
+              <CopyIcon className="size-3" aria-hidden />
+            </button>
+          </p>
+        </td>
+        <td className="px-5 py-5">
+          <span className="inline-flex items-center gap-2 text-sm text-zinc-700"><ProviderIcon className="size-5" aria-hidden />{t(providerLabel(account.provider))}</span>
+        </td>
+        <td className="px-5 py-5"><StatusBadge value={account.status} /><p className="mt-1.5 text-xs text-zinc-500">{t(account.writeEnabled ? 'Read / Write' : 'Read only')}</p></td>
+        <td className="px-5 py-5"><StatusBadge value={account.healthStatus} /><p className="mt-1.5 text-xs text-zinc-500">{t(account.healthStatus === 'HEALTHY' ? 'All systems normal' : account.healthStatus === 'UNKNOWN' ? 'Not checked' : 'Attention required')}</p></td>
+        <td className="min-w-44 px-5 py-5">
+          <p className="text-sm text-zinc-800">{formatBytes(account.usedBytes)} / {formatBytes(account.capacityBytes)}</p>
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100"><span className="block h-full rounded-full bg-zinc-950" style={{ width: `${percentage}%` }} /></div>
+          <p className="mt-1.5 text-xs text-zinc-500">{t('{{percent}}% used · {{accuracy}}', { percent: Math.round(percentage), accuracy: t(account.capacityAccuracy) })}</p>
+        </td>
+        <td className="px-5 py-5"><p className="text-sm text-zinc-800">{account.lastHealthCheckedAt ? relativeDate(account.lastHealthCheckedAt, locale) : t('Not checked')}</p><p className="mt-1.5 text-xs text-zinc-500">{formatDate(account.lastHealthCheckedAt, locale)}</p></td>
+        <td className="px-5 py-5"><AccountMenu account={account} actionMutation={actionMutation} onEdit={onEdit} onTransition={onTransition} /></td>
+      </tr>
+      {failure ? (
+        <tr className="border-b border-zinc-100">
+          <td colSpan={7} className="px-4 py-3">
+            <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <ShieldWarningIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1"><p>{errorText(failure)}</p>{errorRequestId(failure) ? <p className="mt-1 font-mono text-[11px] text-amber-700">{t('Request ID: {{id}}', { id: errorRequestId(failure) ?? '' })}</p> : null}</div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" disabled={actionMutation.isPending} onClick={() => onEdit(account)}>{t('Edit & retry')}</Button> : null}
+                <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>{t('Retry')}</Button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function AccountMenu({
+  account,
+  actionMutation,
+  onEdit,
+  onTransition,
+}: {
+  readonly account: StorageAccountResponse;
+  readonly actionMutation: ReturnType<typeof useMutation<StorageAccountResponse, Error, { account: StorageAccountResponse; action: 'verify' | 'health' }>>;
+  readonly onEdit: (account: StorageAccountResponse) => void;
+  readonly onTransition: (transition: PendingTransition) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <Button type="button" variant="ghost" size="icon" disabled={actionMutation.isPending} aria-label={t('Actions for {{name}}', { name: account.name })}><DotsThreeVerticalIcon className="size-5" weight="bold" aria-hidden /></Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-48 rounded-md border border-zinc-200 bg-white p-1 shadow-lg outline-none data-[state=open]:animate-enter">
+          {account.status === 'VERIFYING' ? <MenuItem icon={CheckCircleIcon} onSelect={() => actionMutation.mutate({ account, action: 'verify' })}>{t('Verify account')}</MenuItem> : null}
+          {account.status === 'VERIFYING' ? <MenuItem icon={PencilSimpleIcon} onSelect={() => onEdit(account)}>{t('Edit configuration')}</MenuItem> : null}
+          {account.status !== 'REMOVED' ? <MenuItem icon={HeartbeatIcon} onSelect={() => actionMutation.mutate({ account, action: 'health' })}>{t('Run health check')}</MenuItem> : null}
+          {account.status === 'ACTIVE' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'DRAINING' })}>{t('Begin draining')}</MenuItem> : null}
+          {account.status === 'DRAINING' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'READ_ONLY' })}>{t('Make read only')}</MenuItem> : null}
+          {account.status === 'READ_ONLY' ? <MenuItem icon={TrashIcon} danger onSelect={() => onTransition({ account, status: 'REMOVED' })}>{t('Remove account')}</MenuItem> : null}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function MenuItem({ icon: Icon, danger = false, onSelect, children }: { readonly icon: typeof CheckCircleIcon; readonly danger?: boolean; readonly onSelect: () => void; readonly children: string }) {
+  return <DropdownMenu.Item onSelect={onSelect} className={cn('flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm text-zinc-700 outline-none focus:bg-zinc-100', danger && 'text-red-600 focus:bg-red-50')}><Icon className="size-4" aria-hidden />{children}</DropdownMenu.Item>;
+}
+
+function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onCreated: () => Promise<unknown> }) {
+  const { t } = useI18n();
+  const accountSchema = useMemo(() => createAccountSchema(t), [t]);
+  const form = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema), defaultValues: defaultAccountValues });
+  const provider = useWatch({ control: form.control, name: 'provider' });
+  const pendingInput = useRef<CreateStorageAccountRequest | null>(null);
+  const submitting = useRef(false);
+  const mutation = useMutation({
+    retry: false,
+    gcTime: 0,
+    mutationFn: async () => {
+      // Consume credentials without retaining them as mutation variables.
+      const input = pendingInput.current;
+      pendingInput.current = null;
+      if (!input) throw new Error('No account creation was submitted.');
+      return api.createAccount(input);
+    },
+    onSuccess: async () => {
+      form.reset(defaultAccountValues);
+      await onCreated();
+      onOpenChange(false);
+      toast.success(t('Storage account created'), { description: t('Verify the account before using it for placement.') });
+    },
+    onSettled: () => {
+      pendingInput.current = null;
+      submitting.current = false;
+    },
+  });
+  const isBusy = mutation.isPending || form.formState.isSubmitting;
+
+  const changeOpen = (nextOpen: boolean) => {
+    if (submitting.current || isBusy) return;
+    if (!nextOpen) {
+      pendingInput.current = null;
+      form.reset(defaultAccountValues);
+      mutation.reset();
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!open || submitting.current || isBusy) return;
+    // Lock before asynchronous validation so submit/dismiss cannot race it.
+    submitting.current = true;
+    let requested = false;
+    try {
+      await form.handleSubmit((values) => {
+        const providerConfig: Record<string, string> = { validationBucket: values.validationBucket.trim() };
+        if (values.provider === 'r2') {
+          providerConfig.accountId = values.accountId.trim();
+          if (values.jurisdiction) providerConfig.jurisdiction = values.jurisdiction;
+        }
+        if (values.provider === 'b2') providerConfig.region = values.region.trim();
+        if (values.provider === 's3') {
+          providerConfig.endpoint = values.endpoint.trim();
+          providerConfig.region = values.region.trim();
+        }
+        pendingInput.current = {
+          name: values.name.trim(),
+          provider: values.provider,
+          providerConfig,
+          credentials: {
+            accessKeyId: values.accessKeyId.trim(),
+            secretAccessKey: values.secretAccessKey,
+            ...(values.sessionToken ? { sessionToken: values.sessionToken } : {}),
+          },
+          priority: Number(values.priority),
+          ...(values.capacityBytes ? { capacityBytes: Number(values.capacityBytes) } : {}),
+        };
+        requested = true;
+        mutation.mutate();
+      })(event);
+    } finally {
+      if (!requested) submitting.current = false;
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={changeOpen} title={t('Add storage account')} description={t('Credentials are encrypted before they are persisted and never returned by the API.')}>
+      <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
+        {mutation.error ? <ErrorNotice error={errorText(mutation.error)} requestId={errorRequestId(mutation.error)} /> : null}
+        <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy}>
+          <Field label={t('Display name')} error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
+          <Field label={t('Provider')} error={form.formState.errors.provider?.message}>
+            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">{t('Generic S3-compatible')}</option></select>
+          </Field>
+          {provider === 'r2' ? <Field label={t('Cloudflare account ID')} error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
+          {provider === 's3' ? <Field label={t('HTTPS endpoint')} error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
+          {provider !== 'r2' ? <Field label={t('Region')} error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
+            <Field label={t('Jurisdiction')}><select className={selectClassName} {...form.register('jurisdiction')}><option value="">{t('Default')}</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
+          )}
+          <Field label={t('Validation bucket')} hint={t('An existing physical bucket this key can access.')} error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>
+          <Field label={t(provider === 'b2' ? 'Key ID' : 'Access key ID')} error={form.formState.errors.accessKeyId?.message}><Input autoComplete="off" {...form.register('accessKeyId')} /></Field>
+          <Field label={t(provider === 'b2' ? 'Application key' : 'Secret access key')} error={form.formState.errors.secretAccessKey?.message}><Input type="password" autoComplete="new-password" {...form.register('secretAccessKey')} /></Field>
+          <Field label={t('Session token')} hint={t('Optional for temporary S3 credentials.')}><Input type="password" autoComplete="off" {...form.register('sessionToken')} /></Field>
+          <Field label={t('Priority')} error={form.formState.errors.priority?.message}><Input inputMode="numeric" {...form.register('priority')} /></Field>
+          <Field label={t('Capacity in bytes')} hint={t(provider === 'r2' ? 'Required for R2 placement.' : 'Optional when usage is observable.')} error={form.formState.errors.capacityBytes?.message}><Input inputMode="numeric" placeholder="10737418240" {...form.register('capacityBytes')} /></Field>
+        </fieldset>
+        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5">
+          <Button type="button" variant="secondary" onClick={() => changeOpen(false)} disabled={isBusy}>{t('Cancel')}</Button>
+          <Button type="submit" busy={isBusy}>{t('Create account')}</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function EditAccountDialog({
+  account,
+  onAccountUpdated,
+  onVerificationFailed,
+  onChanged,
+  onReload,
+  onOpenChange,
+}: {
+  readonly account: StorageAccountResponse;
+  readonly onAccountUpdated: (account: StorageAccountResponse) => void;
+  readonly onVerificationFailed: (error: unknown) => void;
+  readonly onChanged: () => Promise<unknown>;
+  readonly onReload: () => Promise<StorageAccountResponse | null>;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const editAccountSchema = useMemo(() => createEditAccountSchema(t), [t]);
+  const form = useForm<EditAccountFormValues>({
+    resolver: zodResolver(editAccountSchema),
+    defaultValues: editAccountValues(account),
+  });
+  // Credentials belong only to the form and the in-flight API call, never mutation variables.
+  const pendingInput = useRef<UpdateStorageAccountConfigurationRequest | null>(null);
+  const submitting = useRef(false);
+  const [configurationSaved, setConfigurationSaved] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadError, setReloadError] = useState<unknown>(null);
+  const mutation = useMutation({
+    retry: false,
+    gcTime: 0,
+    mutationFn: async () => {
+      const input = pendingInput.current;
+      pendingInput.current = null;
+      if (!input) throw new Error('No account configuration was submitted.');
+      const updated = await api.updateAccountConfiguration(account.id, input);
+      form.reset(editAccountValues(updated));
+      setConfigurationSaved(true);
+      onAccountUpdated(updated);
+      try {
+        return await api.verifyAccount(updated.id);
+      } catch (error) {
+        onVerificationFailed(error);
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      await onChanged();
+      onOpenChange(false);
+      toast.success(t('Account configuration saved and verified'));
+    },
+    onError: async () => {
+      await onChanged();
+    },
+    onSettled: () => { submitting.current = false; },
+  });
+  const needsReload = mutation.error instanceof ApiClientError && [
+    'STORAGE_ACCOUNT_CONFLICT', 'STORAGE_ACCOUNT_NOT_VERIFYING', 'STORAGE_ACCOUNT_NOT_FOUND',
+  ].includes(mutation.error.code);
+  const isBusy = mutation.isPending || reloading;
+
+  const reload = async () => {
+    if (submitting.current || reloading) return;
+    setReloading(true);
+    setReloadError(null);
+    try {
+      const latest = await onReload();
+      if (!latest || latest.status !== 'VERIFYING') {
+        onOpenChange(false);
+        return;
+      }
+      form.reset(editAccountValues(latest));
+      onAccountUpdated(latest);
+      mutation.reset();
+      setConfigurationSaved(false);
+    } catch (error) {
+      setReloadError(error);
+    } finally {
+      setReloading(false);
+    }
+  };
+
+  const submit = (values: EditAccountFormValues) => {
+    if (submitting.current || isBusy || needsReload) return;
+    const providerConfig: Record<
+      string,
+      string | number | boolean | null
+    > = { ...account.providerConfig };
+    providerConfig.validationBucket = values.validationBucket.trim();
+    if (values.provider === 'r2') {
+      providerConfig.accountId = values.accountId.trim();
+      if (values.jurisdiction) {
+        providerConfig.jurisdiction = values.jurisdiction;
+      } else {
+        delete providerConfig.jurisdiction;
+      }
+    }
+    if (values.provider === 'b2') {
+      providerConfig.region = values.region.trim();
+    }
+    if (values.provider === 's3') {
+      providerConfig.endpoint = values.endpoint.trim();
+      providerConfig.region = values.region.trim();
+    }
+    const replacesCredentials = Boolean(
+      values.accessKeyId.trim() ||
+      values.secretAccessKey ||
+      values.sessionToken,
+    );
+    pendingInput.current = {
+      providerConfig,
+      expectedUpdatedAt: account.updatedAt,
+      ...(replacesCredentials
+        ? {
+            credentials: {
+              accessKeyId: values.accessKeyId.trim(),
+              secretAccessKey: values.secretAccessKey,
+              ...(values.sessionToken
+                ? { sessionToken: values.sessionToken }
+                : {}),
+            },
+          }
+        : {}),
+    };
+    submitting.current = true;
+    setConfigurationSaved(false);
+    mutation.mutate();
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!submitting.current && !isBusy) onOpenChange(open);
+      }}
+      title={t('Edit {{name}}', { name: account.name })}
+      description={t('Correct the provider settings, optionally replace the write-only credentials, and retry verification. This is available only before activation.')}
+    >
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => void form.handleSubmit(submit)(event)}
+      >
+        <input type="hidden" {...form.register('provider')} />
+        {mutation.error ? (
+          <div className="space-y-3">
+            <ErrorNotice
+              error={errorText(mutation.error)}
+              requestId={errorRequestId(mutation.error)}
+            />
+            {configurationSaved ? <p className="text-sm text-amber-800">{t('Configuration saved, but verification failed. The saved credentials are retained; correct the settings or enter a new replacement before retrying.')}</p> : null}
+            {needsReload ? <div className="space-y-2"><p className="text-sm text-amber-800">{t('This account changed. Reload its latest configuration before saving again. Reloading discards unsaved edits and clears replacement credentials.')}</p><Button type="button" variant="secondary" busy={reloading} onClick={() => void reload()}>{t('Reload latest configuration')}</Button></div> : null}
+            {reloadError ? <ErrorNotice error={errorText(reloadError)} requestId={errorRequestId(reloadError)} /> : null}
+          </div>
+        ) : null}
+        <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy || needsReload}>
+          <Field label={t('Provider')} hint={t('Provider type cannot change after creation.')}>
+            <Input value={t(providerLabel(account.provider))} disabled readOnly />
+          </Field>
+          {account.provider === 'r2' ? (
+            <Field
+              label={t('Cloudflare account ID')}
+              error={form.formState.errors.accountId?.message}
+            >
+              <Input autoComplete="off" {...form.register('accountId')} />
+            </Field>
+          ) : null}
+          {account.provider === 's3' ? (
+            <Field
+              label={t('HTTPS endpoint')}
+              error={form.formState.errors.endpoint?.message}
+            >
+              <Input type="url" {...form.register('endpoint')} />
+            </Field>
+          ) : null}
+          {account.provider !== 'r2' ? (
+            <Field
+              label={t('Region')}
+              error={form.formState.errors.region?.message}
+            >
+              <Input {...form.register('region')} />
+            </Field>
+          ) : (
+            <Field label={t('Jurisdiction')}>
+              <select
+                className={selectClassName}
+                {...form.register('jurisdiction')}
+              >
+                <option value="">{t('Default')}</option>
+                <option value="eu">EU</option>
+                <option value="fedramp">FedRAMP</option>
+              </select>
+            </Field>
+          )}
+          <Field
+            label={t('Validation bucket')}
+            hint={t('An existing physical bucket this key can access.')}
+            error={form.formState.errors.validationBucket?.message}
+          >
+            <Input {...form.register('validationBucket')} />
+          </Field>
+          <div className="border-t border-zinc-100 pt-4 sm:col-span-2">
+            <p className="text-sm font-medium text-zinc-900">
+              {t('Replace credentials (optional)')}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              {t('Leave all three fields blank to keep the encrypted credentials already saved.')}
+            </p>
+          </div>
+          <Field
+            label={t(account.provider === 'b2' ? 'Key ID' : 'Access key ID')}
+            error={form.formState.errors.accessKeyId?.message}
+          >
+            <Input autoComplete="off" {...form.register('accessKeyId')} />
+          </Field>
+          <Field
+            label={t(account.provider === 'b2' ? 'Application key' : 'Secret access key')}
+            error={form.formState.errors.secretAccessKey?.message}
+          >
+            <Input
+              type="password"
+              autoComplete="new-password"
+              {...form.register('secretAccessKey')}
+            />
+          </Field>
+          <Field
+            label={t('Session token')}
+            hint={t('Optional; leaving it blank clears it when replacing the other credentials.')}
+          >
+            <Input
+              type="password"
+              autoComplete="off"
+              {...form.register('sessionToken')}
+            />
+          </Field>
+        </fieldset>
+        <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+            disabled={isBusy}
+          >
+            {t('Cancel')}
+          </Button>
+          <Button type="submit" busy={isBusy} disabled={needsReload}>
+            {t('Save and retry verification')}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function transitionLabel(status: PendingTransition['status'], t: Translate): string {
+  if (status === 'DRAINING') return t('Begin draining');
+  if (status === 'READ_ONLY') return t('Make read only');
+  return t('Remove account');
+}
+
+function transitionDescription(status: PendingTransition['status'], t: Translate): string {
+  if (status === 'DRAINING') return t('New placements will stop while existing objects remain available.');
+  if (status === 'READ_ONLY') return t('This succeeds only after shard migrations clear all live references and used capacity.');
+  return t('Removal succeeds only after all live shards, object locations, and reserved capacity are cleared.');
+}

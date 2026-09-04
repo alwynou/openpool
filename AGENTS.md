@@ -33,3 +33,10 @@ npm run verify
 
 Run the narrowest relevant check while iterating and `npm run verify` before handoff.
 Do not deploy or run remote D1 migrations unless the user explicitly asks.
+
+## Automatic commits
+
+- A completed, self-contained change may be committed locally without asking again when linting for the changed scope and all relevant tests pass.
+- Documentation-only, metadata-only, or narrowly scoped configuration changes may have no applicable tests; state that explicitly instead of running unrelated tests.
+- Before committing, verify that the worktree contains only the intended changes and use a Conventional Commit message describing the actual change.
+- Automatic commits never authorize pushing, deploying, or running local or remote database migrations.

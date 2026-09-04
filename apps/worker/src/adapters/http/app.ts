@@ -1,28 +1,110 @@
 import type {
   ApiEnvelope,
   ApiError,
+  DeploymentReadinessError,
+  DeploymentReadinessIssueCode,
   HealthResponse,
 } from '@openpool/contracts';
 import { Hono } from 'hono';
 
-import type { Env, Variables } from '../../env';
+import {
+  registerAuthRoutes,
+  type AuthRouteDependencies,
+} from './auth-routes';
+import {
+  registerAuditRoutes,
+  type AuditRouteDependencies,
+} from './audit-routes';
+import {
+  registerApiKeyRoutes,
+  type ApiKeyRouteDependencies,
+} from './api-key-routes';
+import {
+  registerBucketRoutes,
+  type BucketRouteDependencies,
+} from './bucket-routes';
+import {
+  registerObjectRoutes,
+  type ObjectRouteDependencies,
+} from './object-routes';
+import {
+  registerStorageAccountRoutes,
+  type StorageAccountRouteDependencies,
+} from './storage-account-routes';
+import {
+  registerShardMigrationRoutes,
+  type ShardMigrationRouteDependencies,
+} from './shard-migration-routes';
+import type { AppEnvironment } from './types';
 
-export type AppEnvironment = {
-  Bindings: Env;
-  Variables: Variables;
-};
+const CLIENT_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
-export function createHttpApp(): Hono<AppEnvironment> {
+function requestIdFor(request: Request): string {
+  const provided = request.headers.get('x-request-id');
+  return provided !== null && CLIENT_REQUEST_ID.test(provided)
+    ? provided
+    : crypto.randomUUID();
+}
+
+export type HttpAppDependencies = AuthRouteDependencies &
+  ApiKeyRouteDependencies &
+  AuditRouteDependencies &
+  StorageAccountRouteDependencies &
+  BucketRouteDependencies &
+  ObjectRouteDependencies &
+  ShardMigrationRouteDependencies & {
+    readonly inspectDeploymentConfiguration: (
+      env: AppEnvironment['Bindings'],
+    ) => readonly DeploymentReadinessIssueCode[];
+    readonly checkDeploymentReadiness: (
+      env: AppEnvironment['Bindings'],
+    ) => Promise<readonly DeploymentReadinessIssueCode[]>;
+  };
+
+function deploymentNotReady(
+  requestId: string,
+  issues: readonly DeploymentReadinessIssueCode[],
+): DeploymentReadinessError {
+  return {
+    error: {
+      code: 'DEPLOYMENT_NOT_READY',
+      message: 'OpenPool deployment configuration is not ready.',
+      issues,
+    },
+    requestId,
+  };
+}
+
+export function createHttpApp(
+  dependencies: HttpAppDependencies,
+): Hono<AppEnvironment> {
   const app = new Hono<AppEnvironment>();
 
   app.use('/api/*', async (context, next) => {
-    const requestId = context.req.header('x-request-id') ?? crypto.randomUUID();
+    const requestId = requestIdFor(context.req.raw);
     context.set('requestId', requestId);
     await next();
     context.header('x-request-id', requestId);
   });
 
-  app.get('/api/v1/health', (context) => {
+  app.use('/api/*', async (context, next) => {
+    if (context.req.path === '/api/v1/health') return next();
+    const issues = dependencies.inspectDeploymentConfiguration(context.env);
+    if (issues.length > 0) {
+      return context.json(
+        deploymentNotReady(context.get('requestId'), issues),
+        503,
+      );
+    }
+    return next();
+  });
+
+  app.get('/api/v1/health', async (context) => {
+    const requestId = context.get('requestId');
+    const issues = await dependencies.checkDeploymentReadiness(context.env);
+    if (issues.length > 0) {
+      return context.json(deploymentNotReady(requestId, issues), 503);
+    }
     const health: HealthResponse = {
       name: 'openpool',
       status: 'ok',
@@ -31,11 +113,19 @@ export function createHttpApp(): Hono<AppEnvironment> {
     };
     const response: ApiEnvelope<HealthResponse> = {
       data: health,
-      requestId: context.get('requestId'),
+      requestId,
     };
 
     return context.json(response);
   });
+
+  registerAuthRoutes(app, dependencies);
+  registerApiKeyRoutes(app, dependencies);
+  registerAuditRoutes(app, dependencies);
+  registerStorageAccountRoutes(app, dependencies);
+  registerBucketRoutes(app, dependencies);
+  registerObjectRoutes(app, dependencies);
+  registerShardMigrationRoutes(app, dependencies);
 
   app.notFound((context) => {
     const response: ApiError = {
@@ -52,7 +142,7 @@ export function createHttpApp(): Hono<AppEnvironment> {
   app.onError((error, context) => {
     console.error('Unhandled request error', {
       requestId: context.get('requestId'),
-      error,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
     });
 
     const response: ApiError = {

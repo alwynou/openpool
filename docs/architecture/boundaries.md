@@ -29,6 +29,12 @@
 `packages/contracts` 是跨进程边界的数据形状。它只定义公开请求、响应、错误码和运行时校验所需
 schema。数据库 row 和 Provider SDK 类型不能泄漏为 API 契约。
 
+## SDK 与对象 CLI
+
+`packages/sdk` 依赖 contracts；`apps/cli` 依赖 SDK，并在客户端边界处理 Node 文件 I/O、参数和进程
+信号。CLI 不导入 domain/application、Worker、D1 或 Provider SDK，不绕过控制 API。它使用 API Key，
+不能调用管理员 session-only 管理面；迁移 CLI 仍保留独立的管理员授权流程。
+
 ## 变更检查
 
 新增功能时依次确认：

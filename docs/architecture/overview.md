@@ -53,7 +53,8 @@ packages/application  用例和由用例定义的端口
 packages/domain       实体、值对象、状态和纯策略
 ```
 
-依赖只能向内。Web 只依赖共享 API 契约，不直接依赖领域或 Worker 实现。
+依赖只能向内。Web 和对象 CLI 通过 SDK 与共享 API 契约调用控制面，不直接依赖领域、数据库或
+Worker 实现。对象 CLI 的文件 I/O 只存在于 `apps/cli`，不进入通用 SDK。
 
 ## V1 Placement
 

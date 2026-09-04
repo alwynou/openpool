@@ -13,37 +13,54 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker",
+    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker && npm run build --workspace=@openpool/migrator && npm run build --workspace=@openpool/cli",
     "cf:typegen": "npm run cf:typegen --workspace=@openpool/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace=@openpool/worker",
-    "db:migrate:remote": "npm run db:migrate:remote --workspace=@openpool/worker",
+    "db:migrate:staging": "npm run db:migrate:staging --workspace=@openpool/worker",
+    "deploy:staging": "npm run build --workspace=@openpool/web && npm run deploy:staging --workspace=@openpool/worker",
+    "deploy:staging:with-migrations": "npm run db:migrate:staging && npm run deploy:staging",
     "dev": "concurrently -k -n worker,web -c yellow,cyan \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:secrets": "node scripts/create-local-dev-vars.mjs",
     "dev:web": "npm run dev --workspace=@openpool/web",
     "dev:worker": "npm run dev --workspace=@openpool/worker",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint .",
-    "test": "vitest run && npm run test --workspace=@openpool/worker",
+    "dev:worker:scheduled": "npm run dev:scheduled --workspace=@openpool/worker",
+    "lint": "oxlint .",
+    "migrate:shard": "npm run build --workspace=@openpool/migrator && node apps/migrator/dist/cli.js",
+    "openpool": "node apps/cli/bin/openpool.mjs",
+    "smoke:cli": "npm run build --workspace=@openpool/cli && node apps/cli/dist/smoke-cli.js",
+    "test": "vitest run && npm run test --workspace=@openpool/worker && npm run test --workspace=@openpool/migrator && npm run test --workspace=@openpool/cli",
     "test:watch": "vitest",
+    "test:web": "vitest run apps/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ADMIN_BOOTSTRAP_TOKEN": {
+        "description": "Generate a high-entropy one-time administrator bootstrap token."
+      },
+      "CREDENTIAL_MASTER_KEY": {
+        "description": "Generate exactly 32 random bytes and encode them as canonical base64. Never rotate this value until credential re-encryption exists."
+      },
+      "API_KEY_PEPPER": {
+        "description": "Generate a separate 32-byte canonical base64 secret used only for API key HMAC hashing."
+      }
+    }
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.2",
     "@cloudflare/workers-types": "^5.20260901.1",
-    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
-    "eslint": "^10.9.1",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.5",
-    "globals": "^17.11.0",
-    "prettier": "^3.9.6",
+    "jsdom": "^26.1.0",
+    "oxlint": "^1.80.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.69.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.127.1"

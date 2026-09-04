@@ -21,6 +21,13 @@
 - Worker：Cloudflare Vitest runtime，覆盖 binding、route 和 D1 adapter；
 - Web：优先测试用户行为，不测试实现细节。
 
+Web 定向检查运行 `npm run test:web`。需要 DOM 的页面测试使用文件级 jsdom、真实组件和查询缓存，
+只替换 API I/O；每例清理 DOM/缓存，禁止访问真实服务。上传恢复的覆盖范围与执行说明见
+[Web 上传恢复交互回归](web-upload-recovery.md)，账号表单与凭据边界见
+[Web 账号纠错交互回归](web-account-recovery.md)和[Web 账号创建交互回归](web-account-creation.md)；
+一次性 token、创建锁与剪贴板结果见[Web API Key 创建交互回归](web-api-key-creation.md)。
+组件测试不替代真实浏览器/CORS 验收。
+
 ## 完成标准
 
 1. 相关测试先通过，再运行 `npm run verify`。

@@ -1,0 +1,142 @@
+import { CopyIcon, KeyIcon, PlusIcon, ShieldCheckIcon, TrashIcon } from '@phosphor-icons/react';
+import type { ApiKeyResponse, ApiKeyScope, CreateApiKeyRequest } from '@openpool/contracts';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+
+import { api } from '../api';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
+import { useI18n } from '../i18n';
+import { errorRequestId, errorText, formatDate } from '../lib/utils';
+import { queryKeys, useApiKeys, useBuckets } from '../queries';
+import { Button, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+
+const scopes: ApiKeyScope[] = ['objects:list', 'objects:read', 'objects:upload', 'objects:delete'];
+
+export function ApiKeysPage() {
+  const { locale, t } = useI18n();
+  const keysQuery = useApiKeys();
+  const bucketsQuery = useBuckets();
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [rawToken, setRawToken] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<ApiKeyResponse | null>(null);
+  const creating = useRef(false);
+  const createMutation = useMutation({
+    retry: false,
+    gcTime: 0,
+    mutationFn: async (input: CreateApiKeyRequest) => {
+      const created = await api.createApiKey(input);
+      // The one-time secret must never become mutation data or reach cache callbacks.
+      setRawToken(created.token);
+      setCreateOpen(false);
+      return created.apiKey;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys });
+    },
+    onSettled: () => { creating.current = false; },
+  });
+  const revokeMutation = useMutation({
+    mutationFn: (key: ApiKeyResponse) => api.revokeApiKey(key.id),
+    onSuccess: async () => {
+      setPendingRevoke(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys });
+      toast.success(t('API key revoked'));
+    },
+  });
+  const keys = keysQuery.data ?? [];
+  const buckets = bucketsQuery.data ?? [];
+  const changeCreateOpen = (open: boolean) => {
+    if (creating.current || createMutation.isPending || rawToken !== null) return;
+    createMutation.reset();
+    setCreateOpen(open);
+  };
+
+  return (
+    <div className="space-y-8">
+      <PageHeader title={t('API keys')} detail={t('Issue narrowly scoped access for integrations. Raw tokens are shown exactly once.')} action={<Button type="button" disabled={createMutation.isPending || rawToken !== null} onClick={() => changeCreateOpen(true)}><PlusIcon className="size-4" aria-hidden />{t('Create key')}</Button>} />
+      {keysQuery.error ? <ErrorNotice error={errorText(keysQuery.error)} requestId={errorRequestId(keysQuery.error)} onRetry={() => void keysQuery.refetch()} /> : null}
+      {keysQuery.isLoading ? <LoadingState rows={4} /> : null}
+      {!keysQuery.isLoading && keys.length === 0 ? <EmptyState title={t('No API keys')} detail={t('Create a scoped key when an external integration needs object access.')} action={<Button type="button" disabled={createMutation.isPending || rawToken !== null} onClick={() => changeCreateOpen(true)}>{t('Create key')}</Button>} /> : null}
+      {keys.length ? (
+        <div className="overflow-x-auto rounded-lg border border-zinc-200">
+          <table className="w-full min-w-[860px] border-collapse text-left">
+            <thead className="bg-zinc-50/70"><tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase"><th className="px-5 py-3.5">{t('Name')}</th><th className="px-5 py-3.5">{t('Scopes')}</th><th className="px-5 py-3.5">{t('Restriction')}</th><th className="px-5 py-3.5">{t('Status')}</th><th className="px-5 py-3.5">{t('Created')}</th><th className="px-5 py-3.5"><span className="sr-only">{t('Actions')}</span></th></tr></thead>
+            <tbody>{keys.map((key) => {
+              const expired = key.expiresAt ? new Date(key.expiresAt) < new Date() : false;
+              return <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60" key={key.id}><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md border border-zinc-200"><KeyIcon className="size-4" aria-hidden /></span><div><p className="text-sm font-medium text-zinc-900">{key.name}</p><p className="mt-1 font-mono text-xs text-zinc-500">{key.keyPrefix}…</p></div></div></td><td className="px-5 py-4"><div className="flex max-w-72 flex-wrap gap-1.5">{key.scopes.map((scope) => <span className="rounded border border-zinc-200 px-1.5 py-1 font-mono text-[10px] text-zinc-600" key={scope}>{scope}</span>)}</div></td><td className="px-5 py-4"><p className="text-sm text-zinc-700">{key.logicalBucketId ? buckets.find((bucket) => bucket.id === key.logicalBucketId)?.name ?? t('Specific bucket') : t('All buckets')}</p><p className="mt-1 text-xs text-zinc-500">{key.pathPrefix || t('All paths')}</p></td><td className="px-5 py-4"><StatusBadge value={key.revokedAt ? 'REVOKED' : expired ? 'EXPIRED' : 'ACTIVE'} /></td><td className="px-5 py-4 text-sm text-zinc-500">{formatDate(key.createdAt, locale)}</td><td className="px-5 py-4"><Button type="button" variant="ghost" size="icon" className="text-red-600 hover:bg-red-50" aria-label={t('Revoke {{name}}', { name: key.name })} disabled={Boolean(key.revokedAt)} onClick={() => setPendingRevoke(key)}><TrashIcon className="size-4" aria-hidden /></Button></td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <Dialog open={createOpen} onOpenChange={changeCreateOpen} title={t('Create API key')} description={t('Restrict the key to the minimum bucket, path, scopes, and lifetime the integration needs.')}>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          if (creating.current || createMutation.isPending) return;
+          const form = new FormData(event.currentTarget);
+          const selectedScopes = scopes.filter((scope) => form.get(`scope-${scope}`) === 'on');
+          if (!selectedScopes.length) { toast.error(t('Choose at least one scope.')); return; }
+          const bucketId = String(form.get('logicalBucketId') ?? '');
+          const pathPrefix = String(form.get('pathPrefix') ?? '');
+          const expiresAt = String(form.get('expiresAt') ?? '');
+          const input: CreateApiKeyRequest = { name: String(form.get('name') ?? ''), scopes: selectedScopes, ...(bucketId ? { logicalBucketId: bucketId } : {}), ...(pathPrefix ? { pathPrefix } : {}), ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}) };
+          creating.current = true;
+          createMutation.mutate(input);
+        }}>
+          <fieldset className="grid gap-4 sm:grid-cols-2" disabled={createMutation.isPending}>
+            {createMutation.error ? <div className="sm:col-span-2"><ErrorNotice error={errorText(createMutation.error)} requestId={errorRequestId(createMutation.error)} /></div> : null}
+            <Field label={t('Key name')}><Input name="name" placeholder={t('CI upload key')} required /></Field>
+            <Field label={t('Bucket restriction')}><select className={selectClassName} name="logicalBucketId"><option value="">{t('All buckets')}</option>{buckets.map((bucket) => <option value={bucket.id} key={bucket.id}>{bucket.name}</option>)}</select></Field>
+            <Field label={t('Path prefix')} hint={t('Optional literal prefix such as reports/2026/.')}><Input name="pathPrefix" placeholder="reports/" /></Field>
+            <Field label={t('Expires')}><Input name="expiresAt" type="date" /></Field>
+            <fieldset className="rounded-md border border-zinc-200 p-4 sm:col-span-2"><legend className="px-1 text-sm font-medium text-zinc-800">{t('Scopes')}</legend><div className="mt-1 grid gap-3 sm:grid-cols-2">{scopes.map((scope) => <label className="flex items-center gap-2 text-sm text-zinc-700" key={scope}><input className="size-4 accent-zinc-950" name={`scope-${scope}`} type="checkbox" defaultChecked={scope === 'objects:list' || scope === 'objects:read'} /><span className="font-mono text-xs">{scope}</span></label>)}</div></fieldset>
+            <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5 sm:col-span-2"><Button type="button" variant="secondary" onClick={() => changeCreateOpen(false)}>{t('Cancel')}</Button><Button type="submit" busy={createMutation.isPending}>{t('Generate key')}</Button></div>
+          </fieldset>
+        </form>
+      </Dialog>
+
+      {rawToken !== null ? <ApiKeyTokenDialog token={rawToken} onClose={() => setRawToken(null)} /> : null}
+
+      <ConfirmDialog open={pendingRevoke !== null} onOpenChange={(open) => { if (!open) setPendingRevoke(null); }} title={pendingRevoke ? t('Revoke {{name}}?', { name: pendingRevoke.name }) : t('Revoke API key?')} description={t('Existing integrations using this key will immediately lose access. Revocation is idempotent and cannot be undone.')} confirmLabel={t('Revoke key')} busy={revokeMutation.isPending} onConfirm={() => { if (pendingRevoke) revokeMutation.mutate(pendingRevoke); }} />
+    </div>
+  );
+}
+
+function ApiKeyTokenDialog({ token, onClose }: { readonly token: string; readonly onClose: () => void }) {
+  const { t } = useI18n();
+  const visible = useRef(true);
+  const copying = useRef(false);
+  const [isCopying, setIsCopying] = useState(false);
+  useEffect(() => {
+    visible.current = true;
+    return () => { visible.current = false; };
+  }, []);
+
+  const copyToken = async () => {
+    if (copying.current) return;
+    copying.current = true;
+    setIsCopying(true);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        toast.error(t('Clipboard access is unavailable. Select the token and copy it manually.'));
+        return;
+      }
+      await navigator.clipboard.writeText(token);
+      if (visible.current) toast.success(t('Token copied'));
+    } catch {
+      if (visible.current) toast.error(t('Could not copy the token. Select it and copy it manually.'));
+    } finally {
+      copying.current = false;
+      if (visible.current) setIsCopying(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={t('Your API key is ready')} description={t('This raw token will not be shown again. Save it in a password manager before closing.')}>
+      <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4"><div className="flex items-start gap-3"><ShieldCheckIcon className="mt-0.5 size-5 shrink-0" aria-hidden /><code className="min-w-0 flex-1 break-all font-mono text-xs leading-6 text-zinc-800">{token}</code><Button type="button" variant="secondary" size="compact" busy={isCopying} onClick={() => { void copyToken(); }}><CopyIcon className="size-3.5" aria-hidden />{t('Copy')}</Button></div></div>
+      <div className="mt-5 flex justify-end"><Button type="button" onClick={onClose}>{t('I’ve saved the token')}</Button></div>
+    </Dialog>
+  );
+}
