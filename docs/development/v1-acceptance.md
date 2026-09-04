@@ -176,8 +176,11 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] B2 真实联调完成：验证、ACTIVE shard、浏览器直传/直取、删除、Cron 过期清理和精确 CORS
   均取得 staging 证据；临时 CORS 管理 key 用后立即撤销（2026-09-01）。
 - [ ] Generic S3 真实联调仍待完成。
-- [ ] 发布认证限流/readiness preflight 与 Web i18n 到 staging，确认 health 为 200、错误登录达到阈值后
-  返回 429、60 秒窗口后恢复，并确认已初始化实例没有 `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`。
+- [x] 2026-09-04 发布认证限流/readiness preflight 与 Web i18n bundle 到 staging；health 为 200，
+  错误登录在 Cloudflare 最终一致计数收敛后返回 429，完整窗口后恢复，已初始化实例没有
+  `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`，管理员 login/session/logout 通过。证据见
+  [staging 认证限流与 readiness 验收](staging-auth-readiness-acceptance.md)。线上浏览器语言切换因
+  WebBridge 未连接未记为完成。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。

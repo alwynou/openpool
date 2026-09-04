@@ -11,7 +11,8 @@
 
 1. 单管理员初始化、登录与 session（本地完成）；
    setup/login 的 Cloudflare 原生双层限流、关键 Secret/runtime binding readiness preflight 与
-   fail-closed 503 已在本地实现并测试，尚未单独发布到 staging；
+   fail-closed 503 已实现并发布到 staging；真实 readiness、429/恢复窗口与管理员 session 已通过，
+   见[认证限流与 readiness 验收](development/staging-auth-readiness-acceptance.md)；
 2. AES-GCM credential vault（本地完成）；
 3. R2 Provider 验证与签名上传/下载（本地及真实 staging R2 smoke 完成）；
 4. logical bucket、对象 reserve/complete/delete（本地完成；对象字节直传 Provider）；
@@ -34,7 +35,8 @@
    重复发放保护与复制失败处理；2026-09-03 已发布，真实临时 Key 创建/复制/撤销及客户端故障
    验收通过，见同一 Web 创建验收记录；
    Web 管理界面已在本地加入英文/简体中文切换、浏览器语言检测与偏好持久化，
-   边界和测试见[Web 中英文国际化](development/web-internationalization.md)；尚未单独发布到 staging；
+   边界和测试见[Web 中英文国际化](development/web-internationalization.md)；2026-09-04 bundle 已随
+   安全升级发布到 staging，线上真实浏览器切换因 WebBridge 未连接尚未补交互证据；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
    和浏览器 R2/B2 直传均已验收，production 尚未创建）。
 

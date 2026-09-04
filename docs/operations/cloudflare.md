@@ -30,6 +30,11 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 真实临时 Key 创建/复制/撤销、账号表单的客户端模拟与清理范围见
 [Web 创建验收](../development/staging-web-creation-acceptance.md)。
 
+2026-09-04 经所有者继续授权，认证限流、关键 Secret/runtime readiness preflight 与 Web i18n bundle
+发布为 `19047e24-bfb4-48d5-b7bf-6cba3ec11d14`。没有 schema 变化或 migration；health、bootstrap
+删除约束、真实最终一致 429/窗口恢复及管理员 session 通过，见
+[认证限流与 readiness 验收](../development/staging-auth-readiness-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留
