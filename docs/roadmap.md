@@ -34,9 +34,10 @@
    后续[API Key 创建交互加固](development/web-api-key-creation.md)补齐一次性 token 缓存隔离、
    重复发放保护与复制失败处理；2026-09-03 已发布，真实临时 Key 创建/复制/撤销及客户端故障
    验收通过，见同一 Web 创建验收记录；
-   Web 管理界面已在本地加入英文/简体中文切换、浏览器语言检测与偏好持久化，
+   Web 管理界面已加入英文/简体中文切换、浏览器语言检测与偏好持久化，
    边界和测试见[Web 中英文国际化](development/web-internationalization.md)；2026-09-04 bundle 已随
-   安全升级发布到 staging，线上真实浏览器切换因 WebBridge 未连接尚未补交互证据；
+   安全升级发布到 staging，登录页与已登录概览页的双向切换、`document.documentElement.lang`、
+   本地偏好和刷新恢复已通过真实浏览器验收；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
    和浏览器 R2/B2 直传均已验收，production 尚未创建）。
 

@@ -23,8 +23,20 @@
 - `GET /api/v1/setup/status` 返回 `initialized: true`；没有
   `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`。
 - Worker 根路径返回新版 SPA，入口资源为 `index-CUZ9e9tE.js`；本地 Web 88 项测试已覆盖英文/简体中文
-  切换、浏览器语言检测、持久化和文案。Kimi WebBridge daemon 启动后仍未监听本地端口，因此本轮未把
-  “线上真实浏览器切换语言”误记为完成，也没有创建浏览器测试 tab。
+  切换、浏览器语言检测、持久化和文案。
+
+## 真实浏览器 i18n
+
+同日 Kimi WebBridge 恢复连接后，使用真实 Chrome 在「OpenPool staging i18n」标签组补齐交互证据。
+登录页从中文切换到英文后，语言控件、控制面状态、产品说明、用户名/密码和登录按钮均显示英文；
+`document.documentElement.lang`、语言控件值与 `localStorage` 中的 `openpool.locale` 同步为 `en`，
+刷新后继续保持英文。
+
+当前浏览器的既有管理员 session 随后恢复到 `/overview`。已登录页面切换为英文后，概览标题和
+Overview、Storage accounts、Buckets & shards、Files、API keys、Audit log 导航均显示英文；直接刷新
+`/overview` 后仍保持 `lang=en` 和本地偏好 `en`。最后切回中文，确认标题恢复为“概览”、
+`lang=zh-CN` 且本地偏好为 `zh-CN`。本次没有输入凭据、提交表单、调用 mutation 或修改 Provider/对象
+数据；测试页面保留在中文，标签组未主动关闭。
 
 ## 真实认证限流
 
@@ -43,6 +55,6 @@ Cloudflare 官方精度边界。
 
 staging 的关键 Secret readiness、bootstrap 删除约束、认证 bindings、429/恢复窗口以及既有管理员
 session 流程通过。此次无 migration、无 Provider credential 变更、无对象写入或测试对象需要清理。
-Web i18n bundle 已发布且本地交互测试通过；线上真实浏览器切换仍待 WebBridge 恢复后补一项交互证据。
+Web i18n bundle 的本地测试、staging 登录页/已登录页面双向切换与刷新持久化均已通过。
 此前 Wrangler D1 migration-history 查询的 `7403` 权限问题与本次无 schema 发布无关，仍需在未来
 schema 升级前解决。

@@ -13,7 +13,8 @@ Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管�
 迁移和事务审计 outbox 已验收；Generic S3、production、CI/CD 与更广的故障/压力验收仍需项目所有者
 参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
 [上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
-管理控制台在本地支持英文和简体中文，可自动识别浏览器语言并记住用户选择。
+管理控制台支持英文和简体中文，可自动识别浏览器语言并记住用户选择；本地测试和 staging
+真实浏览器切换/刷新持久化均已验收。
 管理员初始化/登录已接入 Cloudflare 原生双层限流；健康接口会预检 D1、关键 Secret、认证 bindings
 与 bootstrap 生命周期，并在部署配置不安全时 fail closed。该安全升级已通过 staging readiness、
 真实 429/恢复窗口和管理员 session 验收。

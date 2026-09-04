@@ -37,8 +37,9 @@
 - [x] 经项目所有者继续授权，已把认证限流/readiness preflight 与 Web i18n bundle 发布到 staging；
   health 200、bootstrap 已删除、真实 429/恢复窗口和管理员 login/session/logout 通过。此次没有
   D1 migration，见[验收记录](staging-auth-readiness-acceptance.md)（2026-09-04）。
-- [ ] Kimi WebBridge 恢复连接后，在 staging 真实浏览器补一次中英文切换与刷新后偏好持久化证据；
-  bundle 已发布且本地交互测试通过，本项不阻塞认证安全验收。
+- [x] Kimi WebBridge 恢复连接后，已在 staging 真实浏览器补齐登录页和已登录概览页的中英文切换、
+  `document.documentElement.lang`、本地偏好与刷新恢复证据；页面最终恢复为中文，没有提交表单或
+  修改线上数据（2026-09-04）。
 - [ ] 在下一次包含已有数据的远端 schema 升级前，项目所有者指定仓库外、受限且持久的 D1 export
   保存位置，并确认 Time Travel/恢复负责人；恢复演练会改写数据，必须另行授权。
 - [ ] 正式上线前决定 production 使用当前还是独立 Cloudflare account，创建独立 D1、Secrets 和

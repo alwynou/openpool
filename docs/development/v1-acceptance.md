@@ -179,8 +179,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 2026-09-04 发布认证限流/readiness preflight 与 Web i18n bundle 到 staging；health 为 200，
   错误登录在 Cloudflare 最终一致计数收敛后返回 429，完整窗口后恢复，已初始化实例没有
   `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`，管理员 login/session/logout 通过。证据见
-  [staging 认证限流与 readiness 验收](staging-auth-readiness-acceptance.md)。线上浏览器语言切换因
-  WebBridge 未连接未记为完成。
+  [staging 认证限流与 readiness 验收](staging-auth-readiness-acceptance.md)。随后已在真实浏览器补齐
+  登录页与已登录概览页的中英文切换、`document.documentElement.lang`、本地偏好和刷新恢复验收。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
