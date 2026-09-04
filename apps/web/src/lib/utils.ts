@@ -4,6 +4,7 @@ import type { ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 import { ApiClientError } from '../api';
+import type { Locale } from '../i18n';
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -31,19 +32,19 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
 }
 
-export function formatDate(value: string | null): string {
+export function formatDate(value: string | null, locale?: Locale): string {
   if (!value) return '—';
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
 }
 
-export function relativeDate(value: string | null): string {
+export function relativeDate(value: string | null, locale?: Locale): string {
   if (!value) return 'Not checked';
   const difference = new Date(value).getTime() - Date.now();
   const absolute = Math.abs(difference);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
   if (absolute < 60_000) return formatter.format(Math.round(difference / 1000), 'second');
   if (absolute < 3_600_000) return formatter.format(Math.round(difference / 60_000), 'minute');
   if (absolute < 86_400_000) return formatter.format(Math.round(difference / 3_600_000), 'hour');

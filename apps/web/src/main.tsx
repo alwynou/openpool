@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
 import { App } from './App';
+import { I18nProvider } from './i18n';
 import './styles.css';
 
 const root = document.getElementById('root');
@@ -26,8 +27,10 @@ createRoot(root).render(
   <StrictMode>
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <App />
-        <Toaster closeButton position="bottom-right" theme="light" />
+        <I18nProvider>
+          <App />
+          <Toaster closeButton position="bottom-right" theme="light" />
+        </I18nProvider>
       </QueryClientProvider>
     </BrowserRouter>
   </StrictMode>,

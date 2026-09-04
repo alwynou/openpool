@@ -23,13 +23,14 @@ import type {
   UpdateStorageAccountConfigurationRequest,
 } from '@openpool/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useRef, useState } from 'react';
+import { type FormEvent, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { api, ApiClientError } from '../api';
 import { ConfirmDialog, Dialog } from '../components/dialogs';
+import { useI18n, type Translate } from '../i18n';
 import {
   capacityPercent,
   cn,
@@ -53,40 +54,42 @@ import {
   StatusBadge,
 } from '../components/ui';
 
-const accountSchema = z.object({
-  name: z.string().trim().min(1, 'Enter a display name.').max(100),
+function createAccountSchema(t: Translate) {
+  return z.object({
+  name: z.string().trim().min(1, t('Enter a display name.')).max(100, t('Display name must be 100 characters or fewer.')),
   provider: z.enum(['r2', 'b2', 's3']),
   accountId: z.string(),
   region: z.string(),
   endpoint: z.string(),
   jurisdiction: z.string(),
-  validationBucket: z.string().trim().min(1, 'Enter the existing physical bucket name.'),
-  accessKeyId: z.string().trim().min(1, 'Enter the access key ID.'),
-  secretAccessKey: z.string().min(1, 'Enter the secret access key.'),
+  validationBucket: z.string().trim().min(1, t('Enter the existing physical bucket name.')),
+  accessKeyId: z.string().trim().min(1, t('Enter the access key ID.')),
+  secretAccessKey: z.string().min(1, t('Enter the secret access key.')),
   sessionToken: z.string(),
-  priority: z.string().regex(/^\d+$/u, 'Priority must be a non-negative integer.'),
-  capacityBytes: z.string().refine((value) => value === '' || /^\d+$/u.test(value), 'Capacity must be a non-negative integer.'),
+  priority: z.string().regex(/^\d+$/u, t('Priority must be a non-negative integer.')),
+  capacityBytes: z.string().refine((value) => value === '' || /^\d+$/u.test(value), t('Capacity must be a non-negative integer.')),
 }).superRefine((value, context) => {
   if (value.provider === 'r2' && !value.accountId.trim()) {
-    context.addIssue({ code: 'custom', path: ['accountId'], message: 'Enter the Cloudflare account ID.' });
+    context.addIssue({ code: 'custom', path: ['accountId'], message: t('Enter the Cloudflare account ID.') });
   }
   if (value.provider !== 'r2' && !value.region.trim()) {
-    context.addIssue({ code: 'custom', path: ['region'], message: 'Enter the provider region.' });
+    context.addIssue({ code: 'custom', path: ['region'], message: t('Enter the provider region.') });
   }
   if (value.provider === 's3') {
     try {
       const endpoint = new URL(value.endpoint);
       if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
     } catch {
-      context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Enter a valid HTTPS endpoint.' });
+      context.addIssue({ code: 'custom', path: ['endpoint'], message: t('Enter a valid HTTPS endpoint.') });
     }
   }
   if (value.provider === 'r2' && !value.capacityBytes) {
-    context.addIssue({ code: 'custom', path: ['capacityBytes'], message: 'R2 requires a configured capacity.' });
+    context.addIssue({ code: 'custom', path: ['capacityBytes'], message: t('R2 requires a configured capacity.') });
   }
 });
+}
 
-type AccountFormValues = z.input<typeof accountSchema>;
+type AccountFormValues = z.input<ReturnType<typeof createAccountSchema>>;
 
 const defaultAccountValues: AccountFormValues = {
   name: '',
@@ -103,29 +106,30 @@ const defaultAccountValues: AccountFormValues = {
   capacityBytes: '',
 };
 
-const editAccountSchema = z.object({
+function createEditAccountSchema(t: Translate) {
+  return z.object({
   provider: z.enum(['r2', 'b2', 's3']),
   accountId: z.string(),
   region: z.string(),
   endpoint: z.string(),
   jurisdiction: z.string(),
-  validationBucket: z.string().trim().min(1, 'Enter the existing physical bucket name.'),
+  validationBucket: z.string().trim().min(1, t('Enter the existing physical bucket name.')),
   accessKeyId: z.string(),
   secretAccessKey: z.string(),
   sessionToken: z.string(),
 }).superRefine((value, context) => {
   if (value.provider === 'r2' && !value.accountId.trim()) {
-    context.addIssue({ code: 'custom', path: ['accountId'], message: 'Enter the Cloudflare account ID.' });
+    context.addIssue({ code: 'custom', path: ['accountId'], message: t('Enter the Cloudflare account ID.') });
   }
   if (value.provider !== 'r2' && !value.region.trim()) {
-    context.addIssue({ code: 'custom', path: ['region'], message: 'Enter the provider region.' });
+    context.addIssue({ code: 'custom', path: ['region'], message: t('Enter the provider region.') });
   }
   if (value.provider === 's3') {
     try {
       const endpoint = new URL(value.endpoint);
       if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
     } catch {
-      context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Enter a valid HTTPS endpoint.' });
+      context.addIssue({ code: 'custom', path: ['endpoint'], message: t('Enter a valid HTTPS endpoint.') });
     }
   }
   const replacesCredentials = Boolean(
@@ -134,14 +138,15 @@ const editAccountSchema = z.object({
     value.sessionToken,
   );
   if (replacesCredentials && !value.accessKeyId.trim()) {
-    context.addIssue({ code: 'custom', path: ['accessKeyId'], message: 'Enter the replacement access key ID.' });
+    context.addIssue({ code: 'custom', path: ['accessKeyId'], message: t('Enter the replacement access key ID.') });
   }
   if (replacesCredentials && !value.secretAccessKey) {
-    context.addIssue({ code: 'custom', path: ['secretAccessKey'], message: 'Enter the replacement secret access key.' });
+    context.addIssue({ code: 'custom', path: ['secretAccessKey'], message: t('Enter the replacement secret access key.') });
   }
 });
+}
 
-type EditAccountFormValues = z.input<typeof editAccountSchema>;
+type EditAccountFormValues = z.input<ReturnType<typeof createEditAccountSchema>>;
 
 function configString(
   config: ProviderConfigRequest,
@@ -176,6 +181,7 @@ interface PendingTransition {
 }
 
 export function AccountsPage() {
+  const { t } = useI18n();
   const accountsQuery = useAccounts();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -196,7 +202,7 @@ export function AccountsPage() {
     onSuccess: async (_, variables) => {
       setActionFailure(null);
       await refresh();
-      toast.success(variables.action === 'verify' ? 'Account verified' : 'Health check completed');
+      toast.success(t(variables.action === 'verify' ? 'Account verified' : 'Health check completed'));
     },
     onError: (error, variables) => setActionFailure({ accountId: variables.account.id, error }),
   });
@@ -205,7 +211,7 @@ export function AccountsPage() {
     onSuccess: async (_, variables) => {
       setPendingTransition(null);
       await refresh();
-      toast.success(`${variables.account.name} is now ${variables.status.replaceAll('_', ' ').toLowerCase()}`);
+      toast.success(t('{{name}} is now {{status}}', { name: variables.account.name, status: t(variables.status.replaceAll('_', ' ')) }));
     },
     onError: (error, variables) => setActionFailure({ accountId: variables.account.id, error }),
   });
@@ -222,27 +228,27 @@ export function AccountsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Storage accounts"
-        detail="Connect and manage the object storage providers that make up your pool."
-        action={<Button type="button" onClick={() => setCreateOpen(true)}><PlusIcon className="size-4" aria-hidden />Add account</Button>}
+        title={t('Storage accounts')}
+        detail={t('Connect and manage the object storage providers that make up your pool.')}
+        action={<Button type="button" onClick={() => setCreateOpen(true)}><PlusIcon className="size-4" aria-hidden />{t('Add account')}</Button>}
       />
 
       <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_180px_180px_180px_auto]">
         <label className="relative">
-          <span className="sr-only">Search accounts</span>
+          <span className="sr-only">{t('Search accounts')}</span>
           <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
-          <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search accounts by name or provider…" />
+          <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search accounts by name or provider…')} />
         </label>
-        <FilterSelect label="Provider" value={provider} onChange={setProvider} options={[['all', 'All providers'], ['r2', 'Cloudflare R2'], ['b2', 'Backblaze B2'], ['s3', 'S3 Compatible']]} />
-        <FilterSelect label="Status" value={status} onChange={setStatus} options={[['all', 'All statuses'], ['VERIFYING', 'Verifying'], ['ACTIVE', 'Active'], ['DRAINING', 'Draining'], ['READ_ONLY', 'Read only'], ['REMOVED', 'Removed']]} />
-        <FilterSelect label="Health" value={health} onChange={setHealth} options={[['all', 'All health'], ['UNKNOWN', 'Unknown'], ['HEALTHY', 'Healthy'], ['DEGRADED', 'Degraded'], ['UNHEALTHY', 'Unhealthy']]} />
-        <Button type="button" variant="secondary" onClick={() => void accountsQuery.refetch()} busy={accountsQuery.isFetching}>Refresh</Button>
+        <FilterSelect label={t('Provider')} value={provider} onChange={setProvider} options={[['all', t('All providers')], ['r2', 'Cloudflare R2'], ['b2', 'Backblaze B2'], ['s3', t('S3 Compatible')]]} />
+        <FilterSelect label={t('Status')} value={status} onChange={setStatus} options={[['all', t('All statuses')], ['VERIFYING', t('Verifying')], ['ACTIVE', t('Active')], ['DRAINING', t('Draining')], ['READ_ONLY', t('Read only')], ['REMOVED', t('Removed')]]} />
+        <FilterSelect label={t('Health')} value={health} onChange={setHealth} options={[['all', t('All health')], ['UNKNOWN', t('Unknown')], ['HEALTHY', t('Healthy')], ['DEGRADED', t('Degraded')], ['UNHEALTHY', t('Unhealthy')]]} />
+        <Button type="button" variant="secondary" onClick={() => void accountsQuery.refetch()} busy={accountsQuery.isFetching}>{t('Refresh')}</Button>
       </div>
 
       {accountsQuery.error ? <ErrorNotice error={errorText(accountsQuery.error)} requestId={errorRequestId(accountsQuery.error)} onRetry={() => void accountsQuery.refetch()} /> : null}
       {accountsQuery.isLoading ? <LoadingState rows={3} /> : null}
       {!accountsQuery.isLoading && accounts.length === 0 ? (
-        <EmptyState title="No storage accounts yet" detail="Connect an R2, Backblaze B2, or S3-compatible provider to start building the pool." action={<Button type="button" onClick={() => setCreateOpen(true)}>Add account</Button>} />
+        <EmptyState title={t('No storage accounts yet')} detail={t('Connect an R2, Backblaze B2, or S3-compatible provider to start building the pool.')} action={<Button type="button" onClick={() => setCreateOpen(true)}>{t('Add account')}</Button>} />
       ) : null}
       {!accountsQuery.isLoading && accounts.length > 0 ? (
         <AccountsTable
@@ -280,9 +286,9 @@ export function AccountsPage() {
       <ConfirmDialog
         open={pendingTransition !== null}
         onOpenChange={(open) => { if (!open) setPendingTransition(null); }}
-        title={pendingTransition ? `${transitionLabel(pendingTransition.status)} ${pendingTransition.account.name}?` : 'Change account state?'}
-        description={pendingTransition ? transitionDescription(pendingTransition.status) : ''}
-        confirmLabel={pendingTransition ? transitionLabel(pendingTransition.status) : 'Continue'}
+        title={pendingTransition ? `${transitionLabel(pendingTransition.status, t)} ${pendingTransition.account.name}?` : t('Change account state?')}
+        description={pendingTransition ? transitionDescription(pendingTransition.status, t) : ''}
+        confirmLabel={pendingTransition ? transitionLabel(pendingTransition.status, t) : t('Continue')}
         busy={transitionMutation.isPending}
         onConfirm={() => { if (pendingTransition) transitionMutation.mutate(pendingTransition); }}
       />
@@ -326,19 +332,20 @@ function AccountsTable({
   readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div>
       <div className="overflow-x-auto rounded-lg border border-zinc-200">
         <table className="w-full min-w-[940px] border-collapse text-left">
           <thead className="bg-zinc-50/70">
             <tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase">
-              <th className="px-5 py-3.5">Account</th>
-              <th className="px-5 py-3.5">Provider</th>
-              <th className="px-5 py-3.5">Status</th>
-              <th className="px-5 py-3.5">Health</th>
-              <th className="px-5 py-3.5">Capacity</th>
-              <th className="px-5 py-3.5">Last check</th>
-              <th className="w-16 px-5 py-3.5"><span className="sr-only">Actions</span></th>
+              <th className="px-5 py-3.5">{t('Account')}</th>
+              <th className="px-5 py-3.5">{t('Provider')}</th>
+              <th className="px-5 py-3.5">{t('Status')}</th>
+              <th className="px-5 py-3.5">{t('Health')}</th>
+              <th className="px-5 py-3.5">{t('Capacity')}</th>
+              <th className="px-5 py-3.5">{t('Last check')}</th>
+              <th className="w-16 px-5 py-3.5"><span className="sr-only">{t('Actions')}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -355,7 +362,7 @@ function AccountsTable({
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-xs text-zinc-500">Showing {accounts.length} of {total} accounts</p>
+      <p className="mt-3 text-xs text-zinc-500">{t('Showing {{visible}} of {{total}} accounts', { visible: accounts.length, total })}</p>
     </div>
   );
 }
@@ -373,6 +380,7 @@ function AccountRows({
   readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
+  const { locale, t } = useI18n();
   const percentage = capacityPercent(account.usedBytes, account.capacityBytes);
   const ProviderIcon = account.provider === 'r2' ? CloudIcon : account.provider === 'b2' ? FireIcon : HardDrivesIcon;
   return (
@@ -381,23 +389,23 @@ function AccountRows({
         <td className="px-5 py-5">
           <p className="font-medium text-zinc-950">{account.name}</p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500">
-            {account.provider} · priority {account.priority}
-            <button type="button" className="rounded p-0.5 hover:bg-zinc-100" aria-label={`Copy ${account.name} account ID`} onClick={() => void navigator.clipboard?.writeText(account.id)}>
+            {account.provider} · {t('priority {{priority}}', { priority: account.priority })}
+            <button type="button" className="rounded p-0.5 hover:bg-zinc-100" aria-label={t('Copy {{name}} account ID', { name: account.name })} onClick={() => void navigator.clipboard?.writeText(account.id)}>
               <CopyIcon className="size-3" aria-hidden />
             </button>
           </p>
         </td>
         <td className="px-5 py-5">
-          <span className="inline-flex items-center gap-2 text-sm text-zinc-700"><ProviderIcon className="size-5" aria-hidden />{providerLabel(account.provider)}</span>
+          <span className="inline-flex items-center gap-2 text-sm text-zinc-700"><ProviderIcon className="size-5" aria-hidden />{t(providerLabel(account.provider))}</span>
         </td>
-        <td className="px-5 py-5"><StatusBadge value={account.status} /><p className="mt-1.5 text-xs text-zinc-500">{account.writeEnabled ? 'Read / Write' : 'Read only'}</p></td>
-        <td className="px-5 py-5"><StatusBadge value={account.healthStatus} /><p className="mt-1.5 text-xs text-zinc-500">{account.healthStatus === 'HEALTHY' ? 'All systems normal' : account.healthStatus === 'UNKNOWN' ? 'Not checked' : 'Attention required'}</p></td>
+        <td className="px-5 py-5"><StatusBadge value={account.status} /><p className="mt-1.5 text-xs text-zinc-500">{t(account.writeEnabled ? 'Read / Write' : 'Read only')}</p></td>
+        <td className="px-5 py-5"><StatusBadge value={account.healthStatus} /><p className="mt-1.5 text-xs text-zinc-500">{t(account.healthStatus === 'HEALTHY' ? 'All systems normal' : account.healthStatus === 'UNKNOWN' ? 'Not checked' : 'Attention required')}</p></td>
         <td className="min-w-44 px-5 py-5">
           <p className="text-sm text-zinc-800">{formatBytes(account.usedBytes)} / {formatBytes(account.capacityBytes)}</p>
           <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100"><span className="block h-full rounded-full bg-zinc-950" style={{ width: `${percentage}%` }} /></div>
-          <p className="mt-1.5 text-xs text-zinc-500">{Math.round(percentage)}% used · {account.capacityAccuracy.toLowerCase()}</p>
+          <p className="mt-1.5 text-xs text-zinc-500">{t('{{percent}}% used · {{accuracy}}', { percent: Math.round(percentage), accuracy: t(account.capacityAccuracy) })}</p>
         </td>
-        <td className="px-5 py-5"><p className="text-sm text-zinc-800">{relativeDate(account.lastHealthCheckedAt)}</p><p className="mt-1.5 text-xs text-zinc-500">{formatDate(account.lastHealthCheckedAt)}</p></td>
+        <td className="px-5 py-5"><p className="text-sm text-zinc-800">{account.lastHealthCheckedAt ? relativeDate(account.lastHealthCheckedAt, locale) : t('Not checked')}</p><p className="mt-1.5 text-xs text-zinc-500">{formatDate(account.lastHealthCheckedAt, locale)}</p></td>
         <td className="px-5 py-5"><AccountMenu account={account} actionMutation={actionMutation} onEdit={onEdit} onTransition={onTransition} /></td>
       </tr>
       {failure ? (
@@ -405,10 +413,10 @@ function AccountRows({
           <td colSpan={7} className="px-4 py-3">
             <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <ShieldWarningIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <div className="min-w-0 flex-1"><p>{errorText(failure)}</p>{errorRequestId(failure) ? <p className="mt-1 font-mono text-[11px] text-amber-700">Request ID: {errorRequestId(failure)}</p> : null}</div>
+              <div className="min-w-0 flex-1"><p>{errorText(failure)}</p>{errorRequestId(failure) ? <p className="mt-1 font-mono text-[11px] text-amber-700">{t('Request ID: {{id}}', { id: errorRequestId(failure) ?? '' })}</p> : null}</div>
               <div className="flex shrink-0 flex-wrap gap-2">
-                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" disabled={actionMutation.isPending} onClick={() => onEdit(account)}>Edit &amp; retry</Button> : null}
-                <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>Retry</Button>
+                {account.status === 'VERIFYING' ? <Button type="button" size="compact" variant="secondary" disabled={actionMutation.isPending} onClick={() => onEdit(account)}>{t('Edit & retry')}</Button> : null}
+                <Button type="button" size="compact" variant="secondary" busy={actionMutation.isPending} onClick={() => actionMutation.mutate({ account, action: account.status === 'VERIFYING' ? 'verify' : 'health' })}>{t('Retry')}</Button>
               </div>
             </div>
           </td>
@@ -429,19 +437,20 @@ function AccountMenu({
   readonly onEdit: (account: StorageAccountResponse) => void;
   readonly onTransition: (transition: PendingTransition) => void;
 }) {
+  const { t } = useI18n();
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <Button type="button" variant="ghost" size="icon" disabled={actionMutation.isPending} aria-label={`Actions for ${account.name}`}><DotsThreeVerticalIcon className="size-5" weight="bold" aria-hidden /></Button>
+        <Button type="button" variant="ghost" size="icon" disabled={actionMutation.isPending} aria-label={t('Actions for {{name}}', { name: account.name })}><DotsThreeVerticalIcon className="size-5" weight="bold" aria-hidden /></Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-48 rounded-md border border-zinc-200 bg-white p-1 shadow-lg outline-none data-[state=open]:animate-enter">
-          {account.status === 'VERIFYING' ? <MenuItem icon={CheckCircleIcon} onSelect={() => actionMutation.mutate({ account, action: 'verify' })}>Verify account</MenuItem> : null}
-          {account.status === 'VERIFYING' ? <MenuItem icon={PencilSimpleIcon} onSelect={() => onEdit(account)}>Edit configuration</MenuItem> : null}
-          {account.status !== 'REMOVED' ? <MenuItem icon={HeartbeatIcon} onSelect={() => actionMutation.mutate({ account, action: 'health' })}>Run health check</MenuItem> : null}
-          {account.status === 'ACTIVE' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'DRAINING' })}>Begin draining</MenuItem> : null}
-          {account.status === 'DRAINING' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'READ_ONLY' })}>Make read only</MenuItem> : null}
-          {account.status === 'READ_ONLY' ? <MenuItem icon={TrashIcon} danger onSelect={() => onTransition({ account, status: 'REMOVED' })}>Remove account</MenuItem> : null}
+          {account.status === 'VERIFYING' ? <MenuItem icon={CheckCircleIcon} onSelect={() => actionMutation.mutate({ account, action: 'verify' })}>{t('Verify account')}</MenuItem> : null}
+          {account.status === 'VERIFYING' ? <MenuItem icon={PencilSimpleIcon} onSelect={() => onEdit(account)}>{t('Edit configuration')}</MenuItem> : null}
+          {account.status !== 'REMOVED' ? <MenuItem icon={HeartbeatIcon} onSelect={() => actionMutation.mutate({ account, action: 'health' })}>{t('Run health check')}</MenuItem> : null}
+          {account.status === 'ACTIVE' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'DRAINING' })}>{t('Begin draining')}</MenuItem> : null}
+          {account.status === 'DRAINING' ? <MenuItem icon={ProhibitIcon} danger onSelect={() => onTransition({ account, status: 'READ_ONLY' })}>{t('Make read only')}</MenuItem> : null}
+          {account.status === 'READ_ONLY' ? <MenuItem icon={TrashIcon} danger onSelect={() => onTransition({ account, status: 'REMOVED' })}>{t('Remove account')}</MenuItem> : null}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -453,6 +462,8 @@ function MenuItem({ icon: Icon, danger = false, onSelect, children }: { readonly
 }
 
 function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly onCreated: () => Promise<unknown> }) {
+  const { t } = useI18n();
+  const accountSchema = useMemo(() => createAccountSchema(t), [t]);
   const form = useForm<AccountFormValues>({ resolver: zodResolver(accountSchema), defaultValues: defaultAccountValues });
   const provider = useWatch({ control: form.control, name: 'provider' });
   const pendingInput = useRef<CreateStorageAccountRequest | null>(null);
@@ -471,7 +482,7 @@ function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open:
       form.reset(defaultAccountValues);
       await onCreated();
       onOpenChange(false);
-      toast.success('Storage account created', { description: 'Verify the account before using it for placement.' });
+      toast.success(t('Storage account created'), { description: t('Verify the account before using it for placement.') });
     },
     onSettled: () => {
       pendingInput.current = null;
@@ -529,29 +540,29 @@ function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open:
   };
 
   return (
-    <Dialog open={open} onOpenChange={changeOpen} title="Add storage account" description="Credentials are encrypted before they are persisted and never returned by the API.">
+    <Dialog open={open} onOpenChange={changeOpen} title={t('Add storage account')} description={t('Credentials are encrypted before they are persisted and never returned by the API.')}>
       <form className="grid gap-4" onSubmit={(event) => void submit(event)}>
         {mutation.error ? <ErrorNotice error={errorText(mutation.error)} requestId={errorRequestId(mutation.error)} /> : null}
         <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy}>
-          <Field label="Display name" error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
-          <Field label="Provider" error={form.formState.errors.provider?.message}>
-            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">Generic S3-compatible</option></select>
+          <Field label={t('Display name')} error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
+          <Field label={t('Provider')} error={form.formState.errors.provider?.message}>
+            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">{t('Generic S3-compatible')}</option></select>
           </Field>
-          {provider === 'r2' ? <Field label="Cloudflare account ID" error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
-          {provider === 's3' ? <Field label="HTTPS endpoint" error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
-          {provider !== 'r2' ? <Field label="Region" error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
-            <Field label="Jurisdiction"><select className={selectClassName} {...form.register('jurisdiction')}><option value="">Default</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
+          {provider === 'r2' ? <Field label={t('Cloudflare account ID')} error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
+          {provider === 's3' ? <Field label={t('HTTPS endpoint')} error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
+          {provider !== 'r2' ? <Field label={t('Region')} error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
+            <Field label={t('Jurisdiction')}><select className={selectClassName} {...form.register('jurisdiction')}><option value="">{t('Default')}</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
           )}
-          <Field label="Validation bucket" hint="An existing physical bucket this key can access." error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>
-          <Field label={provider === 'b2' ? 'Key ID' : 'Access key ID'} error={form.formState.errors.accessKeyId?.message}><Input autoComplete="off" {...form.register('accessKeyId')} /></Field>
-          <Field label={provider === 'b2' ? 'Application key' : 'Secret access key'} error={form.formState.errors.secretAccessKey?.message}><Input type="password" autoComplete="new-password" {...form.register('secretAccessKey')} /></Field>
-          <Field label="Session token" hint="Optional for temporary S3 credentials."><Input type="password" autoComplete="off" {...form.register('sessionToken')} /></Field>
-          <Field label="Priority" error={form.formState.errors.priority?.message}><Input inputMode="numeric" {...form.register('priority')} /></Field>
-          <Field label="Capacity in bytes" hint={provider === 'r2' ? 'Required for R2 placement.' : 'Optional when usage is observable.'} error={form.formState.errors.capacityBytes?.message}><Input inputMode="numeric" placeholder="10737418240" {...form.register('capacityBytes')} /></Field>
+          <Field label={t('Validation bucket')} hint={t('An existing physical bucket this key can access.')} error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>
+          <Field label={t(provider === 'b2' ? 'Key ID' : 'Access key ID')} error={form.formState.errors.accessKeyId?.message}><Input autoComplete="off" {...form.register('accessKeyId')} /></Field>
+          <Field label={t(provider === 'b2' ? 'Application key' : 'Secret access key')} error={form.formState.errors.secretAccessKey?.message}><Input type="password" autoComplete="new-password" {...form.register('secretAccessKey')} /></Field>
+          <Field label={t('Session token')} hint={t('Optional for temporary S3 credentials.')}><Input type="password" autoComplete="off" {...form.register('sessionToken')} /></Field>
+          <Field label={t('Priority')} error={form.formState.errors.priority?.message}><Input inputMode="numeric" {...form.register('priority')} /></Field>
+          <Field label={t('Capacity in bytes')} hint={t(provider === 'r2' ? 'Required for R2 placement.' : 'Optional when usage is observable.')} error={form.formState.errors.capacityBytes?.message}><Input inputMode="numeric" placeholder="10737418240" {...form.register('capacityBytes')} /></Field>
         </fieldset>
         <div className="mt-2 flex justify-end gap-2 border-t border-zinc-100 pt-5">
-          <Button type="button" variant="secondary" onClick={() => changeOpen(false)} disabled={isBusy}>Cancel</Button>
-          <Button type="submit" busy={isBusy}>Create account</Button>
+          <Button type="button" variant="secondary" onClick={() => changeOpen(false)} disabled={isBusy}>{t('Cancel')}</Button>
+          <Button type="submit" busy={isBusy}>{t('Create account')}</Button>
         </div>
       </form>
     </Dialog>
@@ -573,6 +584,8 @@ function EditAccountDialog({
   readonly onReload: () => Promise<StorageAccountResponse | null>;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useI18n();
+  const editAccountSchema = useMemo(() => createEditAccountSchema(t), [t]);
   const form = useForm<EditAccountFormValues>({
     resolver: zodResolver(editAccountSchema),
     defaultValues: editAccountValues(account),
@@ -604,7 +617,7 @@ function EditAccountDialog({
     onSuccess: async () => {
       await onChanged();
       onOpenChange(false);
-      toast.success('Account configuration saved and verified');
+      toast.success(t('Account configuration saved and verified'));
     },
     onError: async () => {
       await onChanged();
@@ -690,8 +703,8 @@ function EditAccountDialog({
       onOpenChange={(open) => {
         if (!submitting.current && !isBusy) onOpenChange(open);
       }}
-      title={`Edit ${account.name}`}
-      description="Correct the provider settings, optionally replace the write-only credentials, and retry verification. This is available only before activation."
+      title={t('Edit {{name}}', { name: account.name })}
+      description={t('Correct the provider settings, optionally replace the write-only credentials, and retry verification. This is available only before activation.')}
     >
       <form
         className="grid gap-4"
@@ -704,18 +717,18 @@ function EditAccountDialog({
               error={errorText(mutation.error)}
               requestId={errorRequestId(mutation.error)}
             />
-            {configurationSaved ? <p className="text-sm text-amber-800">Configuration saved, but verification failed. The saved credentials are retained; correct the settings or enter a new replacement before retrying.</p> : null}
-            {needsReload ? <div className="space-y-2"><p className="text-sm text-amber-800">This account changed. Reload its latest configuration before saving again. Reloading discards unsaved edits and clears replacement credentials.</p><Button type="button" variant="secondary" busy={reloading} onClick={() => void reload()}>Reload latest configuration</Button></div> : null}
+            {configurationSaved ? <p className="text-sm text-amber-800">{t('Configuration saved, but verification failed. The saved credentials are retained; correct the settings or enter a new replacement before retrying.')}</p> : null}
+            {needsReload ? <div className="space-y-2"><p className="text-sm text-amber-800">{t('This account changed. Reload its latest configuration before saving again. Reloading discards unsaved edits and clears replacement credentials.')}</p><Button type="button" variant="secondary" busy={reloading} onClick={() => void reload()}>{t('Reload latest configuration')}</Button></div> : null}
             {reloadError ? <ErrorNotice error={errorText(reloadError)} requestId={errorRequestId(reloadError)} /> : null}
           </div>
         ) : null}
         <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy || needsReload}>
-          <Field label="Provider" hint="Provider type cannot change after creation.">
-            <Input value={providerLabel(account.provider)} disabled readOnly />
+          <Field label={t('Provider')} hint={t('Provider type cannot change after creation.')}>
+            <Input value={t(providerLabel(account.provider))} disabled readOnly />
           </Field>
           {account.provider === 'r2' ? (
             <Field
-              label="Cloudflare account ID"
+              label={t('Cloudflare account ID')}
               error={form.formState.errors.accountId?.message}
             >
               <Input autoComplete="off" {...form.register('accountId')} />
@@ -723,7 +736,7 @@ function EditAccountDialog({
           ) : null}
           {account.provider === 's3' ? (
             <Field
-              label="HTTPS endpoint"
+              label={t('HTTPS endpoint')}
               error={form.formState.errors.endpoint?.message}
             >
               <Input type="url" {...form.register('endpoint')} />
@@ -731,46 +744,46 @@ function EditAccountDialog({
           ) : null}
           {account.provider !== 'r2' ? (
             <Field
-              label="Region"
+              label={t('Region')}
               error={form.formState.errors.region?.message}
             >
               <Input {...form.register('region')} />
             </Field>
           ) : (
-            <Field label="Jurisdiction">
+            <Field label={t('Jurisdiction')}>
               <select
                 className={selectClassName}
                 {...form.register('jurisdiction')}
               >
-                <option value="">Default</option>
+                <option value="">{t('Default')}</option>
                 <option value="eu">EU</option>
                 <option value="fedramp">FedRAMP</option>
               </select>
             </Field>
           )}
           <Field
-            label="Validation bucket"
-            hint="An existing physical bucket this key can access."
+            label={t('Validation bucket')}
+            hint={t('An existing physical bucket this key can access.')}
             error={form.formState.errors.validationBucket?.message}
           >
             <Input {...form.register('validationBucket')} />
           </Field>
           <div className="border-t border-zinc-100 pt-4 sm:col-span-2">
             <p className="text-sm font-medium text-zinc-900">
-              Replace credentials (optional)
+              {t('Replace credentials (optional)')}
             </p>
             <p className="mt-1 text-xs leading-5 text-zinc-500">
-              Leave all three fields blank to keep the encrypted credentials already saved.
+              {t('Leave all three fields blank to keep the encrypted credentials already saved.')}
             </p>
           </div>
           <Field
-            label={account.provider === 'b2' ? 'Key ID' : 'Access key ID'}
+            label={t(account.provider === 'b2' ? 'Key ID' : 'Access key ID')}
             error={form.formState.errors.accessKeyId?.message}
           >
             <Input autoComplete="off" {...form.register('accessKeyId')} />
           </Field>
           <Field
-            label={account.provider === 'b2' ? 'Application key' : 'Secret access key'}
+            label={t(account.provider === 'b2' ? 'Application key' : 'Secret access key')}
             error={form.formState.errors.secretAccessKey?.message}
           >
             <Input
@@ -780,8 +793,8 @@ function EditAccountDialog({
             />
           </Field>
           <Field
-            label="Session token"
-            hint="Optional; leaving it blank clears it when replacing the other credentials."
+            label={t('Session token')}
+            hint={t('Optional; leaving it blank clears it when replacing the other credentials.')}
           >
             <Input
               type="password"
@@ -797,10 +810,10 @@ function EditAccountDialog({
             onClick={() => onOpenChange(false)}
             disabled={isBusy}
           >
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button type="submit" busy={isBusy} disabled={needsReload}>
-            Save and retry verification
+            {t('Save and retry verification')}
           </Button>
         </div>
       </form>
@@ -808,14 +821,14 @@ function EditAccountDialog({
   );
 }
 
-function transitionLabel(status: PendingTransition['status']): string {
-  if (status === 'DRAINING') return 'Begin draining';
-  if (status === 'READ_ONLY') return 'Make read only';
-  return 'Remove account';
+function transitionLabel(status: PendingTransition['status'], t: Translate): string {
+  if (status === 'DRAINING') return t('Begin draining');
+  if (status === 'READ_ONLY') return t('Make read only');
+  return t('Remove account');
 }
 
-function transitionDescription(status: PendingTransition['status']): string {
-  if (status === 'DRAINING') return 'New placements will stop while existing objects remain available.';
-  if (status === 'READ_ONLY') return 'This succeeds only after shard migrations clear all live references and used capacity.';
-  return 'Removal succeeds only after all live shards, object locations, and reserved capacity are cleared.';
+function transitionDescription(status: PendingTransition['status'], t: Translate): string {
+  if (status === 'DRAINING') return t('New placements will stop while existing objects remain available.');
+  if (status === 'READ_ONLY') return t('This succeeds only after shard migrations clear all live references and used capacity.');
+  return t('Removal succeeds only after all live shards, object locations, and reserved capacity are cleared.');
 }

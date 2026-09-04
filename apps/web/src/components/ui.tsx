@@ -6,6 +6,7 @@ import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 
 import { cn, statusTone } from '../lib/utils';
+import { useI18n } from '../i18n';
 
 const buttonVariants = cva(
   'inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
@@ -93,6 +94,7 @@ export function Field({
 
 export function StatusBadge({ value }: { readonly value: string }) {
   const tone = statusTone(value);
+  const { t } = useI18n();
   return (
     <span
       className={cn(
@@ -102,7 +104,7 @@ export function StatusBadge({ value }: { readonly value: string }) {
         tone === 'danger' && 'border-red-200 bg-red-50 text-red-600',
       )}
     >
-      {value.replaceAll('_', ' ')}
+      {t(value.replaceAll('_', ' '))}
     </span>
   );
 }
@@ -136,15 +138,16 @@ export function ErrorNotice({
   readonly requestId?: string | null;
   readonly onRetry?: () => void;
 }) {
+  const { t } = useI18n();
   if (!error) return null;
   return (
     <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
       <WarningIcon className="mt-0.5 size-4 shrink-0" weight="fill" aria-hidden />
       <div className="min-w-0 flex-1">
         <p>{error}</p>
-        {requestId ? <p className="mt-1 font-mono text-[11px] text-red-600">Request ID: {requestId}</p> : null}
+        {requestId ? <p className="mt-1 font-mono text-[11px] text-red-600">{t('Request ID: {{id}}', { id: requestId })}</p> : null}
       </div>
-      {onRetry ? <Button type="button" variant="secondary" size="compact" onClick={onRetry}>Retry</Button> : null}
+      {onRetry ? <Button type="button" variant="secondary" size="compact" onClick={onRetry}>{t('Retry')}</Button> : null}
     </div>
   );
 }
@@ -173,8 +176,9 @@ export function EmptyState({
 }
 
 export function LoadingState({ rows = 4 }: { readonly rows?: number }) {
+  const { t } = useI18n();
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200" aria-label="Loading">
+    <div className="overflow-hidden rounded-lg border border-zinc-200" aria-label={t('Loading')}>
       {Array.from({ length: rows }, (_, index) => (
         <div className="flex h-20 items-center gap-6 border-b border-zinc-100 px-5 last:border-0" key={index}>
           <span className="h-4 w-36 animate-pulse-soft rounded bg-zinc-100" />

@@ -16,6 +16,7 @@
 
 - [本地开发](development/getting-started.md)：环境、安装、迁移与调试。
 - [开发工作流](development/workflow.md)：代码约定、测试和完成标准。
+- [Web 中英文国际化](development/web-internationalization.md)：语言检测、切换、持久化与翻译边界。
 - [Web 上传恢复交互回归](development/web-upload-recovery.md)：本地页面测试、确认重试和输入状态边界。
 - [Web 账号纠错交互回归](development/web-account-recovery.md)：验证失败后编辑、凭据留空/替换和并发冲突恢复。
 - [Web 账号创建交互回归](development/web-account-creation.md)：新增账号的凭据清理、显式重试与重复提交保护。

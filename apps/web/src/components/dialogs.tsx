@@ -3,6 +3,7 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { ReactNode } from 'react';
 
+import { useI18n } from '../i18n';
 import { Button } from './ui';
 
 export function Dialog({
@@ -18,6 +19,7 @@ export function Dialog({
   readonly description: string;
   readonly children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -27,7 +29,7 @@ export function Dialog({
             <DialogPrimitive.Title className="text-xl font-semibold tracking-tight text-zinc-950">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-1.5 text-sm leading-6 text-zinc-500">{description}</DialogPrimitive.Description>
           </div>
-          <DialogPrimitive.Close className="absolute top-5 right-5 grid size-8 place-items-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400" aria-label="Close dialog">
+          <DialogPrimitive.Close className="absolute top-5 right-5 grid size-8 place-items-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400" aria-label={t('Close dialog')}>
             <XIcon className="size-4" aria-hidden />
           </DialogPrimitive.Close>
           <div className="mt-6">{children}</div>
@@ -56,6 +58,7 @@ export function ConfirmDialog({
   readonly busy?: boolean;
   readonly danger?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialogPrimitive.Portal>
@@ -65,7 +68,7 @@ export function ConfirmDialog({
           <AlertDialogPrimitive.Description className="mt-2 text-sm leading-6 text-zinc-500">{description}</AlertDialogPrimitive.Description>
           <div className="mt-6 flex justify-end gap-2">
             <AlertDialogPrimitive.Cancel asChild>
-              <Button type="button" variant="secondary">Cancel</Button>
+              <Button type="button" variant="secondary">{t('Cancel')}</Button>
             </AlertDialogPrimitive.Cancel>
             <Button type="button" variant={danger ? 'danger' : 'primary'} busy={busy} onClick={onConfirm}>{confirmLabel}</Button>
           </div>

@@ -30,6 +30,7 @@ import {
   StatusBadge,
 } from '../components/ui';
 import { errorRequestId, errorText, formatBytes } from '../lib/utils';
+import { useI18n } from '../i18n';
 import { eligibleMigrationTargets } from '../lib/shard-migrations';
 import { queryKeys, useAccounts, useBuckets } from '../queries';
 
@@ -45,6 +46,7 @@ const shardTransitions: Record<
 };
 
 export function BucketsPage() {
+  const { t } = useI18n();
   const bucketsQuery = useBuckets();
   const accountsQuery = useAccounts();
   const queryClient = useQueryClient();
@@ -60,7 +62,7 @@ export function BucketsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.buckets });
       setCreateOpen(false);
-      toast.success('Logical bucket created');
+      toast.success(t('Logical bucket created'));
     },
   });
   const buckets = bucketsQuery.data ?? [];
@@ -69,12 +71,12 @@ export function BucketsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Buckets & shards"
-        detail="Map stable logical namespaces to physical provider buckets."
+        title={t('Buckets & shards')}
+        detail={t('Map stable logical namespaces to physical provider buckets.')}
         action={
           <Button type="button" onClick={() => setCreateOpen(true)}>
             <PlusIcon className="size-4" aria-hidden />
-            Create bucket
+            {t('Create bucket')}
           </Button>
         }
       />
@@ -97,11 +99,11 @@ export function BucketsPage() {
       ) : null}
       {!bucketsQuery.isLoading && buckets.length === 0 ? (
         <EmptyState
-          title="No logical buckets yet"
-          detail="Create a stable namespace, then attach an active provider shard."
+          title={t('No logical buckets yet')}
+          detail={t('Create a stable namespace, then attach an active provider shard.')}
           action={
             <Button type="button" onClick={() => setCreateOpen(true)}>
-              Create bucket
+              {t('Create bucket')}
             </Button>
           }
         />
@@ -115,8 +117,8 @@ export function BucketsPage() {
       <Dialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="Create logical bucket"
-        description="Logical bucket names remain stable even when physical storage changes."
+        title={t('Create logical bucket')}
+        description={t('Logical bucket names remain stable even when physical storage changes.')}
       >
         <form
           className="grid gap-4"
@@ -135,11 +137,11 @@ export function BucketsPage() {
               requestId={errorRequestId(createMutation.error)}
             />
           ) : null}
-          <Field label="Bucket name">
+          <Field label={t('Bucket name')}>
             <Input name="name" placeholder="documents" required />
           </Field>
-          <Field label="Description" hint="Optional context for administrators.">
-            <Input name="description" placeholder="Team documents" />
+          <Field label={t('Description')} hint={t('Optional context for administrators.')}>
+            <Input name="description" placeholder={t('Team documents')} />
           </Field>
           <div className="flex justify-end gap-2 border-t border-zinc-100 pt-5">
             <Button
@@ -147,10 +149,10 @@ export function BucketsPage() {
               variant="secondary"
               onClick={() => setCreateOpen(false)}
             >
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button type="submit" busy={createMutation.isPending}>
-              Create bucket
+              {t('Create bucket')}
             </Button>
           </div>
         </form>
@@ -171,6 +173,7 @@ function BucketPanel({
   readonly bucket: LogicalBucketResponse;
   readonly accounts: readonly StorageAccountResponse[];
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [migrationSelection, setMigrationSelection] =
@@ -199,7 +202,7 @@ function BucketPanel({
         queryKey: queryKeys.shards(bucket.id),
       });
       setAddOpen(false);
-      toast.success('Storage shard added');
+      toast.success(t('Storage shard added'));
     },
   });
   const transitionMutation = useMutation({
@@ -214,7 +217,7 @@ function BucketPanel({
       await queryClient.invalidateQueries({
         queryKey: queryKeys.shards(bucket.id),
       });
-      toast.success('Shard status updated');
+      toast.success(t('Shard status updated'));
     },
   });
   const startMigrationMutation = useMutation({
@@ -241,7 +244,7 @@ function BucketPanel({
         }),
       ]);
       setMigrationSelection(null);
-      toast.success('Shard migration started');
+      toast.success(t('Shard migration started'));
     },
   });
   const shards = shardsQuery.data ?? [];
@@ -274,13 +277,13 @@ function BucketPanel({
               {bucket.name}
             </h2>
             <p className="mt-1 truncate text-xs text-zinc-500">
-              {bucket.description || 'No description'}
+              {bucket.description || t('No description')}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-zinc-500">
-            {shards.length} shard{shards.length === 1 ? '' : 's'}
+            {t('{{count}} shards', { count: shards.length })}
           </span>
           <Button
             type="button"
@@ -289,7 +292,7 @@ function BucketPanel({
             onClick={() => setAddOpen((value) => !value)}
           >
             <PlusIcon className="size-3.5" aria-hidden />
-            Add shard
+            {t('Add shard')}
           </Button>
         </div>
       </div>
@@ -326,7 +329,7 @@ function BucketPanel({
       ) : null}
       {!shardsQuery.isLoading && shards.length === 0 ? (
         <p className="px-5 py-10 text-center text-sm text-zinc-500">
-          No shards configured for this namespace.
+          {t('No shards configured for this namespace.')}
         </p>
       ) : null}
       {shards.length ? (
@@ -356,7 +359,7 @@ function BucketPanel({
                       {shard.physicalBucket}
                     </p>
                     <p className="mt-1 truncate text-xs text-zinc-500">
-                      {account?.name ?? 'Unknown account'} ·{' '}
+                      {account?.name ?? t('Unknown account')} ·{' '}
                       {formatBytes(shard.usedBytes)} /{' '}
                       {formatBytes(shard.capacityBytes)}
                     </p>
@@ -372,7 +375,7 @@ function BucketPanel({
                       disabled={targets.length === 0}
                       title={
                         targets.length === 0
-                          ? 'Add a healthy standby shard with enough capacity first.'
+                          ? t('Add a healthy standby shard with enough capacity first.')
                           : undefined
                       }
                       onClick={() =>
@@ -380,12 +383,12 @@ function BucketPanel({
                       }
                     >
                       <ArrowRightIcon className="size-3.5" aria-hidden />
-                      {targets.length === 0 ? 'No migration target' : 'Migrate'}
+                      {t(targets.length === 0 ? 'No migration target' : 'Migrate')}
                     </Button>
                   ) : null}
                   <label className="relative min-w-40">
                     <span className="sr-only">
-                      Transition {shard.physicalBucket}
+                      {t('Transition {{bucket}}', { bucket: shard.physicalBucket })}
                     </span>
                     <select
                       className={`${selectClassName} text-xs`}
@@ -404,10 +407,10 @@ function BucketPanel({
                         }
                       }}
                     >
-                      <option value="">Transition…</option>
+                      <option value="">{t('Transition…')}</option>
                       {availableTransitions.map((status) => (
                         <option value={status} key={status}>
-                          {status.replaceAll('_', ' ')}
+                          {t(status.replaceAll('_', ' '))}
                         </option>
                       ))}
                     </select>
@@ -442,9 +445,9 @@ function BucketPanel({
             });
           }}
         >
-          <Field label="Storage account">
+          <Field label={t('Storage account')}>
             <select className={selectClassName} name="storageAccountId" required>
-              <option value="">Choose account…</option>
+              <option value="">{t('Choose account…')}</option>
               {activeAccounts.map((account) => (
                 <option value={account.id} key={account.id}>
                   {account.name}
@@ -452,20 +455,20 @@ function BucketPanel({
               ))}
             </select>
           </Field>
-          <Field label="Physical bucket">
+          <Field label={t('Physical bucket')}>
             <Input name="physicalBucket" placeholder="physical-bucket" required />
           </Field>
-          <Field label="Initial state">
+          <Field label={t('Initial state')}>
             <select
               className={selectClassName}
               name="status"
               defaultValue="STANDBY"
             >
-              <option value="STANDBY">Standby</option>
-              <option value="ACTIVE">Active</option>
+              <option value="STANDBY">{t('Standby')}</option>
+              <option value="ACTIVE">{t('Active')}</option>
             </select>
           </Field>
-          <Field label="Capacity in bytes">
+          <Field label={t('Capacity in bytes')}>
             <Input name="capacityBytes" inputMode="numeric" />
           </Field>
           <Button
@@ -473,7 +476,7 @@ function BucketPanel({
             busy={createMutation.isPending}
             disabled={!activeAccounts.length}
           >
-            Add shard
+            {t('Add shard')}
           </Button>
           {createMutation.error ? (
             <div className="md:col-span-2 xl:col-span-5">
@@ -491,8 +494,8 @@ function BucketPanel({
         onOpenChange={(open) => {
           if (!open) setMigrationSelection(null);
         }}
-        title="Start shard migration"
-        description="New writes cut over to the target immediately. A migration runner then streams object bytes directly between providers; the Worker never proxies them."
+        title={t('Start shard migration')}
+        description={t('New writes cut over to the target immediately. A migration runner then streams object bytes directly between providers; the Worker never proxies them.')}
       >
         {migrationSelection ? (
           <form
@@ -517,7 +520,7 @@ function BucketPanel({
                 requestId={errorRequestId(startMigrationMutation.error)}
               />
             ) : null}
-            <Field label="Source shard">
+            <Field label={t('Source shard')}>
               <Input
                 value={migrationSelection.source.physicalBucket}
                 disabled
@@ -525,8 +528,8 @@ function BucketPanel({
               />
             </Field>
             <Field
-              label="Target shard"
-              hint="Only healthy standby shards with enough 10% headroom are shown."
+              label={t('Target shard')}
+              hint={t('Only healthy standby shards with enough 10% headroom are shown.')}
             >
               <select
                 className={selectClassName}
@@ -540,16 +543,14 @@ function BucketPanel({
                   );
                   return (
                     <option value={target.id} key={target.id}>
-                      {target.physicalBucket} · {account?.name ?? 'Unknown account'}
+                      {target.physicalBucket} · {account?.name ?? t('Unknown account')}
                     </option>
                   );
                 })}
               </select>
             </Field>
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
-              Do not retire or manually transition either shard while migration is
-              running. Pending or deleting objects can block final retirement and
-              will be shown in progress.
+              {t('Do not retire or manually transition either shard while migration is running. Pending or deleting objects can block final retirement and will be shown in progress.')}
             </div>
             <div className="flex justify-end gap-2 border-t border-zinc-100 pt-5">
               <Button
@@ -557,10 +558,10 @@ function BucketPanel({
                 variant="secondary"
                 onClick={() => setMigrationSelection(null)}
               >
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" busy={startMigrationMutation.isPending}>
-                Start migration
+                {t('Start migration')}
               </Button>
             </div>
           </form>
@@ -577,14 +578,15 @@ function MigrationActivity({
   readonly migrations: readonly ShardMigrationResponse[];
   readonly shards: readonly StorageShardResponse[];
 }) {
+  const { t } = useI18n();
   return (
     <div className="border-t border-zinc-200 bg-zinc-50/60 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-xs font-semibold tracking-wide text-zinc-700 uppercase">
-          Migration activity
+          {t('Migration activity')}
         </h3>
         <span className="text-xs text-zinc-500">
-          Running migrations refresh every 3 seconds
+          {t('Running migrations refresh every 3 seconds')}
         </span>
       </div>
       <div className="grid gap-3">
@@ -617,12 +619,12 @@ function MigrationActivity({
                 <StatusBadge value={migration.status} />
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-6">
-                <ProgressMetric label="Remaining" value={progress.remainingReady} />
-                <ProgressMetric label="Reserved" value={progress.reserved} />
-                <ProgressMetric label="Switched" value={progress.switched} />
-                <ProgressMetric label="Completed" value={progress.completed} />
-                <ProgressMetric label="Failed" value={progress.failed} />
-                <ProgressMetric label="Blocking" value={progress.blocking} />
+                <ProgressMetric label={t('Remaining')} value={progress.remainingReady} />
+                <ProgressMetric label={t('Reserved')} value={progress.reserved} />
+                <ProgressMetric label={t('Switched')} value={progress.switched} />
+                <ProgressMetric label={t('Completed')} value={progress.completed} />
+                <ProgressMetric label={t('Failed')} value={progress.failed} />
+                <ProgressMetric label={t('Blocking')} value={progress.blocking} />
               </dl>
               <p className="mt-3 font-mono text-[11px] text-zinc-400">
                 {migration.id}

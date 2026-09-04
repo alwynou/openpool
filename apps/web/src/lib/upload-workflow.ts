@@ -4,6 +4,7 @@ import type {
   ObjectMetadataResponse,
   UploadSessionResponse,
 } from '@openpool/contracts';
+import type { Translate } from '../i18n';
 
 export interface UploadInputSnapshot {
   readonly bucketId: string;
@@ -106,27 +107,28 @@ export function uploadFailureCode(error: unknown): string | null {
 export function uploadFailureGuidance(
   error: unknown,
   step: UploadFailureStep,
+  t: Translate = (message) => message,
 ): string {
   if (step === 'lookup') {
-    return 'The current upload session could not be checked. No new upload was started. Refresh the file list or retry the status check.';
+    return t('The current upload session could not be checked. No new upload was started. Refresh the file list or retry the status check.');
   }
   const code = uploadFailureCode(error);
   if (code === 'OBJECT_UPLOAD_EXPIRED') {
-    return 'The upload session expired. Select the file to use and retry this pending upload.';
+    return t('The upload session expired. Select the file to use and retry this pending upload.');
   }
   if (code === 'OBJECT_CONFLICT' || code === 'OBJECT_ALREADY_EXISTS') {
-    return 'This logical path changed while uploading. Refresh the file list and resolve the conflict before retrying.';
+    return t('This logical path changed while uploading. Refresh the file list and resolve the conflict before retrying.');
   }
   if (step === 'complete' && (code === 'OBJECT_UPLOAD_EXPIRED' || COMPLETION_REUPLOAD_CODES.has(code ?? ''))) {
-    return 'This upload can no longer be confirmed. Retry the pending upload to obtain a fresh signed transfer.';
+    return t('This upload can no longer be confirmed. Retry the pending upload to obtain a fresh signed transfer.');
   }
   if (step === 'complete') {
-    return 'The provider upload may have finished, but confirmation was interrupted. Retry confirmation; the existing bytes will not be uploaded again.';
+    return t('The provider upload may have finished, but confirmation was interrupted. Retry confirmation; the existing bytes will not be uploaded again.');
   }
   if (step === 'upload') {
-    return 'The upload could not be confirmed by the provider. Retry the pending upload to obtain a fresh signed transfer.';
+    return t('The upload could not be confirmed by the provider. Retry the pending upload to obtain a fresh signed transfer.');
   }
-  return 'Upload setup may have reserved this path. Refresh the file list before trying again so you do not create a duplicate reservation.';
+  return t('Upload setup may have reserved this path. Refresh the file list before trying again so you do not create a duplicate reservation.');
 }
 
 export function retryStepAfterFailure(

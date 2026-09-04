@@ -13,6 +13,8 @@ import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { cn } from '../lib/utils';
+import { useI18n } from '../i18n';
+import { LanguageSelect } from './language-select';
 import { Button } from './ui';
 
 const navigation = [
@@ -47,13 +49,14 @@ export function AppShell({
   readonly children: ReactNode;
 }) {
   const location = useLocation();
+  const { t } = useI18n();
   const active = navigation.find((item) => location.pathname.startsWith(item.to));
 
   return (
     <div className="min-h-screen bg-white text-zinc-950">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-44 flex-col border-r border-zinc-200 bg-white lg:flex">
         <div className="flex h-[70px] items-center border-b border-zinc-100 px-4"><Brand /></div>
-        <nav className="grid gap-1 px-2 py-6" aria-label="Main navigation">
+        <nav className="grid gap-1 px-2 py-6" aria-label={t('Main navigation')}>
           {navigation.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -64,7 +67,7 @@ export function AppShell({
               )}
             >
               <Icon className="size-4 shrink-0" weight="regular" aria-hidden />
-              {label}
+              {t(label)}
             </NavLink>
           ))}
         </nav>
@@ -76,12 +79,13 @@ export function AppShell({
       <div className="lg:pl-44">
         <header className="sticky top-0 z-20 flex h-[70px] items-center justify-between border-b border-zinc-200 bg-white/95 px-4 backdrop-blur sm:px-7 lg:px-9">
           <div className="lg:hidden"><Brand /></div>
-          <div className="hidden text-sm font-medium text-zinc-500 lg:block">{active?.label ?? 'OpenPool'}</div>
+          <div className="hidden text-sm font-medium text-zinc-500 lg:block">{active ? t(active.label) : 'OpenPool'}</div>
           <div className="flex items-center gap-2">
             <span className="hidden rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 sm:inline-flex">
               {health?.environment?.toUpperCase() ?? 'CONTROL PLANE'}
             </span>
-            <Button type="button" variant="ghost" size="icon" aria-label="Notifications">
+            <LanguageSelect compact />
+            <Button type="button" variant="ghost" size="icon" aria-label={t('Notifications')}>
               <BellIcon className="size-[18px]" aria-hidden />
             </Button>
             <div className="lg:hidden">
@@ -90,7 +94,7 @@ export function AppShell({
           </div>
         </header>
 
-        <nav className="flex gap-1 overflow-x-auto border-b border-zinc-200 px-3 py-2 lg:hidden" aria-label="Mobile navigation">
+        <nav className="flex gap-1 overflow-x-auto border-b border-zinc-200 px-3 py-2 lg:hidden" aria-label={t('Mobile navigation')}>
           {navigation.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
@@ -101,7 +105,7 @@ export function AppShell({
               )}
             >
               <Icon className="size-4" aria-hidden />
-              {label}
+              {t(label)}
             </NavLink>
           ))}
         </nav>
@@ -130,6 +134,7 @@ function UserMenu({
   readonly logoutBusy: boolean;
   readonly compact?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -139,7 +144,7 @@ function UserMenu({
             'flex w-full items-center gap-3 rounded-md p-2 text-left outline-none hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-zinc-400',
             compact && 'w-auto',
           )}
-          aria-label="Administrator menu"
+          aria-label={t('Administrator menu')}
         >
           <span className="grid size-8 shrink-0 place-items-center rounded-full bg-zinc-950 text-xs font-semibold text-white">
             {administrator.username.slice(0, 1).toUpperCase()}
@@ -147,7 +152,7 @@ function UserMenu({
           {!compact ? (
             <span className="min-w-0 flex-1">
               <strong className="block truncate text-xs font-semibold text-zinc-950">{administrator.username}</strong>
-              <small className="mt-0.5 block truncate text-[11px] text-zinc-500">Administrator</small>
+              <small className="mt-0.5 block truncate text-[11px] text-zinc-500">{t('Administrator')}</small>
             </span>
           ) : null}
           <CaretDownIcon className="size-3.5 text-zinc-500" aria-hidden />
@@ -159,7 +164,7 @@ function UserMenu({
           sideOffset={8}
           className="z-50 min-w-48 rounded-md border border-zinc-200 bg-white p-1 shadow-lg outline-none data-[state=open]:animate-enter"
         >
-          <DropdownMenu.Label className="px-2 py-1.5 text-xs text-zinc-500">Signed in as {administrator.username}</DropdownMenu.Label>
+          <DropdownMenu.Label className="px-2 py-1.5 text-xs text-zinc-500">{t('Signed in as {{name}}', { name: administrator.username })}</DropdownMenu.Label>
           <DropdownMenu.Separator className="my-1 h-px bg-zinc-100" />
           <DropdownMenu.Item
             disabled={logoutBusy}
@@ -167,7 +172,7 @@ function UserMenu({
             className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm text-zinc-700 outline-none hover:bg-zinc-100 focus:bg-zinc-100 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
           >
             <SignOutIcon className="size-4" aria-hidden />
-            Sign out
+            {t('Sign out')}
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

@@ -13,6 +13,7 @@ Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管�
 迁移和事务审计 outbox 已验收；Generic S3、production、CI/CD 与更广的故障/压力验收仍需项目所有者
 参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
 [上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
+管理控制台在本地支持英文和简体中文，可自动识别浏览器语言并记住用户选择。
 
 ## 架构原则
 
