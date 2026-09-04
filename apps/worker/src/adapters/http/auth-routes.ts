@@ -18,10 +18,11 @@ import type {
   SetupStatusResponse,
 } from '@openpool/contracts';
 import type { Administrator } from '@openpool/domain';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
 import type { Env } from '../../env';
+import type { AuthAttemptRateLimiter } from './auth-rate-limiter';
 import { readJsonBody } from './json-body';
 import type { AppEnvironment } from './types';
 
@@ -40,6 +41,9 @@ export interface AuthRouteDependencies {
     env: Env,
     requestId: string,
   ) => AuthUseCases;
+  readonly createAuthAttemptRateLimiter: (
+    env: Env,
+  ) => Pick<AuthAttemptRateLimiter, 'allow'>;
 }
 
 function administratorResponse(
@@ -81,6 +85,39 @@ function authError(
   message: string,
 ): ApiError<AuthErrorCode> {
   return { error: { code, message }, requestId };
+}
+
+async function rateLimitAuthenticationAttempt(
+  context: Context<AppEnvironment>,
+  dependencies: AuthRouteDependencies,
+  kind: 'login' | 'setup',
+  username: string,
+): Promise<Response | undefined> {
+  const requestId = context.get('requestId');
+  try {
+    const allowed = await dependencies
+      .createAuthAttemptRateLimiter(context.env)
+      .allow({ kind, username });
+    if (allowed) return undefined;
+    context.header('retry-after', '60');
+    return context.json(
+      authError(
+        requestId,
+        'RATE_LIMITED',
+        'Too many authentication attempts. Try again later.',
+      ),
+      429,
+    );
+  } catch {
+    return context.json(
+      authError(
+        requestId,
+        'SERVICE_UNAVAILABLE',
+        'Authentication protection is temporarily unavailable.',
+      ),
+      503,
+    );
+  }
 }
 
 function setSessionCookie(
@@ -149,6 +186,14 @@ export function registerAuthRoutes(
       );
     }
 
+    const limited = await rateLimitAuthenticationAttempt(
+      context,
+      dependencies,
+      'setup',
+      credentials.username,
+    );
+    if (limited) return limited;
+
     const auth = dependencies.createAuthUseCases(context.env, requestId);
     try {
       const result = await auth.initializeAdministrator.execute({
@@ -211,6 +256,14 @@ export function registerAuthRoutes(
         401,
       );
     }
+
+    const limited = await rateLimitAuthenticationAttempt(
+      context,
+      dependencies,
+      'login',
+      credentials.username,
+    );
+    if (limited) return limited;
 
     const auth = dependencies.createAuthUseCases(context.env, requestId);
     try {

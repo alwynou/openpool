@@ -19,6 +19,9 @@ npm run dev
 - Worker：`http://localhost:8787`
 - 健康检查：`http://localhost:8787/api/v1/health`
 
+健康接口同时是部署就绪检查。D1 尚未迁移、关键 Secret 缺失/格式错误或认证限流 binding 缺失时返回
+`503 DEPLOYMENT_NOT_READY`；响应只列安全 issue code，不包含 Secret 值。
+
 `npm run dev` 同时启动 Vite 与 Wrangler；Web 的 `/api` 会代理到本地 Worker。Wrangler 的本地 D1
 状态位于被忽略的 `.wrangler` 目录。
 
@@ -41,6 +44,10 @@ npm run dev:worker:scheduled
 outcome。该 Wrangler 保留路径不会被 Static Assets 的 SPA fallback 截获，也不是业务 API。
 
 新增或修改 `wrangler.jsonc` binding 后运行 `npm run cf:typegen`。生成文件不手工编辑。
+
+本地和 staging 都声明了两组 Cloudflare 原生认证限流 binding：每个认证入口 30 次/分钟的 location
+总量上限，以及每个用户名指纹 5 次/分钟的身份上限。它们只覆盖初始化与管理员登录；本地开发由
+Wrangler 模拟，真实计数语义以 Cloudflare 网络为准。
 
 首次本地启动使用 `npm run dev:secrets` 创建权限为 `0600` 的 `apps/worker/.dev.vars`。该命令生成三组
 独立的 32-byte 随机值，不打印 secret，并在文件已存在时拒绝覆盖。本地 Secret 不要提交：

@@ -28,6 +28,11 @@ staging 远端操作记录在第 7 节。真实 R2/B2 smoke 已完成，Generic 
   真实环境使用密码管理器生成的高熵随机密码，以配合 Workers 允许的 100,000 次 PBKDF2 上限。
 - [x] `POST /api/v1/auth/login` 设置 `openpool_session` HttpOnly、SameSite=Strict Cookie；错误
   用户名与错误密码都返回 `401 INVALID_CREDENTIALS`，不泄漏用户存在性。
+- [x] setup/login 在凭证校验前经过 Cloudflare 原生双层限流；入口超过 30 次/分钟或用户名指纹超过
+  5 次/分钟时返回 `429 RATE_LIMITED` 与 `Retry-After: 60`，binding 异常时 fail closed 为 503。
+- [x] `/api/v1/health` 对 D1、32 字节 canonical-base64 master key/pepper、Secret 复用、key ID、
+  认证限流 binding 和 bootstrap 生命周期执行 readiness preflight；失败只返回安全 issue code，
+  静态关键配置错误同时阻断其他 API 与 scheduled maintenance。
 - [x] `GET /api/v1/auth/session` 可读取当前 session；`DELETE /api/v1/auth/session` 撤销并清除
   Cookie，重复登出仍为 `204`。
 - [x] 认证响应、管理响应和错误响应都包含 `requestId`；敏感响应为 `Cache-Control: no-store`
@@ -171,6 +176,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] B2 真实联调完成：验证、ACTIVE shard、浏览器直传/直取、删除、Cron 过期清理和精确 CORS
   均取得 staging 证据；临时 CORS 管理 key 用后立即撤销（2026-09-01）。
 - [ ] Generic S3 真实联调仍待完成。
+- [ ] 发布认证限流/readiness preflight 与 Web i18n 到 staging，确认 health 为 200、错误登录达到阈值后
+  返回 429、60 秒窗口后恢复，并确认已初始化实例没有 `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。

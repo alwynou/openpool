@@ -72,9 +72,17 @@ import {
   D1StorageShardRepository,
 } from '../adapters/d1';
 import { createHttpApp } from '../adapters/http/app';
+import {
+  CloudflareAuthAttemptRateLimiter,
+  type AuthAttemptRateLimiter,
+} from '../adapters/http/auth-rate-limiter';
 import type { AuthUseCases } from '../adapters/http/auth-routes';
 import { createStorageProviderRegistry } from '../adapters/providers';
 import type { Env } from '../env';
+import {
+  checkDeploymentReadiness,
+  inspectStaticDeploymentConfiguration,
+} from './deployment-preflight';
 
 export interface WorkerCompositionOverrides {
   readonly passwordHasher?: PasswordHasher;
@@ -86,6 +94,7 @@ export interface WorkerCompositionOverrides {
   readonly providerRegistry?: ProviderRegistry;
   readonly apiKeyGenerator?: ApiKeyGenerator;
   readonly apiKeyHasher?: ApiKeyHasher;
+  readonly authAttemptRateLimiter?: AuthAttemptRateLimiter;
 }
 
 const defaultIdGenerator: AuthIdGenerator = {
@@ -125,6 +134,19 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
     overrides.providerRegistry ?? createStorageProviderRegistry();
   const apiKeyGenerator =
     overrides.apiKeyGenerator ?? new WebCryptoApiKeyGenerator();
+
+  const createAuthAttemptRateLimiter = (env: Env): AuthAttemptRateLimiter => {
+    if (overrides.authAttemptRateLimiter) {
+      return overrides.authAttemptRateLimiter;
+    }
+    if (!env.AUTH_GLOBAL_RATE_LIMITER || !env.AUTH_IDENTITY_RATE_LIMITER) {
+      throw new Error('Authentication rate limiter bindings are unavailable');
+    }
+    return new CloudflareAuthAttemptRateLimiter(
+      env.AUTH_GLOBAL_RATE_LIMITER,
+      env.AUTH_IDENTITY_RATE_LIMITER,
+    );
+  };
 
   const createAuthUseCases = (
     env: Env,
@@ -327,6 +349,9 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
 
   return createHttpApp({
     createAuthUseCases,
+    createAuthAttemptRateLimiter,
+    inspectDeploymentConfiguration: inspectStaticDeploymentConfiguration,
+    checkDeploymentReadiness,
     authenticate: authenticateAdministrator,
     createApiKeyUseCases,
     createAuditUseCases,
@@ -396,6 +421,12 @@ export async function runScheduledMaintenance(
   env: Env,
   overrides: WorkerCompositionOverrides = {},
 ) {
+  const configurationIssues = inspectStaticDeploymentConfiguration(env);
+  if (configurationIssues.length > 0) {
+    throw new Error(
+      `Deployment preflight failed: ${configurationIssues.join(',')}`,
+    );
+  }
   const ids = overrides.idGenerator ?? defaultIdGenerator;
   const clock = overrides.clock ?? defaultClock;
   const requestId = `scheduled:${ids.next()}`;

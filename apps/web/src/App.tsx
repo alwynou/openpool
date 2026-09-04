@@ -143,7 +143,7 @@ function AuthScreen({
           <p className="mt-6 max-w-lg text-base leading-7 text-zinc-500">{t('Connect R2, B2, and S3-compatible storage to one control plane while object bytes move directly between clients and providers.')}</p>
         </section>
         {unavailableMessage ? (
-          <section className="rounded-lg border border-zinc-200 bg-white p-7 shadow-sm"><LockKeyIcon className="size-6 text-zinc-500" aria-hidden /><h2 className="mt-5 text-xl font-semibold text-zinc-950">{t('OpenPool is unavailable')}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{unavailableMessage}</p></section>
+          <section className="rounded-lg border border-zinc-200 bg-white p-7 shadow-sm"><LockKeyIcon className="size-6 text-zinc-500" aria-hidden /><h2 className="mt-5 text-xl font-semibold text-zinc-950">{t('OpenPool is unavailable')}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{t(unavailableMessage)}</p></section>
         ) : (
           <AuthCard view={view} busy={busy} message={message ?? null} onSetup={onSetup} onLogin={onLogin} />
         )}

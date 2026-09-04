@@ -38,6 +38,20 @@ Web 新增账号同样不能把完整凭据作为请求缓存的 mutation variab
   使用 `HttpOnly`、`SameSite=Strict`，非本地开发环境同时使用 `Secure`。
 - 权限按 action、logical bucket 和 path prefix 组合，不把 Provider 权限暴露给客户端。
 
+## 认证限流与部署就绪
+
+管理员初始化与登录在 bootstrap/password 校验前使用 Cloudflare Workers Rate Limit bindings。
+每个入口同时受每 location 的总量上限和规范化用户名 SHA-256 指纹上限保护；计数键不包含密码、
+bootstrap token 或原始用户名。binding 抛错时认证 fail closed 为 `503`，超过上限为带
+`Retry-After` 的 `429`。这是 PBKDF2 CPU 与在线猜测的第一层保护，不是永久账号锁定，也不替代
+Cloudflare Access/WAF；API Key 和对象直传不使用这组限流。
+
+公开健康接口是 deployment readiness 检查：它验证 master key 与 pepper 都是独立的 32 字节
+canonical base64、key ID 合法、两个限流 binding 存在、D1 可读，并根据管理员是否已经存在检查
+bootstrap token。未初始化实例必须有至少 32 字节且无控制字符的 bootstrap token；已初始化的
+staging/production 实例若仍配置该 token 则不就绪。本地 development 可以保留 token 以便重建被忽略的
+本地 D1。失败响应和日志只能出现稳定 issue code，不得回显任何 binding 值。
+
 ## 签名 URL
 
 - 默认 15 分钟过期；上传签名限制 key、方法、精确 content length 和 content type，D1 按声明大小

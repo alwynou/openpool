@@ -1,6 +1,8 @@
 import type {
   ApiEnvelope,
   ApiError,
+  DeploymentReadinessError,
+  DeploymentReadinessIssueCode,
   HealthResponse,
 } from '@openpool/contracts';
 import { Hono } from 'hono';
@@ -50,7 +52,28 @@ export type HttpAppDependencies = AuthRouteDependencies &
   StorageAccountRouteDependencies &
   BucketRouteDependencies &
   ObjectRouteDependencies &
-  ShardMigrationRouteDependencies;
+  ShardMigrationRouteDependencies & {
+    readonly inspectDeploymentConfiguration: (
+      env: AppEnvironment['Bindings'],
+    ) => readonly DeploymentReadinessIssueCode[];
+    readonly checkDeploymentReadiness: (
+      env: AppEnvironment['Bindings'],
+    ) => Promise<readonly DeploymentReadinessIssueCode[]>;
+  };
+
+function deploymentNotReady(
+  requestId: string,
+  issues: readonly DeploymentReadinessIssueCode[],
+): DeploymentReadinessError {
+  return {
+    error: {
+      code: 'DEPLOYMENT_NOT_READY',
+      message: 'OpenPool deployment configuration is not ready.',
+      issues,
+    },
+    requestId,
+  };
+}
 
 export function createHttpApp(
   dependencies: HttpAppDependencies,
@@ -64,7 +87,24 @@ export function createHttpApp(
     context.header('x-request-id', requestId);
   });
 
-  app.get('/api/v1/health', (context) => {
+  app.use('/api/*', async (context, next) => {
+    if (context.req.path === '/api/v1/health') return next();
+    const issues = dependencies.inspectDeploymentConfiguration(context.env);
+    if (issues.length > 0) {
+      return context.json(
+        deploymentNotReady(context.get('requestId'), issues),
+        503,
+      );
+    }
+    return next();
+  });
+
+  app.get('/api/v1/health', async (context) => {
+    const requestId = context.get('requestId');
+    const issues = await dependencies.checkDeploymentReadiness(context.env);
+    if (issues.length > 0) {
+      return context.json(deploymentNotReady(requestId, issues), 503);
+    }
     const health: HealthResponse = {
       name: 'openpool',
       status: 'ok',
@@ -73,7 +113,7 @@ export function createHttpApp(
     };
     const response: ApiEnvelope<HealthResponse> = {
       data: health,
-      requestId: context.get('requestId'),
+      requestId,
     };
 
     return context.json(response);

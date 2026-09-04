@@ -179,7 +179,7 @@ async function administratorCookie(): Promise<string> {
     },
     undefined,
     undefined,
-    { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+    { 'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests' },
   );
   expect(setup.status).toBe(201);
 

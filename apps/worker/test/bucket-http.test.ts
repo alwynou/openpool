@@ -134,7 +134,7 @@ async function administratorCookie(): Promise<string> {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-openpool-bootstrap-token': 'test-bootstrap-token',
+      'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests',
     },
     body: JSON.stringify({
       username: 'administrator',

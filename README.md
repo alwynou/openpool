@@ -14,6 +14,8 @@ Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管�
 参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
 [上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
 管理控制台在本地支持英文和简体中文，可自动识别浏览器语言并记住用户选择。
+管理员初始化/登录在本地已接入 Cloudflare 原生双层限流；健康接口会预检 D1、关键 Secret、
+认证 bindings 与 bootstrap 生命周期，并在部署配置不安全时 fail closed。
 
 ## 架构原则
 

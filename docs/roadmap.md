@@ -10,6 +10,8 @@
 ## Phase 1：V1（核心控制面与 staging R2/B2 验收完成）
 
 1. 单管理员初始化、登录与 session（本地完成）；
+   setup/login 的 Cloudflare 原生双层限流、关键 Secret/runtime binding readiness preflight 与
+   fail-closed 503 已在本地实现并测试，尚未单独发布到 staging；
 2. AES-GCM credential vault（本地完成）；
 3. R2 Provider 验证与签名上传/下载（本地及真实 staging R2 smoke 完成）；
 4. logical bucket、对象 reserve/complete/delete（本地完成；对象字节直传 Provider）；

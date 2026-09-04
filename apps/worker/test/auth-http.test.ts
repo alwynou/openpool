@@ -5,7 +5,7 @@ import {
   type D1Migration,
   waitOnExecutionContext,
 } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WebCryptoPasswordHasher } from '../src/adapters/auth';
 import { createWorker } from '../src/composition/root';
@@ -16,8 +16,10 @@ interface TestEnv extends Env {
 }
 
 const testEnv = env as unknown as TestEnv;
+const allowAuthenticationAttempt = vi.fn(async () => true);
 const worker = createWorker({
   passwordHasher: new WebCryptoPasswordHasher({ iterations: 1_000 }),
+  authAttemptRateLimiter: { allow: allowAuthenticationAttempt },
 });
 
 async function dispatch(
@@ -53,11 +55,13 @@ async function initializeAdministrator(): Promise<Response> {
       username: 'administrator',
       password: 'correct horse battery staple',
     },
-    { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+    { 'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests' },
   );
 }
 
 beforeEach(async () => {
+  allowAuthenticationAttempt.mockReset();
+  allowAuthenticationAttempt.mockResolvedValue(true);
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
     testEnv.DB.prepare('DELETE FROM auth_sessions'),
@@ -68,6 +72,40 @@ beforeEach(async () => {
 });
 
 describe('authentication HTTP API', () => {
+  it('rate limits authentication work with a stable retry response', async () => {
+    allowAuthenticationAttempt.mockResolvedValueOnce(false);
+
+    const response = await jsonRequest('/api/v1/auth/login', {
+      username: 'administrator',
+      password: 'incorrect password',
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('60');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toMatchObject({
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(allowAuthenticationAttempt).toHaveBeenCalledWith({
+      kind: 'login',
+      username: 'administrator',
+    });
+  });
+
+  it('fails closed when authentication protection is unavailable', async () => {
+    allowAuthenticationAttempt.mockRejectedValueOnce(new Error('unavailable'));
+
+    const response = await jsonRequest('/api/v1/setup', {
+      username: 'administrator',
+      password: 'correct horse battery staple',
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'SERVICE_UNAVAILABLE' },
+    });
+  });
+
   it('accepts only bounded safe client request IDs', async () => {
     const accepted = await dispatch('/api/v1/health', {
       headers: { 'x-request-id': 'client.trace-1:attempt_2' },
@@ -89,7 +127,7 @@ describe('authentication HTTP API', () => {
       method: 'POST',
       headers: {
         'content-type': 'text/plain',
-        'x-openpool-bootstrap-token': 'test-bootstrap-token',
+        'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests',
       },
       body: JSON.stringify({
         username: 'administrator',
@@ -104,7 +142,7 @@ describe('authentication HTTP API', () => {
         username: 'administrator',
         password: 'x'.repeat(64 * 1024),
       },
-      { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+      { 'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests' },
     );
     expect(oversized.status).toBe(400);
 
@@ -115,7 +153,7 @@ describe('authentication HTTP API', () => {
         password: 'correct horse battery staple',
         role: 'superuser',
       },
-      { 'x-openpool-bootstrap-token': 'test-bootstrap-token' },
+      { 'x-openpool-bootstrap-token': 'test-bootstrap-token-for-openpool-tests' },
     );
     expect(extra.status).toBe(400);
   });

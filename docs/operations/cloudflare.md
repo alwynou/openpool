@@ -77,6 +77,34 @@ security find-generic-password -a admin \
 `wrangler secret list --env staging` 确认它已不存在。系统已经初始化时不再接受 bootstrap 请求。
 只有重建一个全新的 D1/实例并重新执行初始化时，才需要为该实例生成新的 token。
 
+## 认证限流与 readiness preflight
+
+`wrangler.jsonc` 为 staging 显式重复声明 `AUTH_GLOBAL_RATE_LIMITER` 和
+`AUTH_IDENTITY_RATE_LIMITER`，因为 Rate Limit bindings 不会自动继承到 named environment。前者对
+setup/login 各限制为每 Cloudflare location 30 次/分钟，后者对每个规范化用户名指纹限制为
+5 次/分钟。namespace ID 在同一 Cloudflare account 中必须唯一；未来 production 必须使用与 staging
+不同的新 ID，避免两个环境共享计数器。计数键不含密码、bootstrap token 或原始用户名。
+
+Cloudflare 不允许回读 Secret 明文，因此 `wrangler secret list` 只能核对名称，不能证明长度、编码或
+两项 Secret 是否复用。Worker 在处理请求时执行权威 readiness preflight：
+
+- `CREDENTIAL_MASTER_KEY` 与 `API_KEY_PEPPER` 必须分别为 canonical base64 的 32 字节值且不能相同；
+- `CREDENTIAL_MASTER_KEY_ID` 必须是安全、稳定的 ID；
+- 两个认证限流 binding 必须存在；
+- D1 必须可读；新实例必须配置合法 bootstrap token，已初始化的非 development 实例必须删除它。
+
+任一检查失败时 `/api/v1/health` 返回 `503 DEPLOYMENT_NOT_READY`，`issues` 只包含稳定状态码，不回显
+值。静态关键配置失败时其他 API 也返回 503；scheduled maintenance 同样 fail closed。发布后必须先
+检查这个接口，再进行登录、Provider 或对象 smoke：
+
+```bash
+curl --fail-with-body https://openpool-staging.alwynou2806.workers.dev/api/v1/health
+```
+
+初始化新实例后，删除 bootstrap Secret 并再次确认 health 恢复 `200`。部署新版本前可先用
+`wrangler secret list` 与配置 diff 核对名称和 bindings，但只有部署后的 runtime preflight 能验证
+Cloudflare 保存的 Secret 实际格式。
+
 ## 迁移与部署
 
 ### 迁移顺序与备份
@@ -161,6 +189,7 @@ migration history 核对。仓库目前不提供 production migration/deploy 命
   health、账号状态、容量计数和签名 URL，再恢复流量。
 
 参考 Cloudflare 官方文档：[Wrangler 配置](https://developers.cloudflare.com/workers/wrangler/configuration/)、
+[Workers Rate Limiting binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)、
 [D1 本地开发](https://developers.cloudflare.com/d1/best-practices/local-development/)、
 [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)、
 [Static Assets SPA](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/)。

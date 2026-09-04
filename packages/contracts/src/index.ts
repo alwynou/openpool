@@ -23,7 +23,33 @@ export type AuthErrorCode =
   | 'ALREADY_INITIALIZED'
   | 'INVALID_BOOTSTRAP_TOKEN'
   | 'INVALID_CREDENTIALS'
+  | 'RATE_LIMITED'
+  | 'SERVICE_UNAVAILABLE'
   | 'VALIDATION_ERROR';
+
+/** Safe configuration findings exposed by the readiness failure response. */
+export type DeploymentReadinessIssueCode =
+  | 'API_KEY_PEPPER_INVALID'
+  | 'API_KEY_PEPPER_MISSING'
+  | 'ADMIN_BOOTSTRAP_TOKEN_INVALID'
+  | 'ADMIN_BOOTSTRAP_TOKEN_MISSING'
+  | 'ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED'
+  | 'AUTH_RATE_LIMITERS_MISSING'
+  | 'CREDENTIAL_MASTER_KEY_ID_INVALID'
+  | 'CREDENTIAL_MASTER_KEY_INVALID'
+  | 'CREDENTIAL_MASTER_KEY_MISSING'
+  | 'CRYPTO_SECRET_REUSE_DETECTED'
+  | 'DATABASE_UNAVAILABLE';
+
+/** A non-ready deployment reports only issue codes, never binding values. */
+export interface DeploymentReadinessError {
+  readonly error: {
+    readonly code: 'DEPLOYMENT_NOT_READY';
+    readonly message: string;
+    readonly issues: readonly DeploymentReadinessIssueCode[];
+  };
+  readonly requestId: string;
+}
 
 export interface SetupStatusResponse {
   readonly initialized: boolean;
