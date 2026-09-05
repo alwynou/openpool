@@ -185,9 +185,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
 - [x] GitHub Actions 验证 CI 使用 `.nvmrc` 中的 Node.js 版本运行 `npm ci` 和完整 `npm run verify`，
-  触发范围为 pull request、`main`/`dev` push 及手动运行；工作流只有仓库只读权限，checkout 不持久化
-  credential，不持有 Cloudflare Secret，也不部署或执行 migration。发布候选合并提交 `fa54fed` 的
-  `main` push run 已通过（2026-09-04），工作流加固于 2026-09-05 完成。
+  触发范围为 pull request、`main` push 及手动运行，开发分支 push 不重复触发；工作流只有仓库只读
+  权限，checkout 不持久化 credential，不持有 Cloudflare Secret，也不部署或执行 migration。发布候选
+  合并提交 `fa54fed` 的 `main` push run 已通过（2026-09-04），工作流加固于 2026-09-05 完成。
 - [x] GitHub 仓库已公开并为 `main` 启用 branch protection：管理员也必须通过 pull request；合并前
   分支必须跟上最新 `main`，且由 GitHub Actions app 提供的 `Verify` check 成功；force-push 和分支
   删除均被禁止（2026-09-05）。
