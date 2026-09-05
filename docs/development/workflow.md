@@ -30,11 +30,10 @@ Web 定向检查运行 `npm run test:web`。需要 DOM 的页面测试使用文�
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 在 pull request、`main` push 和手动触发时使用 `.nvmrc` 中的 Node.js 版本执行
-`npm ci` 与 `npm run verify`。开发分支 push 不单独触发，避免开放 PR 的同一提交同时产生 branch push
-和 pull request 两份重复 CI。工作流只授予 `contents: read`，checkout 不持久化 GitHub credential，
-不配置 Cloudflare Secret，也不运行远端 D1 migration 或 Worker 部署。并发的新提交会取消同一 ref 上的
-旧验证，避免消耗资源验证过时提交。
+`.github/workflows/ci.yml` 在 pull request 和手动触发时使用 `.nvmrc` 中的 Node.js 版本执行 `npm ci` 与
+`npm run verify`。branch push 不自动触发，避免开放 PR 或合并前后对同一变更重复运行 CI。工作流只授予
+`contents: read`，checkout 不持久化 GitHub credential，不配置 Cloudflare Secret，也不运行远端 D1
+migration 或 Worker 部署。并发的新提交会取消同一 PR ref 上的旧验证，避免消耗资源验证过时提交。
 
 `main` 使用 GitHub branch protection：包括管理员在内都不能直接推送，只能通过非 `main` 分支的
 pull request 集成。GitHub 要求 PR 分支跟上最新 `main`，并由 GitHub Actions app 提供的
