@@ -35,6 +35,12 @@ Web 定向检查运行 `npm run test:web`。需要 DOM 的页面测试使用文�
 credential，不配置 Cloudflare Secret，也不运行远端 D1 migration 或 Worker 部署。并发的新提交会取消
 同一 ref 上的旧验证，避免消耗资源验证过时提交。
 
+`main` 使用 GitHub branch protection：包括管理员在内都不能直接推送，只能通过非 `main` 分支的
+pull request 集成。GitHub 要求 PR 分支跟上最新 `main`，并由 GitHub Actions app 提供的
+`CI / Verify` 成功后才允许合并；pending、skipped、cancelled 或失败都不满足门槛。不得为合并临时
+绕过、关闭或削弱保护规则。当前单维护者流程不要求额外 approval；如增加协作者，再单独决定 review
+数量和 CODEOWNERS。
+
 ## 完成标准
 
 1. 相关测试先通过，再运行 `npm run verify`。
@@ -42,3 +48,4 @@ credential，不配置 Cloudflare Secret，也不运行远端 D1 migration 或 W
 3. 新外部调用有超时、错误分类和不泄密日志。
 4. 不提交 `.dev.vars`、真实账号 ID、token、签名 URL 或本地 D1 状态。
 5. 远端部署与迁移必须由用户明确授权。
+6. 集成到 `main` 必须创建 pull request，并等待必需的 `CI / Verify` 成功。

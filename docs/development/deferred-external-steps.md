@@ -47,6 +47,9 @@
 - [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已扩展到 pull request、`main`/`dev` push 和手动
   触发，运行 `npm ci` 与 `npm run verify`；只有仓库只读权限且 checkout 不持久化 credential，不部署
   或执行 migration（2026-09-05）。
+- [x] 仓库已按所有者要求改为 Public；`main` branch protection 对管理员同样生效，要求通过 pull
+  request、分支跟上最新 `main` 且 GitHub Actions `Verify` 成功，禁止 force-push 和删除
+  （2026-09-05）。
 - [ ] 如启用自动部署/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入；验证 CI 不需要
   也不得提前持有该 token。
 

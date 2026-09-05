@@ -34,6 +34,13 @@ npm run verify
 Run the narrowest relevant check while iterating and `npm run verify` before handoff.
 Do not deploy or run remote D1 migrations unless the user explicitly asks.
 
+## Main branch integration
+
+- Never push changes directly to `main`; push a non-`main` branch and open a pull request targeting `main`.
+- Do not merge while the required `CI / Verify` check is pending, skipped, cancelled, or failing.
+- Before merging, wait for `CI / Verify` to succeed and for GitHub to report the pull request branch is up to date with `main`.
+- Do not bypass, disable, or weaken branch protection to merge a change.
+
 ## Automatic commits
 
 - A completed, self-contained change may be committed locally without asking again when linting for the changed scope and all relevant tests pass.

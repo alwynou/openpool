@@ -53,7 +53,8 @@ npm run verify
 ```
 
 GitHub Actions 会在 pull request 以及 `main`/`dev` push 上运行同一条验证命令。
-验证工作流只有仓库只读权限，不接收 Cloudflare Secret，也不会部署 Worker 或执行 migration。
+验证工作流只有仓库只读权限，不接收 Cloudflare Secret，也不会部署 Worker 或执行 migration。受保护的
+`main` 只接受 pull request，并要求分支跟上最新 `main` 且 `CI / Verify` 成功后才能合并。
 
 本地开发会使用被忽略的 Wrangler D1 状态和 `.dev.vars`；首次启动前请先阅读
 [本地开发](docs/development/getting-started.md)。远端配置、迁移和发布必须按

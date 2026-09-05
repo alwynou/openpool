@@ -188,6 +188,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   触发范围为 pull request、`main`/`dev` push 及手动运行；工作流只有仓库只读权限，checkout 不持久化
   credential，不持有 Cloudflare Secret，也不部署或执行 migration。发布候选合并提交 `fa54fed` 的
   `main` push run 已通过（2026-09-04），工作流加固于 2026-09-05 完成。
+- [x] GitHub 仓库已公开并为 `main` 启用 branch protection：管理员也必须通过 pull request；合并前
+  分支必须跟上最新 `main`，且由 GitHub Actions app 提供的 `Verify` check 成功；force-push 和分支
+  删除均被禁止（2026-09-05）。
 
 ### 失败、回滚与后续
 
