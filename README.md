@@ -52,8 +52,8 @@ npm run dev
 npm run verify
 ```
 
-GitHub Actions 会在 pull request 和 `main` push 上运行同一条验证命令；开发分支仅通过 PR 事件验证，
-避免同一提交同时触发 branch push 与 pull request 两份重复 CI。
+GitHub Actions 会在 pull request 上运行同一条验证命令，也支持手动触发；branch push 不自动运行，
+避免合并前后或开放 PR 时对同一变更重复执行 CI。
 验证工作流只有仓库只读权限，不接收 Cloudflare Secret，也不会部署 Worker 或执行 migration。受保护的
 `main` 只接受 pull request，并要求分支跟上最新 `main` 且 `CI / Verify` 成功后才能合并。
 
