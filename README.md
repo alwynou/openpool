@@ -1,110 +1,151 @@
-# OpenPool
+<p align="center">
+  <img src="apps/web/public/openpool-logo.png" alt="OpenPool logo" width="144" />
+</p>
 
-> A self-hosted, Cloudflare-native object storage control plane.
+<h1 align="center">OpenPool</h1>
 
-OpenPool 把用户合法拥有的多个 Cloudflare R2、Backblaze B2 和 S3-compatible
-存储账号组织成一个逻辑存储池，并通过统一命名空间、管理后台和 API 提供访问。
+<p align="center">
+  A self-hosted, Cloudflare-native control plane for object storage.
+</p>
 
-当前仓库是持续实现中的 V1 控制面：Worker 健康接口、单管理员初始化与 session、AES-GCM
-credential vault、Storage Account 生命周期、R2/B2/Generic S3 验证与签名、D1 模型、Placement
-Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管理与 audit-log 查询 API
-以及覆盖这些管理面的 Web 控制台已经实现。Phase 2 的 account drain/shard migration 控制面、流式
-搬运 CLI 与恢复清理已实现。独立 Cloudflare staging、D1、Secret、部署、真实 R2/B2 直传、双向小文件
-迁移和事务审计 outbox 已验收；Generic S3、production、自动部署与更广的故障/压力验收仍需项目所有者
-参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
-[上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
-管理控制台支持英文和简体中文，可自动识别浏览器语言并记住用户选择；本地测试和 staging
-真实浏览器切换/刷新持久化均已验收。
-管理员初始化/登录已接入 Cloudflare 原生双层限流；健康接口会预检 D1、关键 Secret、认证 bindings
-与 bootstrap 生命周期，并在部署配置不安全时 fail closed。该安全升级已通过 staging readiness、
-真实 429/恢复窗口和管理员 session 验收。
+<p align="center">
+  <a href="https://github.com/alwynou/openpool/actions/workflows/ci.yml"><img src="https://github.com/alwynou/openpool/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+  <a href="https://github.com/alwynou/openpool/releases"><img src="https://img.shields.io/github/v/release/alwynou/openpool?include_prereleases" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/alwynou/openpool" alt="MIT license" /></a>
+  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" />
+</p>
 
-## 架构原则
+OpenPool combines storage accounts that you already own into one logical object pool. It provides a unified namespace, placement decisions, credential management, an administration console, and an API across Cloudflare R2, Backblaze B2, and S3-compatible storage.
 
-- Cloudflare Worker 只承载认证、元数据、放置决策和签名 URL 等控制面流量。
-- 对象内容不经过 Worker；客户端使用签名 URL 与 R2/B2/S3 直接传输。
-- D1 维护逻辑对象到物理位置的映射，用户路径不依赖底层 Provider。
-- 核心领域与 Cloudflare、D1、HTTP、具体 Provider 解耦。
+OpenPool is a control plane, not an object proxy. Clients upload and download bytes directly from the selected provider through short-lived signed URLs, so object payloads never pass through the Worker.
+
+## Features
+
+- Cloudflare Worker API and React administration console, served as one deployment
+- Cloudflare D1 metadata store with append-only schema migrations
+- R2, Backblaze B2, and generic S3-compatible provider adapters
+- Logical buckets, storage shards, capacity-aware placement, and provider health checks
+- Direct signed uploads and downloads with explicit reservation, completion, retry, and cleanup states
+- AES-256-GCM encryption for provider credentials at rest
+- Single-administrator authentication, scoped API keys, rate limiting, and deployment readiness checks
+- Transactional audit outbox with searchable audit logs
+- Account drain and client-mediated shard migration between providers
+- English and Simplified Chinese administration UI
+- TypeScript SDK and object CLI for API-key-authenticated workflows
+
+## Architecture
 
 ```text
-Browser / SDK ── control API ──> Worker ──> D1
-      │                            │
-      └──── object bytes ──────────┴────> R2 / B2 / S3
+Browser / SDK / CLI ── control API ──> Cloudflare Worker ──> D1
+         │                                  │
+         └────── object bytes ──────────────┴────> R2 / B2 / S3
 ```
 
-## 快速开始
+The codebase follows ports and adapters. Dependencies point inward:
 
-要求 Node.js 22+。
+```text
+adapters  →  application  →  domain
+```
+
+The domain package has no framework, platform, database, or provider SDK dependencies. Public API shapes live in `packages/contracts`; database rows and provider SDK types do not cross that boundary. See the [architecture overview](docs/architecture/overview.md) and [dependency boundaries](docs/architecture/boundaries.md) for details.
+
+## Project status
+
+OpenPool is currently available as the [`v0.1.0-rc.1`](https://github.com/alwynou/openpool/releases/tag/v0.1.0-rc.1) release candidate.
+
+The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. Generic S3 support is implemented and covered locally, but still needs an opt-in compatibility smoke test against an external service. Production infrastructure and automated deployment are not configured.
+
+For the exact completion state and remaining work, see the [roadmap](docs/roadmap.md) and [V1 acceptance checklist](docs/development/v1-acceptance.md).
+
+## Quick start
+
+### Prerequisites
+
+- Node.js 22 or newer
+- npm
+
+### Run locally
 
 ```bash
+git clone https://github.com/alwynou/openpool.git
+cd openpool
 npm install
 npm run dev:secrets
 npm run db:migrate:local
 npm run dev
 ```
 
-打开 `http://localhost:5173`。Worker API 运行在 `http://localhost:8787`，Vite 会把
-`/api` 请求代理过去。
+Open the administration console at [http://localhost:5173](http://localhost:5173). The Worker API runs at [http://localhost:8787](http://localhost:8787), and Vite proxies local `/api` requests to it.
 
-提交前运行：
+Local development uses an ignored Wrangler D1 database and an ignored `apps/worker/.dev.vars` file. Read the [local development guide](docs/development/getting-started.md) before initializing the administrator or adding a provider.
 
-```bash
-npm run verify
-```
-
-GitHub Actions 会在 pull request 上运行同一条验证命令，也支持手动触发；branch push 不自动运行，
-避免合并前后或开放 PR 时对同一变更重复执行 CI。
-验证工作流只有仓库只读权限，不接收 Cloudflare Secret，也不会部署 Worker 或执行 migration。受保护的
-`main` 只接受 pull request，并要求分支跟上最新 `main` 且 `CI / Verify` 成功后才能合并。
-
-本地开发会使用被忽略的 Wrangler D1 状态和 `.dev.vars`；首次启动前请先阅读
-[本地开发](docs/development/getting-started.md)。远端配置、迁移和发布必须按
-[V1 本地验收与发布清单](docs/development/v1-acceptance.md)执行，并由项目所有者明确授权。
-
-## 仓库导航
+## Repository layout
 
 ```text
-apps/worker/          Cloudflare Worker、HTTP 适配器、组合根
-apps/web/             React 管理控制台
-apps/migrator/        Shard migration 流式数据搬运 CLI
-apps/cli/             API Key 鉴权的通用对象 CLI
-packages/domain/      纯领域模型与 Placement 规则
-packages/application/ 用例与端口（接口）
-packages/contracts/   Worker 与 Web 共用的 API 契约
-packages/sdk/         私有预览 TypeScript 对象 API 客户端
-database/migrations/  D1 迁移；只追加，不回写已发布迁移
-docs/                 架构、开发、Provider 与运维文档
+apps/worker/          Cloudflare Worker, HTTP adapters, and composition root
+apps/web/             React administration console
+apps/migrator/        Streaming shard migration CLI
+apps/cli/             API-key-authenticated object CLI
+packages/domain/      Pure domain model and placement rules
+packages/application/ Use cases and ports
+packages/contracts/   Shared public API contracts
+packages/sdk/         TypeScript API client (private preview)
+database/migrations/  Append-only D1 migrations
+docs/                 Architecture, development, provider, and operations guides
 ```
 
-从 [docs/README.md](docs/README.md) 开始阅读。Cloudflare 部署步骤见
-[docs/operations/cloudflare.md](docs/operations/cloudflare.md)，开发约定见
-[docs/development/workflow.md](docs/development/workflow.md)。
+Start with the [documentation index](docs/README.md).
 
-## V1 范围
+## Development
 
-V1 控制面支持单管理员、R2/B2/Generic S3、逻辑 Bucket、文件元数据管理、容量与健康检查、
-简单 Placement、API Key、签名上传/下载、删除、审计日志和凭证加密。当前完成状态与未完成的
-真实环境验收见[路线图](docs/roadmap.md)和[V1 验收清单](docs/development/v1-acceptance.md)。
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Run the Worker and Web console locally |
+| `npm run test:web` | Run the Web test suite |
+| `npm run test` | Run all test suites |
+| `npm run lint` | Run Oxlint |
+| `npm run typecheck` | Type-check every workspace |
+| `npm run build` | Build the Web app, Worker, migrator, and CLI |
+| `npm run verify` | Run linting, type checks, tests, and builds |
 
-完整 S3 Gateway、GitHub Provider、自动迁移、多副本、多用户、计费与复杂 RBAC 不属于
-V1。
+Run `npm run verify` before handing off a change. The GitHub Actions workflow runs the same command on pull requests and can also be started manually. It has read-only repository access, receives no Cloudflare secrets, and never deploys or applies database migrations.
 
-上传失败／过期后的显式重试已实现并随 `0006` 和配套 Worker/Web 部署到 staging：保留同一
-object ID/logical key，生成新 session/物理位置，旧尝试独立清理。真实 R2/B2 验收见
-[上传重试验收记录](docs/development/staging-upload-retry-acceptance.md)；不支持覆盖 READY 或复用
-DELETED 路径。Shard migration 需要在线 CLI 搬运器，scheduled maintenance
-只恢复 primary 已切换后的源清理；仍没有通用的无人值守跨 Provider replication、自动修复或 gateway。
-对象字节始终不会经过 Worker。
+Changes reach the protected `main` branch through pull requests with an up-to-date, successful `CI / Verify` check. See the [development workflow](docs/development/workflow.md) before contributing.
 
-现有对象控制 API 的 Fetch 客户端见 [TypeScript SDK](docs/sdk/typescript.md)，命令行使用见
-[对象 CLI](docs/cli/objects.md)。CLI 支持列表、详情、上传、下载、删除、上传状态、幂等完成和显式重试，
-只使用受限 API Key，不登录管理员或保存凭据。SDK/CLI 保持 reserve/complete 控制流与 Provider
-signed transfer 分离，目前均为 workspace 内私有预览，不代表公开 npm 发布承诺。
-构建后的 CLI 已完成 [staging R2/B2 小文件验收](docs/development/staging-cli-acceptance.md)，
-覆盖哈希比对、权限、分页、防覆盖、显式恢复和删除；另已通过
-[50 MB 文件与中途取消验收](docs/development/staging-cli-50mb-acceptance.md)，提供显式 opt-in 的
-[可重复 smoke 脚本](docs/development/cli-smoke.md)。更大文件、并发/压力和长期测试仍未验收。
+## Deployment
+
+OpenPool runs as a Cloudflare Worker with Static Assets and D1. Provider credentials and application secrets must be configured separately for each environment.
+
+Remote D1 migrations and deployments are intentionally explicit operations. The repository does not currently include a production environment or a one-click deployment path. Follow the [Cloudflare operations runbook](docs/operations/cloudflare.md) for environment setup, migration ordering, backups, readiness checks, deployment, and rollback guidance.
+
+## Security
+
+- Object bytes transfer directly between the client and storage provider.
+- Provider credentials are encrypted at rest and are never returned by the API.
+- API keys and session tokens are stored only as hashes.
+- Signed URLs, raw credentials, authorization headers, and session cookies must not enter logs or audit metadata.
+- Provider credentials should be limited to the intended bucket and minimum required operations.
+
+OpenPool is designed for a trusted, single-administrator deployment. Review the complete [security model](docs/architecture/security.md) before exposing an instance or supplying provider credentials.
+
+Please report security issues privately to the maintainer instead of opening a public issue with credentials, signed URLs, or other sensitive data.
+
+## Current limitations
+
+OpenPool does not yet provide a full S3-compatible gateway, multipart resumable uploads, automatic replication or repair, multi-user tenancy, billing, or fine-grained RBAC. The TypeScript SDK and object CLI are workspace-private previews and are not published npm packages.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Architecture overview](docs/architecture/overview.md)
+- [Local development](docs/development/getting-started.md)
+- [Provider integration](docs/providers/README.md)
+- [Object CLI](docs/cli/objects.md)
+- [TypeScript SDK](docs/sdk/typescript.md)
+- [Cloudflare operations](docs/operations/cloudflare.md)
+- [Roadmap](docs/roadmap.md)
+- [V1 acceptance checklist](docs/development/v1-acceptance.md)
 
 ## License
 
-[MIT](LICENSE)
+OpenPool is available under the [MIT License](LICENSE).
