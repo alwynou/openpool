@@ -159,6 +159,10 @@ D1。它不是 dry-run，仍有远端发布副作用；只有在完成登录、�
 才能执行。staging migration 始终使用独立的 `npm run db:migrate:staging`，以便先完成备份和
 migration history 核对。仓库目前不提供 production migration/deploy 命令。
 
+GitHub Actions 的 `CI` 工作流只运行 `npm ci` 和 `npm run verify`，权限限定为 `contents: read`；它不
+持有 Cloudflare Secret，不调用本节中的 migration 或 deploy 命令。未来若增加自动部署，必须使用独立
+最小权限 token、environment protection 和明确的 production 配置，不能把验证 job 隐式升级为发布 job。
+
 `npm run deploy:staging:with-migrations` 是明确选择“先 staging migration、再部署”的便利命令，
 同时具有两类远端副作用；只允许在首次安装或升级维护窗口中，经项目所有者确认目标账号、D1、备份
 和授权后使用。只构建或只发布 staging Worker 时，分别使用 `npm run build` 或

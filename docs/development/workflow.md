@@ -28,6 +28,13 @@ Web 定向检查运行 `npm run test:web`。需要 DOM 的页面测试使用文�
 一次性 token、创建锁与剪贴板结果见[Web API Key 创建交互回归](web-api-key-creation.md)。
 组件测试不替代真实浏览器/CORS 验收。
 
+## 持续集成
+
+`.github/workflows/ci.yml` 在 pull request、`main`/`dev` push 和手动触发时使用 `.nvmrc` 中的 Node.js
+版本执行 `npm ci` 与 `npm run verify`。工作流只授予 `contents: read`，checkout 不持久化 GitHub
+credential，不配置 Cloudflare Secret，也不运行远端 D1 migration 或 Worker 部署。并发的新提交会取消
+同一 ref 上的旧验证，避免消耗资源验证过时提交。
+
 ## 完成标准
 
 1. 相关测试先通过，再运行 `npm run verify`。

@@ -46,8 +46,9 @@
 
 核心 V1 控制面退出条件已经达到：本地 `npm run verify` 通过；本地流程、独立 staging 部署、
 R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单](development/v1-acceptance.md)取得证据。
-完整的 V1 Provider 兼容性声明仍需 Generic S3 的 opt-in smoke。production、CI/CD token、受保护
-备份位置和恢复演练也继续由项目所有者决定，不复用 staging 资源。
+GitHub Actions 验证工作流已覆盖 pull request 及 `main`/`dev` push，只运行仓库
+`verify` 且没有 Cloudflare 权限。完整的 V1 Provider 兼容性声明仍需 Generic S3 的 opt-in smoke。
+production、自动部署所需 token、受保护备份位置和恢复演练继续由项目所有者决定，不复用 staging 资源。
 
 ## Phase 2
 

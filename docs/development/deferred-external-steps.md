@@ -44,7 +44,11 @@
   保存位置，并确认 Time Travel/恢复负责人；恢复演练会改写数据，必须另行授权。
 - [ ] 正式上线前决定 production 使用当前还是独立 Cloudflare account，创建独立 D1、Secrets 和
   Provider 资源，并决定是否绑定自定义域名；不得复用 staging database、credential 或 bucket。
-- [ ] 如启用 CI/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入。
+- [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已扩展到 pull request、`main`/`dev` push 和手动
+  触发，运行 `npm ci` 与 `npm run verify`；只有仓库只读权限且 checkout 不持久化 credential，不部署
+  或执行 migration（2026-09-05）。
+- [ ] 如启用自动部署/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入；验证 CI 不需要
+  也不得提前持有该 token。
 
 ## Provider 真实联调
 

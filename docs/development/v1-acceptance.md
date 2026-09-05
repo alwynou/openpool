@@ -184,6 +184,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
+- [x] GitHub Actions 验证 CI 使用 `.nvmrc` 中的 Node.js 版本运行 `npm ci` 和完整 `npm run verify`，
+  触发范围为 pull request、`main`/`dev` push 及手动运行；工作流只有仓库只读权限，checkout 不持久化
+  credential，不持有 Cloudflare Secret，也不部署或执行 migration。发布候选合并提交 `fa54fed` 的
+  `main` push run 已通过（2026-09-04），工作流加固于 2026-09-05 完成。
 
 ### 失败、回滚与后续
 
@@ -198,6 +202,6 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前剩余外部事项是 Generic S3 资源及其 CORS、CI/CD token、production/自定义域名决策，以及
+当前剩余外部事项是 Generic S3 资源及其 CORS、自动部署所需 Cloudflare token、production/自定义域名决策，以及
 未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。2026-09-02 所有者明确要求本次
 staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。

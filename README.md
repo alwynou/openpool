@@ -10,7 +10,7 @@ credential vault、Storage Account 生命周期、R2/B2/Generic S3 验证与签�
 Engine、logical bucket、对象 reserve/complete/download/delete、API Key 管理与 audit-log 查询 API
 以及覆盖这些管理面的 Web 控制台已经实现。Phase 2 的 account drain/shard migration 控制面、流式
 搬运 CLI 与恢复清理已实现。独立 Cloudflare staging、D1、Secret、部署、真实 R2/B2 直传、双向小文件
-迁移和事务审计 outbox 已验收；Generic S3、production、CI/CD 与更广的故障/压力验收仍需项目所有者
+迁移和事务审计 outbox 已验收；Generic S3、production、自动部署与更广的故障/压力验收仍需项目所有者
 参与或授权。升级证据见[迁移与审计验收](docs/development/staging-upgrade-acceptance.md)和
 [上传重试验收](docs/development/staging-upload-retry-acceptance.md)。
 管理控制台支持英文和简体中文，可自动识别浏览器语言并记住用户选择；本地测试和 staging
@@ -51,6 +51,9 @@ npm run dev
 ```bash
 npm run verify
 ```
+
+GitHub Actions 会在 pull request 以及 `main`/`dev` push 上运行同一条验证命令。
+验证工作流只有仓库只读权限，不接收 Cloudflare Secret，也不会部署 Worker 或执行 migration。
 
 本地开发会使用被忽略的 Wrangler D1 状态和 `.dev.vars`；首次启动前请先阅读
 [本地开发](docs/development/getting-started.md)。远端配置、迁移和发布必须按
