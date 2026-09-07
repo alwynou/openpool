@@ -16,6 +16,7 @@
 - [架构决策记录](architecture/decisions/)：已经确定的重要取舍。
   - [ADR 0004：事务审计 Outbox](architecture/decisions/0004-transactional-audit-outbox.md)
   - [ADR 0005：显式上传尝试重试](architecture/decisions/0005-upload-attempt-retries.md)
+  - [ADR 0006：稳定公开对象链接](architecture/decisions/0006-stable-public-object-links.md)
 
 ## 开发
 
@@ -26,6 +27,7 @@
 - [Web 账号纠错交互回归](development/web-account-recovery.md)：验证失败后编辑、凭据留空/替换和并发冲突恢复。
 - [Web 账号创建交互回归](development/web-account-creation.md)：新增账号的凭据清理、显式重试与重复提交保护。
 - [Web API Key 创建交互回归](development/web-api-key-creation.md)：一次性 token 缓存隔离、重复发放保护和复制结果。
+- [公开对象访问本地验收](development/public-object-access.md)：Bucket/文件策略、短期重定向、到期与安全边界。
 - [Staging Web 恢复验收](development/staging-web-recovery-acceptance.md)：两轮 Web 修复的发布、R2 真实交互及清理证据。
 - [Staging Web 创建验收](development/staging-web-creation-acceptance.md)：账号创建模拟、真实 API Key 发放/复制/撤销与发布证据。
 - [Staging 认证限流与 readiness 验收](development/staging-auth-readiness-acceptance.md)：关键 Secret 预检、真实 429/恢复窗口和管理员 session 证据。
@@ -42,7 +44,7 @@
 - [Storage Account API](api/storage-accounts.md)：Provider 账号、验证、健康与生命周期。
 - [Bucket 与 Shard API](api/buckets.md)：逻辑命名空间和物理 Bucket 映射。
 - [Shard Migration API 与搬运器](api/shard-migrations.md)：account drain、持久化迁移和流式 CLI。
-- [对象 API](api/objects.md)：reserve、complete、签名下载和幂等删除。
+- [对象 API](api/objects.md)：reserve、complete、签名下载、稳定公开链接和幂等删除。
 - [TypeScript SDK](sdk/typescript.md)：私有预览对象客户端与签名直传/直取边界。
 - [对象 CLI](cli/objects.md)：受限 API Key、文件直传/直取、显式重试与失败恢复。
 - [Provider 指南](providers/README.md)：Provider 端口、能力和实现顺序。

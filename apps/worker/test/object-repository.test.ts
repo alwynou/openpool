@@ -115,6 +115,8 @@ function reservation(
       contentType: 'application/octet-stream',
       checksum: null,
       status: 'PENDING',
+      publicAccessMode: 'INHERIT',
+      publicAccessExpiresAt: null,
       createdAt: now,
       updatedAt: now,
     },

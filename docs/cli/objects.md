@@ -74,12 +74,13 @@ npm run --silent openpool -- list \
 输出是安全 JSON：
 
 ```json
-{"data":[{"id":"object-id","logicalBucketId":"bucket-id","logicalKey":"reports/a.pdf","sizeBytes":123,"contentType":"application/pdf","checksum":null,"status":"READY","createdAt":"...","updatedAt":"..."}],"nextAfterKey":"reports/a.pdf"}
+{"data":[{"id":"object-id","logicalBucketId":"bucket-id","logicalKey":"reports/a.pdf","sizeBytes":123,"contentType":"application/pdf","checksum":null,"status":"READY","publicAccessMode":"INHERIT","publicAccessExpiresAt":null,"publicUrl":"https://openpool.example/public/objects/object-id","createdAt":"...","updatedAt":"..."}],"nextAfterKey":"reports/a.pdf"}
 ```
 
 每次只返回一页，不是跨请求的快照。`nextAfterKey` 是 continuation hint：当返回数量达到
 请求的 limit 时，使用它作为下一次请求的 `--after-key`；否则为 `null`。列表响应只包含
-逻辑对象元数据，不暴露 Provider、物理 key 或凭据。
+逻辑对象元数据，不暴露 Provider、物理 key 或凭据。它会显示稳定 `publicUrl` 与当前公开策略字段，
+但 CLI 不提供修改公开策略的命令；该操作仍是管理员 session-only。私有链接被访问时返回 404。
 
 ### stat 与 upload-status
 

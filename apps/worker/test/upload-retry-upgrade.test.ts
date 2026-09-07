@@ -49,9 +49,20 @@ it('upgrades existing upload states without changing object identity, capacity, 
       ]);
     }
   }
-  const before = await testEnv.DB.prepare('SELECT * FROM objects ORDER BY id').all();
+  const existingObjectColumns = `id, logical_bucket_id, logical_key, size_bytes,
+    content_type, checksum, status, created_at, updated_at`;
+  const before = await testEnv.DB.prepare(
+    `SELECT ${existingObjectColumns} FROM objects ORDER BY id`,
+  ).all();
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
-  expect((await testEnv.DB.prepare('SELECT * FROM objects ORDER BY id').all()).results).toEqual(before.results);
+  expect((await testEnv.DB.prepare(
+    `SELECT ${existingObjectColumns} FROM objects ORDER BY id`,
+  ).all()).results).toEqual(before.results);
+  expect((await testEnv.DB.prepare(
+    `SELECT DISTINCT public_access_mode, public_access_expires_at FROM objects`,
+  ).all()).results).toEqual([
+    { public_access_mode: 'INHERIT', public_access_expires_at: null },
+  ]);
   expect((await testEnv.DB.prepare('SELECT used_bytes FROM storage_accounts').first())?.used_bytes).toBe(2);
   const sessions = await testEnv.DB.prepare('SELECT object_id, status, is_current, location_id FROM upload_sessions ORDER BY object_id')
     .all<{ object_id: string; status: string; is_current: number; location_id: string }>();

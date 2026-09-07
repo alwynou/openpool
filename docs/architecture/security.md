@@ -59,6 +59,17 @@ staging/production 实例若仍配置该 token 则不就绪。本地 development
 - 完成上传时通过 Provider `HEAD` 校验大小、ETag/checksum，再把对象置为 `READY`。
 - API 响应和日志不持久化完整签名 URL。
 
+稳定公开对象链接本身不依赖“难猜的 object ID”提供授权：Worker 每次都从 D1 解析 Bucket/对象当前
+策略，并要求对象为 `READY`。允许访问时只返回最长 60 秒的 Provider signed GET `302`，对象字节仍
+不经过 Worker；私有、过期、非 READY 和不存在统一为空 body `404`。关闭公开访问不能撤销已经签发
+的 Provider URL，因此最长存在 60 秒的明确撤销窗口。公开响应不可缓存且不发送 referrer，Bucket
+公开不包含匿名列表；HTML 等主动内容最终在 Provider origin 加载，不获得 OpenPool 控制面同源权限。
+
+公开策略只能由管理员 session 修改，API Key 不继承这项权限。策略 mutation 与 audit outbox 原子
+提交；匿名公开读取不记录逐次 audit，避免攻击者制造 D1 写放大。公开 URL 和 signed Location 不得
+写入日志或 audit metadata。详细决策见
+[ADR 0006](decisions/0006-stable-public-object-links.md)。
+
 Shard migration claim 同样只返回 15 分钟的一次性源 `GET` 和目标 `PUT`。目标签名绑定精确大小与
 content type；搬运器流式转发字节，Worker 不读取对象内容。claim/complete 只接受管理员 session，
 短期 lease token 还必须与 task 匹配；signed URL、lease token 和 session Cookie 不进入 audit、日志、

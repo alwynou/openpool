@@ -20,6 +20,8 @@ import type {
   SetupStatusResponse,
   StorageAccountResponse,
   StorageShardResponse,
+  UpdateLogicalBucketPublicAccessRequest,
+  UpdateObjectPublicAccessRequest,
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
@@ -307,6 +309,19 @@ export class OpenPoolClient {
     return this.request('/api/v1/buckets', 'POST', input, options);
   }
 
+  updateBucketPublicAccess(
+    bucketId: string,
+    input: UpdateLogicalBucketPublicAccessRequest,
+    options: OpenPoolRequestOptions = {},
+  ): Promise<LogicalBucketResponse> {
+    return this.request(
+      `/api/v1/buckets/${encodeURIComponent(bucketId)}/public-access`,
+      'PATCH',
+      input,
+      options,
+    );
+  }
+
   listShards(
     bucketId: string,
     options: OpenPoolRequestOptions = {},
@@ -425,6 +440,19 @@ export class OpenPoolClient {
       `/api/v1/objects/${encodeURIComponent(objectId)}/download`,
       'POST',
       undefined,
+      options,
+    );
+  }
+
+  updateObjectPublicAccess(
+    objectId: string,
+    input: UpdateObjectPublicAccessRequest,
+    options: OpenPoolRequestOptions = {},
+  ): Promise<ObjectMetadataResponse> {
+    return this.request(
+      `/api/v1/objects/${encodeURIComponent(objectId)}/public-access`,
+      'PATCH',
+      input,
       options,
     );
   }

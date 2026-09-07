@@ -1,3 +1,5 @@
+import type { LogicalBucket } from './logical-bucket';
+
 export const objectStatuses = [
   'PENDING',
   'READY',
@@ -6,6 +8,10 @@ export const objectStatuses = [
 ] as const;
 
 export type ObjectStatus = (typeof objectStatuses)[number];
+
+export const publicAccessModes = ['INHERIT', 'PUBLIC', 'PRIVATE'] as const;
+
+export type PublicAccessMode = (typeof publicAccessModes)[number];
 
 export const uploadSessionStatuses = [
   'PENDING',
@@ -24,8 +30,33 @@ export interface StoredObject {
   readonly contentType: string;
   readonly checksum: string | null;
   readonly status: ObjectStatus;
+  readonly publicAccessMode: PublicAccessMode;
+  readonly publicAccessExpiresAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/**
+ * Resolves the effective public policy without making persistence concerns
+ * part of the domain. A public object is still required to be READY.
+ */
+export function isObjectPubliclyAccessible(
+  object: Pick<StoredObject, 'status' | 'publicAccessMode' | 'publicAccessExpiresAt'>,
+  bucket: Pick<LogicalBucket, 'publicAccessEnabled'>,
+  now: Date,
+): boolean {
+  if (object.status !== 'READY') return false;
+  const mode = object.publicAccessMode;
+  if (mode === 'PRIVATE') return false;
+  if (mode === 'INHERIT' && bucket.publicAccessEnabled !== true) return false;
+  if (
+    mode === 'PUBLIC' &&
+    object.publicAccessExpiresAt !== null
+  ) {
+    const expiry = Date.parse(object.publicAccessExpiresAt);
+    return Number.isFinite(expiry) && now.getTime() < expiry;
+  }
+  return true;
 }
 
 export interface ObjectLocation {

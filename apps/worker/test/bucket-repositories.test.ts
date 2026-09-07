@@ -25,6 +25,7 @@ function bucket(overrides: Partial<LogicalBucket> = {}): LogicalBucket {
     id: 'bucket-1',
     name: 'documents',
     description: 'User files',
+    publicAccessEnabled: false,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
     ...overrides,

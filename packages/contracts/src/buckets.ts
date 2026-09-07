@@ -8,8 +8,14 @@ export interface LogicalBucketResponse {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  readonly publicAccessEnabled: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface UpdateLogicalBucketPublicAccessRequest {
+  readonly enabled: boolean;
+  readonly expectedUpdatedAt: string;
 }
 
 export type StorageShardStatus =
@@ -51,6 +57,7 @@ export type BucketErrorCode =
   | 'LOGICAL_BUCKET_INVALID'
   | 'LOGICAL_BUCKET_NOT_FOUND'
   | 'LOGICAL_BUCKET_ALREADY_EXISTS'
+  | 'LOGICAL_BUCKET_CONFLICT'
   | 'STORAGE_SHARD_INVALID'
   | 'STORAGE_SHARD_NOT_FOUND'
   | 'STORAGE_SHARD_BUCKET_NOT_FOUND'

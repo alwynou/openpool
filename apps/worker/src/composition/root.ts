@@ -8,6 +8,7 @@ import {
   CreateApiKey,
   CreateLogicalBucket,
   CreateDownload,
+  CreatePublicDownload,
   CreateStorageAccount,
   CreateStorageShard,
   CreateUpload,
@@ -47,6 +48,8 @@ import {
   type TokenHasher,
   TransitionStorageAccount,
   TransitionStorageShard,
+  UpdateLogicalBucketPublicAccess,
+  UpdateObjectPublicAccess,
   UpdateStorageAccountConfiguration,
   VerifyStorageAccount,
 } from '@openpool/application';
@@ -221,6 +224,10 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       createBucket: new CreateLogicalBucket({ buckets, ids, clock }),
       listBuckets: new ListLogicalBuckets(buckets),
       getBucket: new GetLogicalBucket(buckets),
+      updateBucketPublicAccess: new UpdateLogicalBucketPublicAccess({
+        buckets,
+        clock,
+      }),
       createShard: new CreateStorageShard(shardDependencies),
       listShards: new ListStorageShards(shards),
       transitionShard: new TransitionStorageShard(shardDependencies),
@@ -233,6 +240,7 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       idGenerator: () => ids.next(),
     });
     const accounts = new D1StorageAccountRepository(env.DB);
+    const buckets = new D1LogicalBucketRepository(env.DB, auditOutbox);
     const shards = new D1StorageShardRepository(env.DB);
     const objects = new D1ObjectRepository(env.DB, auditOutbox);
     const common = {
@@ -250,6 +258,8 @@ export function createWorker(overrides: WorkerCompositionOverrides = {}) {
       getObject: new GetObjectMetadata(objects),
       getUpload: new GetUploadSession(objects),
       createDownload: new CreateDownload({ ...common, audit: auditOutbox }),
+      createPublicDownload: new CreatePublicDownload({ ...common, buckets }),
+      updateObjectPublicAccess: new UpdateObjectPublicAccess({ objects, clock }),
       deleteObject: new DeleteObject(common),
     };
   };

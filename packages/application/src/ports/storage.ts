@@ -68,6 +68,15 @@ export interface LogicalBucketRepository {
   list(): Promise<readonly LogicalBucket[]>;
 }
 
+export interface LogicalBucketPublicAccessRepository {
+  /** Atomically updates public policy and appends the supplied audit event. */
+  updatePublicAccess(
+    bucket: LogicalBucket,
+    expectedUpdatedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
+}
+
 export interface StorageShardRepository {
   /** Returns false for a duplicate or an active-shard uniqueness conflict. */
   create(shard: StorageShard, audit: AuditLogEntry): Promise<boolean>;
@@ -262,6 +271,15 @@ export interface ObjectRepository {
     updatedAt: string,
     audit: AuditLogEntry,
   ): Promise<FinishDeletePersistenceResult>;
+}
+
+export interface ObjectPublicAccessRepository {
+  /** Atomically updates public policy and appends the supplied audit event. */
+  updatePublicAccess(
+    object: StoredObject,
+    expectedUpdatedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean>;
 }
 
 export type ObjectReservationResult =

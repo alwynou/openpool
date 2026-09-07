@@ -43,6 +43,7 @@ const providerConfig = {
   validationBucket: 'offline-validation',
 } as const;
 const now = new Date('2026-09-01T00:00:00.000Z');
+let currentTimeMs = now.getTime();
 const uploadExpiresAt = '2026-09-01T00:15:00.000Z';
 const downloadExpiresAt = '2026-09-01T00:15:00.000Z';
 const uploadUrl = 'https://provider.test/direct-upload?signature=upload-only';
@@ -89,8 +90,13 @@ const createDownloadUrl = vi.fn(async (request: DownloadUrlRequest) => {
   expect(request.credentials).toEqual(expectedCredentials);
   expect(request.bucket).toBe('openpool-object-primary');
   expect(request.key).toMatch(/^objects\/[0-9a-f]{2}\/[0-9a-f-]+$/u);
-  expect(request.expiresInSeconds).toBe(900);
-  return { url: downloadUrl, expiresAt: downloadExpiresAt };
+  expect([60, 900]).toContain(request.expiresInSeconds);
+  return {
+    url: downloadUrl,
+    expiresAt: new Date(
+      currentTimeMs + request.expiresInSeconds * 1_000,
+    ).toISOString(),
+  };
 });
 
 const headObject = vi.fn(async (request: ObjectProviderRequest) => {
@@ -129,7 +135,7 @@ const worker = createWorker({
     keyId: 'object-http-test-key',
   }),
   providerRegistry: providers,
-  clock: { now: () => new Date(now) },
+  clock: { now: () => new Date(currentTimeMs) },
 });
 
 interface ProvisionedStorage {
@@ -316,6 +322,7 @@ async function createUpload(
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  currentTimeMs = now.getTime();
   await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
   await testEnv.DB.batch([
     testEnv.DB.prepare('DELETE FROM upload_sessions'),
@@ -332,6 +339,104 @@ beforeEach(async () => {
 });
 
 describe('object HTTP composition', () => {
+  it('serves stable public links through short redirects and enforces object and bucket policy', async () => {
+    const storage = await provisionStorage(0);
+    const upload = await createUpload(storage, 'images/example.png');
+    const publicPath = `/public/objects/${upload.body.data.objectId}`;
+
+    expect((await dispatch(publicPath)).status).toBe(404);
+    const completed = await jsonRequest(
+      `/api/v1/uploads/${upload.body.data.objectId}/complete`,
+      'POST',
+      { uploadSessionId: upload.body.data.uploadSessionId },
+      storage.cookie,
+    );
+    expect(completed.status).toBe(200);
+    const completedBody = (await completed.json()) as {
+      data: { object: { updatedAt: string; publicUrl: string } };
+    };
+    expect(completedBody.data.object.publicUrl).toBe(
+      `https://openpool.test${publicPath}`,
+    );
+    expect((await dispatch(publicPath)).status).toBe(404);
+
+    const expiresAt = new Date(currentTimeMs + 120_000).toISOString();
+    const madePublic = await jsonRequest(
+      `/api/v1/objects/${upload.body.data.objectId}/public-access`,
+      'PATCH',
+      {
+        mode: 'PUBLIC',
+        expiresAt,
+        expectedUpdatedAt: completedBody.data.object.updatedAt,
+      },
+      storage.cookie,
+    );
+    expect(madePublic.status).toBe(200);
+    expect(await madePublic.json()).toMatchObject({
+      data: {
+        publicAccessMode: 'PUBLIC',
+        publicAccessExpiresAt: expiresAt,
+        publicUrl: `https://openpool.test${publicPath}`,
+      },
+    });
+
+    const redirected = await dispatch(publicPath);
+    expect(redirected.status).toBe(302);
+    expect(redirected.headers.get('location')).toBe(downloadUrl);
+    expect(redirected.headers.get('cache-control')).toBe('no-store');
+    expect(redirected.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(redirected.headers.get('x-request-id')).toBeTruthy();
+    expect(await redirected.text()).toBe('');
+    expect(createDownloadUrl).toHaveBeenLastCalledWith(
+      expect.objectContaining({ expiresInSeconds: 60 }),
+    );
+
+    currentTimeMs = Date.parse(expiresAt);
+    expect((await dispatch(publicPath)).status).toBe(404);
+
+    currentTimeMs = now.getTime();
+    const inherited = await jsonRequest(
+      `/api/v1/objects/${upload.body.data.objectId}/public-access`,
+      'PATCH',
+      {
+        mode: 'INHERIT',
+        expiresAt: null,
+        expectedUpdatedAt: now.toISOString(),
+      },
+      storage.cookie,
+    );
+    expect(inherited.status).toBe(200);
+    const bucket = await dispatch(`/api/v1/buckets/${storage.bucketId}`, {
+      headers: { cookie: storage.cookie },
+    });
+    const bucketBody = (await bucket.json()) as {
+      data: { updatedAt: string };
+    };
+    const enabled = await jsonRequest(
+      `/api/v1/buckets/${storage.bucketId}/public-access`,
+      'PATCH',
+      { enabled: true, expectedUpdatedAt: bucketBody.data.updatedAt },
+      storage.cookie,
+    );
+    expect(enabled.status).toBe(200);
+    expect((await dispatch(publicPath)).status).toBe(302);
+
+    const auditCounts = await testEnv.DB.prepare(
+      `SELECT action, COUNT(*) AS count
+       FROM audit_outbox
+       WHERE action IN (
+         'OBJECT_PUBLIC_ACCESS_UPDATED',
+         'OBJECT_DOWNLOAD_SIGNED',
+         'LOGICAL_BUCKET_PUBLIC_ACCESS_UPDATED'
+       )
+       GROUP BY action`,
+    ).all<{ action: string; count: number }>();
+    expect(Object.fromEntries(auditCounts.results.map((row) => [row.action, row.count]))).toEqual({
+      LOGICAL_BUCKET_PUBLIC_ACCESS_UPDATED: 1,
+      OBJECT_PUBLIC_ACCESS_UPDATED: 2,
+    });
+  });
+
   it('retries a pending upload with the same logical identity and isolates old sessions', async () => {
     const storage = await provisionStorage(0);
     const first = await createUpload(storage, 'reports/retry.bin');

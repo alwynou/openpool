@@ -9,11 +9,14 @@ import type {
   ListAuditLogsQuery,
   ListAuditLogsResponse,
   LogicalBucketResponse,
+  ObjectMetadataResponse,
   StorageAccountResponse,
   StorageShardResponse,
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
+  UpdateLogicalBucketPublicAccessRequest,
+  UpdateObjectPublicAccessRequest,
 } from '@openpool/contracts';
 
 import type { OpenPoolFetch } from './client';
@@ -200,6 +203,7 @@ describe('OpenPoolClient management API', () => {
       id: 'bucket/1',
       name: 'documents',
       description: 'A bucket',
+      publicAccessEnabled: false,
       createdAt: '2026-09-01T00:00:00.000Z',
       updatedAt: '2026-09-01T00:00:00.000Z',
     };
@@ -229,6 +233,66 @@ describe('OpenPoolClient management API', () => {
       'https://control.example/api/v1/buckets',
       'POST',
       input,
+    );
+  });
+
+  it('updates bucket and object public-access policies', async () => {
+    const bucket: LogicalBucketResponse = {
+      id: 'bucket/1',
+      name: 'documents',
+      description: null,
+      publicAccessEnabled: true,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:01:00.000Z',
+    };
+    const object: ObjectMetadataResponse = {
+      id: 'object/1',
+      logicalBucketId: bucket.id,
+      logicalKey: 'images/example.png',
+      sizeBytes: 12,
+      contentType: 'image/png',
+      checksum: null,
+      status: 'READY',
+      publicAccessMode: 'PUBLIC',
+      publicAccessExpiresAt: null,
+      publicUrl: 'https://control.example/public/objects/object%2F1',
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:01:00.000Z',
+    };
+    const bucketInput: UpdateLogicalBucketPublicAccessRequest = {
+      enabled: true,
+      expectedUpdatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    const objectInput: UpdateObjectPublicAccessRequest = {
+      mode: 'PUBLIC',
+      expiresAt: null,
+      expectedUpdatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    const { fetch, calls } = controlFetch(envelope(bucket), envelope(object));
+    const client = new OpenPoolClient({
+      baseUrl: 'https://control.example',
+      apiKey: 'admin-key',
+      credentials: 'include',
+      fetch,
+    });
+
+    await expect(
+      client.updateBucketPublicAccess('bucket/one', bucketInput),
+    ).resolves.toEqual(bucket);
+    await expect(
+      client.updateObjectPublicAccess('object/one', objectInput),
+    ).resolves.toEqual(object);
+    expectControlRequest(
+      callAt(calls, 0),
+      'https://control.example/api/v1/buckets/bucket%2Fone/public-access',
+      'PATCH',
+      bucketInput,
+    );
+    expectControlRequest(
+      callAt(calls, 1),
+      'https://control.example/api/v1/objects/object%2Fone/public-access',
+      'PATCH',
+      objectInput,
     );
   });
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ObjectStateError,
   UploadSessionStateError,
+  isObjectPubliclyAccessible,
   transitionObjectStatus,
   transitionUploadSessionStatus,
   validateObjectInput,
@@ -18,6 +19,8 @@ const object: StoredObject = {
   contentType: 'text/plain',
   checksum: null,
   status: 'PENDING',
+  publicAccessMode: 'INHERIT',
+  publicAccessExpiresAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -32,6 +35,17 @@ const session: UploadSession = {
 };
 
 describe('object lifecycle', () => {
+  it('resolves inherited, explicit, expired, and non-ready public policies', () => {
+    const now = new Date('2026-01-01T00:00:00.000Z');
+    const bucket = { publicAccessEnabled: true };
+    expect(isObjectPubliclyAccessible({ ...object, status: 'READY', publicAccessMode: 'INHERIT' }, bucket, now)).toBe(true);
+    expect(isObjectPubliclyAccessible({ ...object, status: 'READY', publicAccessMode: 'PRIVATE' }, bucket, now)).toBe(false);
+    expect(isObjectPubliclyAccessible({ ...object, status: 'READY', publicAccessMode: 'PUBLIC', publicAccessExpiresAt: '2026-01-01T00:01:00.000Z' }, bucket, now)).toBe(true);
+    expect(isObjectPubliclyAccessible({ ...object, status: 'READY', publicAccessMode: 'PUBLIC', publicAccessExpiresAt: '2025-12-31T23:59:00.000Z' }, bucket, now)).toBe(false);
+    expect(isObjectPubliclyAccessible({ ...object, status: 'PENDING', publicAccessMode: 'PUBLIC', publicAccessExpiresAt: null }, bucket, now)).toBe(false);
+    expect(isObjectPubliclyAccessible({ ...object, status: 'READY', publicAccessMode: 'INHERIT' }, { publicAccessEnabled: false }, now)).toBe(false);
+  });
+
   it('allows only the explicit object state sequence', () => {
     const ready = transitionObjectStatus(
       object,

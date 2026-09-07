@@ -59,6 +59,7 @@ class FakeBuckets implements Pick<LogicalBucketRepository, 'findById'> {
           id,
           name: id,
           description: null,
+          publicAccessEnabled: false,
           createdAt: now.toISOString(),
           updatedAt: now.toISOString(),
         }

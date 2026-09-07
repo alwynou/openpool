@@ -9,6 +9,11 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 ### Added
 
 - An isolated Cloudflare production environment with explicit D1 migration, Worker deployment, and production dry-run commands.
+- Stable public object links backed by bucket defaults, per-object overrides, optional expiration, and short-lived direct-provider redirects.
+
+### Security
+
+- Public-link policy changes are administrator-only and transactionally audited; anonymous reads fail closed without per-request D1 audit writes.
 
 ## [0.1.0] - 2026-09-07
 

@@ -7,6 +7,7 @@ import {
   type ListLogicalBuckets,
   type ListStorageShards,
   type TransitionStorageShard,
+  type UpdateLogicalBucketPublicAccess,
 } from '@openpool/application';
 import type {
   ApiEnvelope,
@@ -16,6 +17,7 @@ import type {
   CreateStorageShardRequest,
   LogicalBucketResponse,
   StorageShardResponse,
+  UpdateLogicalBucketPublicAccessRequest,
   UpdateStorageShardStatusRequest,
 } from '@openpool/contracts';
 import type {
@@ -46,6 +48,10 @@ export interface BucketUseCases {
   readonly createBucket: Pick<CreateLogicalBucket, 'execute'>;
   readonly listBuckets: Pick<ListLogicalBuckets, 'execute'>;
   readonly getBucket: Pick<GetLogicalBucket, 'execute'>;
+  readonly updateBucketPublicAccess: Pick<
+    UpdateLogicalBucketPublicAccess,
+    'execute'
+  >;
   readonly createShard: Pick<CreateStorageShard, 'execute'>;
   readonly listShards: Pick<ListStorageShards, 'execute'>;
   readonly transitionShard: Pick<TransitionStorageShard, 'execute'>;
@@ -201,11 +207,30 @@ function parseShardStatusRequest(
   return { status: value.status };
 }
 
+function parseBucketPublicAccessRequest(
+  value: unknown,
+): UpdateLogicalBucketPublicAccessRequest | undefined {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ['enabled', 'expectedUpdatedAt']) ||
+    typeof value.enabled !== 'boolean' ||
+    typeof value.expectedUpdatedAt !== 'string' ||
+    value.expectedUpdatedAt.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    enabled: value.enabled,
+    expectedUpdatedAt: value.expectedUpdatedAt,
+  };
+}
+
 function logicalBucketResponse(bucket: LogicalBucket): LogicalBucketResponse {
   return {
     id: bucket.id,
     name: bucket.name,
     description: bucket.description,
+    publicAccessEnabled: bucket.publicAccessEnabled,
     createdAt: bucket.createdAt,
     updatedAt: bucket.updatedAt,
   };
@@ -270,6 +295,12 @@ function errorDetails(error: unknown): {
           code: 'LOGICAL_BUCKET_ALREADY_EXISTS',
           status: 409,
           message: 'A logical bucket with this name already exists.',
+        };
+      case 'LOGICAL_BUCKET_CONFLICT':
+        return {
+          code: 'LOGICAL_BUCKET_CONFLICT',
+          status: 409,
+          message: 'Logical bucket changed while the operation was in progress.',
         };
     }
   }
@@ -449,6 +480,44 @@ export function registerBucketRoutes(
       const bucket = await dependencies
         .createUseCases(context.env, requestId)
         .getBucket.execute(context.req.param('id'));
+      const response: ApiEnvelope<LogicalBucketResponse> = {
+        data: logicalBucketResponse(bucket),
+        requestId,
+      };
+      return context.json(response);
+    } catch (error) {
+      return mappedErrorOrThrow(context, requestId, error);
+    }
+  });
+
+  app.patch('/api/v1/buckets/:id/public-access', async (context) => {
+    const requestId = context.get('requestId');
+    const administrator = await requireAdministrator(
+      context,
+      dependencies,
+      requestId,
+    );
+    if (administrator instanceof Response) return administrator;
+    const input = parseBucketPublicAccessRequest(
+      await readJsonBody(context.req.raw),
+    );
+    if (!input) {
+      return jsonError(
+        context,
+        requestId,
+        'LOGICAL_BUCKET_INVALID',
+        'The logical bucket public access request is invalid.',
+        400,
+      );
+    }
+    try {
+      const bucket = await dependencies
+        .createUseCases(context.env, requestId)
+        .updateBucketPublicAccess.execute({
+          actorId: administrator.id,
+          bucketId: context.req.param('id'),
+          ...input,
+        });
       const response: ApiEnvelope<LogicalBucketResponse> = {
         data: logicalBucketResponse(bucket),
         requestId,

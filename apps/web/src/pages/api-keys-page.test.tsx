@@ -24,7 +24,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const mock = vi.mocked(api);
 const token = 'opk_fake-token-never-cache-this';
 const now = '2026-09-03T00:00:00.000Z';
-const bucket: LogicalBucketResponse = { id: 'bucket-1', name: 'Reports', description: null, createdAt: now, updatedAt: now };
+const bucket: LogicalBucketResponse = { id: 'bucket-1', name: 'Reports', description: null, publicAccessEnabled: false, createdAt: now, updatedAt: now };
 const metadata: ApiKeyResponse = { id: 'key-1', name: 'Backup client', keyPrefix: 'opk_AbCd1234', scopes: ['objects:list', 'objects:read'], logicalBucketId: null, pathPrefix: null, expiresAt: null, revokedAt: null, createdAt: now };
 const created: CreatedApiKeyResponse = { apiKey: metadata, token };
 

@@ -8,6 +8,7 @@
 4. `0004_shard_migrations.sql`：durable shard migration、对象任务、租约、目标双重容量预留与条件断言。
 5. `0005_transactional_audit_outbox.sql`：事务审计 outbox、lease/退避与 event-id 幂等投递。
 6. `0006_upload_retries.sql`：当前 upload session 部分唯一约束、历史尝试 location 绑定与重试保护。
+7. `0007_public_access.sql`：Logical Bucket 公开默认值、对象继承/覆盖策略及到期字段约束。
 
 2026-09-02 已经项目所有者授权，将 staging 从 0003 升至 0005；本地持久化 D1 未在本次操作中迁移。
 `0004`、`0005` 现已发布，后续修复必须新增迁移，不得再编辑原文件。
@@ -15,7 +16,8 @@
 `0006` 已于 2026-09-02 经项目所有者新授权应用到 staging，随后部署配套 Worker/Web；所有者明确
 要求本次不备份。本地持久化 D1 未改动。0006 现已发布，不得再编辑；后续修复必须新增 migration。
 旧 Worker 不能读取重试产生的多个 session，启用后应前滚修复，不直接回滚旧版。后续 migration
-和部署仍需单独授权；此处免备份仅记录本次操作。真实环境证据见
+和部署仍需单独授权；此处免备份仅记录本次操作。`0007` 尚未应用到 staging 或 production；在配套
+Worker 部署前必须先分别完成目标环境 migration。真实环境证据见
 [上传重试验收](../docs/development/staging-upload-retry-acceptance.md)。
 
 ```bash
@@ -24,7 +26,7 @@ npm run db:migrate:staging
 ```
 
 `db:migrate:local` 只操作 Wrangler 本地持久化 D1；`db:migrate:staging` 显式改变 staging D1，必须
-由用户明确授权。仓库目前不提供 production migration 命令。执行前确认
+由用户明确授权；production 使用独立的 `npm run db:migrate:production`。执行前确认
 `apps/worker/wrangler.jsonc` 的 database ID、当前 Cloudflare account、目标环境，并在仓库外安全
 位置导出备份：
 

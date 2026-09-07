@@ -26,6 +26,7 @@ OpenPool is a control plane, not an object proxy. Clients upload and download by
 - Cloudflare R2 and Backblaze B2 provider adapters built on a shared SigV4 foundation
 - Logical buckets, storage shards, capacity-aware placement, and provider health checks
 - Direct signed uploads and downloads with explicit reservation, completion, retry, and cleanup states
+- Stable public object links with bucket defaults, per-object overrides, and optional expiration
 - AES-256-GCM encryption for provider credentials at rest
 - Single-administrator authentication, scoped API keys, rate limiting, and deployment readiness checks
 - Transactional audit outbox with searchable audit logs
@@ -53,7 +54,7 @@ The domain package has no framework, platform, database, or provider SDK depende
 
 OpenPool `v0.1.0` is the first stable project release. See the [release notes](docs/releases/v0.1.0.md) and [GitHub Release](https://github.com/alwynou/openpool/releases/tag/v0.1.0).
 
-The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. An isolated production control plane is deployed at `openpool.alwynou.com` and has passed database, readiness, bootstrap, administrator-session, and real browser-direct R2/B2 transfer acceptance. Automated deployment remains an operator-managed follow-up.
+The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. An isolated production control plane is deployed at `openpool.alwynou.com` and has passed database, readiness, bootstrap, administrator-session, and real browser-direct R2/B2 transfer acceptance. Stable public object links are implemented locally as an unreleased change; the `0007` migration and matching Worker/Web build have not yet been applied to staging or production. Automated deployment remains an operator-managed follow-up.
 
 For the exact completion state and remaining work, see the [roadmap](docs/roadmap.md) and [V1 acceptance checklist](docs/development/v1-acceptance.md).
 
@@ -77,7 +78,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-Open the administration console at [http://localhost:5173](http://localhost:5173). The Worker API runs at [http://localhost:8787](http://localhost:8787), and Vite proxies local `/api` requests to it.
+Open the administration console at [http://localhost:5173](http://localhost:5173). The Worker API runs at [http://localhost:8787](http://localhost:8787), and Vite proxies local `/api` and `/public` requests to it.
 
 Local development uses an ignored Wrangler D1 database and an ignored `apps/worker/.dev.vars` file. Read the [local development guide](docs/development/getting-started.md) before initializing the administrator or adding a provider.
 

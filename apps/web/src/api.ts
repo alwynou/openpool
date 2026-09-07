@@ -10,6 +10,8 @@ import type {
   SessionResponse,
   ShardMigrationResponse,
   StartShardMigrationRequest,
+  UpdateLogicalBucketPublicAccessRequest,
+  UpdateObjectPublicAccessRequest,
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,
@@ -130,6 +132,10 @@ export const api = {
   listBuckets: () => sdkRequest(client.listBuckets()),
   createBucket: (input: CreateLogicalBucketRequest) =>
     sdkRequest(client.createBucket(input)),
+  updateBucketPublicAccess: (
+    bucketId: string,
+    input: UpdateLogicalBucketPublicAccessRequest,
+  ) => sdkRequest(client.updateBucketPublicAccess(bucketId, input)),
   listShards: (bucketId: string) => sdkRequest(client.listShards(bucketId)),
   createShard: (bucketId: string, input: CreateStorageShardRequest) =>
     sdkRequest(client.createShard(bucketId, input)),
@@ -160,6 +166,10 @@ export const api = {
   completeUpload: (objectId: string, uploadSessionId: string) =>
     sdkRequest(client.completeUpload(objectId, { uploadSessionId })),
   downloadObject: (id: string) => sdkRequest(client.createDownload(id)),
+  updateObjectPublicAccess: (
+    id: string,
+    input: UpdateObjectPublicAccessRequest,
+  ) => sdkRequest(client.updateObjectPublicAccess(id, input)),
   deleteObject: (id: string) => sdkRequest(client.deleteObject(id)),
 
   listApiKeys: () => sdkRequest(client.listApiKeys()),

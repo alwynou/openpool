@@ -180,6 +180,8 @@ const object: StoredObject = {
   contentType: 'text/plain',
   checksum: 'checksum-1',
   status: 'READY',
+  publicAccessMode: 'INHERIT',
+  publicAccessExpiresAt: null,
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
@@ -446,6 +448,7 @@ describe('shard migration use cases', () => {
               id,
               name: 'documents',
               description: null,
+              publicAccessEnabled: false,
               createdAt: migration.createdAt,
               updatedAt: migration.updatedAt,
             }
