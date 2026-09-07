@@ -185,6 +185,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`，管理员 login/session/logout 通过。证据见
   [staging 认证限流与 readiness 验收](staging-auth-readiness-acceptance.md)。随后已在真实浏览器补齐
   登录页与已登录概览页的中英文切换、`document.documentElement.lang`、本地偏好和刷新恢复验收。
+- [x] production 使用独立 APAC D1、Secret 和限流 namespace；`0001`→`0006`、Worker/静态资源、
+  bootstrap 删除前后 readiness、管理员 login/session/logout 均通过，见
+  [production 首次部署验收](production-deployment-acceptance.md)（2026-09-07）。未配置 Provider
+  或执行对象 smoke。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
@@ -209,7 +213,7 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前发布后外部事项是可选的 Generic S3 资源及其 CORS、自动部署所需 Cloudflare token、
-production/自定义域名决策，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
+当前发布后外部事项是可选的 Generic S3 资源及其 CORS、production R2/B2 资源与自定义域名、
+自动部署所需 Cloudflare token，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
 2026-09-02 所有者明确要求本次
 staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。

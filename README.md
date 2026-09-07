@@ -53,7 +53,7 @@ The domain package has no framework, platform, database, or provider SDK depende
 
 OpenPool `v0.1.0` is the first stable project release. See the [release notes](docs/releases/v0.1.0.md) and [GitHub Release](https://github.com/alwynou/openpool/releases/tag/v0.1.0).
 
-The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. Production infrastructure and automated deployment are not configured.
+The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. An isolated production control plane is deployed and has passed database, readiness, bootstrap, and administrator-session acceptance; production provider resources, custom domains, and automated deployment remain operator-managed follow-up work.
 
 For the exact completion state and remaining work, see the [roadmap](docs/roadmap.md) and [V1 acceptance checklist](docs/development/v1-acceptance.md).
 

@@ -40,7 +40,8 @@
    安全升级发布到 staging，登录页与已登录概览页的双向切换、`document.documentElement.lang`、
    本地偏好和刷新恢复已通过真实浏览器验收；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
-   和浏览器 R2/B2 直传均已验收；production 独立 D1 与仓库配置已创建，首次部署验收进行中）。
+   和浏览器 R2/B2 直传均已验收；production 独立 D1、Secret、migration、Worker、bootstrap 与
+   readiness 已[验收](development/production-deployment-acceptance.md)，Provider 资源尚未接入）。
 
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
 “staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 production。Generic S3
