@@ -45,7 +45,8 @@ production 文件传输验收。
 - Wrangler 发布结果确认 `*/5 * * * *` Cron Trigger 已绑定；本次没有等待并采集真实 scheduled
   event，Cron 行为仍由 staging 真实证据与本地测试覆盖。
 - production Provider 资源、最小 CORS、真实 R2/B2 signed transfer smoke、自定义域名、自动部署
-  token/environment protection 和恢复演练均不在本次范围，继续作为显式后续步骤。
+  token/environment protection 和恢复演练均不在本次范围。自定义域名与 Provider 传输随后已完成，
+  见 [Production Provider 验收](production-provider-acceptance.md)；自动部署与恢复演练仍是显式后续步骤。
 
 ## 清理结果
 

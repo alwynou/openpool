@@ -46,6 +46,13 @@ Provider bucket。
 bootstrap 删除前后 readiness 与管理员 session 均通过；当前活动 version 与未覆盖边界见
 [production 首次部署验收](../development/production-deployment-acceptance.md)。
 
+同日通过受保护 `main` 的 [PR #10](https://github.com/alwynou/openpool/pull/10) 声明 production
+自定义域名，发布后的活动 Worker version 为 `c06a8647-32db-429a-a64b-0c7d194ded30`。规范入口
+`https://openpool.alwynou.com` 与 `workers.dev` 回退入口 health 均为 production 200。随后配置独立
+R2/B2 bucket、bucket-scoped credential 和最小 CORS，并从规范入口完成真实浏览器直传、签名下载
+哈希比对和删除；完整范围与清理证据见
+[production Provider 验收](../development/production-provider-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留
