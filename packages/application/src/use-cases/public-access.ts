@@ -292,12 +292,13 @@ export class CreatePublicDownload {
       key: aggregate.primaryLocation.physicalKey,
       expiresInSeconds: ttl,
     });
+    const validationTimeMs = this.dependencies.clock.now().getTime();
     const signedExpiry = Date.parse(signed.expiresAt);
     if (
       !signed.url ||
       !Number.isFinite(signedExpiry) ||
-      signedExpiry <= now.getTime() ||
-      signedExpiry > now.getTime() + PUBLIC_DOWNLOAD_TTL_SECONDS * 1_000 ||
+      signedExpiry <= validationTimeMs ||
+      signedExpiry > validationTimeMs + ttl * 1_000 ||
       signedExpiry > policyExpiryMs
     ) {
       throw objectError(
