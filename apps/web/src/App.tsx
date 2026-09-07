@@ -140,7 +140,7 @@ function AuthScreen({
         <section className="max-w-xl">
           <span className="inline-flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600"><CloudCheckIcon className="size-4" aria-hidden />{t('Cloudflare-native · Self-hosted')}</span>
           <h1 className="mt-7 text-5xl font-semibold tracking-[-0.055em] text-zinc-950 sm:text-6xl">{t('One namespace for every object store.')}</h1>
-          <p className="mt-6 max-w-lg text-base leading-7 text-zinc-500">{t('Connect R2, B2, and S3-compatible storage to one control plane while object bytes move directly between clients and providers.')}</p>
+          <p className="mt-6 max-w-lg text-base leading-7 text-zinc-500">{t('Connect R2 and B2 storage to one control plane while object bytes move directly between clients and providers.')}</p>
         </section>
         {unavailableMessage ? (
           <section className="rounded-lg border border-zinc-200 bg-white p-7 shadow-sm"><LockKeyIcon className="size-6 text-zinc-500" aria-hidden /><h2 className="mt-5 text-xl font-semibold text-zinc-950">{t('OpenPool is unavailable')}</h2><p className="mt-2 text-sm leading-6 text-zinc-500">{t(unavailableMessage)}</p></section>

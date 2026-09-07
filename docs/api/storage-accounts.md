@@ -47,9 +47,12 @@ R2 的 S3 API 不提供账号容量用量查询，因此当前必须提供可信
 `CONFIGURED`。若既没有可观测容量也没有配置容量，账号不会激活。
 
 Backblaze B2 使用 `provider: "b2"`，`providerConfig` 包含 `region`、`validationBucket` 和可选
-`addressingStyle`。Generic S3 使用 `provider: "s3"`，配置包含 HTTPS `endpoint`、`region`、
-`validationBucket` 和可选 `addressingStyle`。三者的 credential 请求均使用 `accessKeyId`、
-`secretAccessKey` 和可选 `sessionToken`，并且只写不读。
+`addressingStyle`。R2 与 B2 的 credential 请求均使用 `accessKeyId`、`secretAccessKey` 和可选
+`sessionToken`，并且只写不读。
+
+`v0.1.0` 的正式 Provider 范围只有 R2 与 B2。contract 仍保留实验性的 `provider: "s3"` 和 Generic
+S3 adapter，供后续兼容性工作使用；Web 不提供新建入口，当前版本也不承诺任何外部 Generic S3
+服务兼容性。调用该预览 API 不能视为受支持的生产配置。
 
 `GET /api/v1/storage-accounts` 返回安全的账号列表，其中包含状态、健康、容量准确性和验证得到的
 capabilities，但不包含 `credentials` 或 `credentialEnvelope`。

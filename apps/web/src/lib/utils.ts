@@ -59,7 +59,7 @@ export function capacityPercent(usedBytes: number, capacityBytes: number): numbe
 export function providerLabel(provider: StorageProviderKind): string {
   if (provider === 'r2') return 'Cloudflare R2';
   if (provider === 'b2') return 'Backblaze B2';
-  return 'S3 Compatible';
+  return 'S3 Compatible (experimental)';
 }
 
 export type StatusTone = 'neutral' | 'warning' | 'danger';

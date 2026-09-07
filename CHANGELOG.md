@@ -6,11 +6,24 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-07
+
 ### Added
 
 - Public contribution guidance, structured issue forms, and a pull request template.
 - A private vulnerability reporting path, GitHub secret scanning with push protection, and Dependabot security updates.
 - An English security policy and project code of conduct.
+
+### Changed
+
+- Declared Cloudflare R2 and Backblaze B2 as the supported provider set for the first stable release.
+- Kept the locally tested Generic S3 adapter as an unsupported experimental preview and removed it from the Web account creation flow.
+
+### Validation
+
+- Required pull-request CI passed linting, type checks, 726 tests, and all production builds.
+- Real staging acceptance covers R2 and B2 browser transfers, CLI transfers up to 50 MB, upload recovery, scheduled maintenance, and cross-provider migration.
+- The release check found no Dependabot alerts, secret-scanning alerts, or production dependency vulnerabilities.
 
 ## [0.1.0-rc.1] - 2026-09-04
 
@@ -39,6 +52,6 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 - Real staging acceptance completed for Cloudflare R2 and Backblaze B2, including browser transfers, CLI transfers up to 50 MB, upload recovery, scheduled maintenance, and cross-provider migration.
 - Generic S3 behavior was covered locally but did not receive an external-provider compatibility smoke test.
 
-[Unreleased]: https://github.com/alwynou/openpool/compare/v0.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/alwynou/openpool/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/alwynou/openpool/compare/v0.1.0-rc.1...v0.1.0
 [0.1.0-rc.1]: https://github.com/alwynou/openpool/releases/tag/v0.1.0-rc.1
-

@@ -2,11 +2,11 @@
 
 ## Supported versions
 
-OpenPool is currently an early release candidate. Security fixes are applied to the latest release candidate and the current `main` branch. Older snapshots and prereleases are not maintained separately.
+Security fixes are applied to the latest stable release and the current `main` branch. Older releases, snapshots, and prereleases are not maintained separately.
 
 | Version | Supported |
 | --- | --- |
-| Latest release candidate | Yes |
+| Latest stable release | Yes |
 | Current `main` branch | Yes |
 | Older versions | No |
 

@@ -86,5 +86,6 @@ signed URL；失败不自动重试 reservation。下载只写入私有临时目�
 
 D1 泄漏不应直接导致 Provider 凭证泄漏；单个 Provider token 泄漏应被 Bucket 最小权限限制；
 OpenPool 不支持或鼓励批量注册账号规避服务商条款，只管理用户合法拥有的账号。
-Generic S3 endpoint 是单管理员提供的受信配置，验证与对象操作会向该 HTTPS endpoint 发送签名请求；
-V1 不把它作为不可信多租户输入。部署者必须只配置自己控制或确认可信的服务端点。
+实验性的 Generic S3 endpoint 是单管理员提供的受信配置，验证与对象操作会向该 HTTPS endpoint
+发送签名请求；系统不把它作为不可信多租户输入。`v0.1.0` 不正式支持或在 Web 开放 Generic S3；
+若通过预览 API 使用，部署者仍必须只配置自己控制或确认可信的服务端点。

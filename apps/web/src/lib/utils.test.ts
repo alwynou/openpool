@@ -23,7 +23,7 @@ describe('web display utilities', () => {
   it('maps provider kinds to administrator-facing names', () => {
     expect(providerLabel('r2')).toBe('Cloudflare R2');
     expect(providerLabel('b2')).toBe('Backblaze B2');
-    expect(providerLabel('s3')).toBe('S3 Compatible');
+    expect(providerLabel('s3')).toBe('S3 Compatible (experimental)');
   });
 
   it('uses color only for semantic warning and danger states', () => {

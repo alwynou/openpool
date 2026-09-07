@@ -1,7 +1,8 @@
 # V1 本地验收与发布清单
 
 这是一份可执行的 runbook。勾选项代表项目所有者或验收者已经取得证据；2026-09-01 已完成的
-staging 远端操作记录在第 7 节。真实 R2/B2 smoke 已完成，Generic S3 仍需项目所有者提供资源。
+staging 远端操作记录在第 7 节。`v0.1.0` 正式支持的 R2/B2 真实 smoke 已完成；Generic S3 已由
+项目所有者明确移出当前支持范围和发布门槛，仅保留实验预览。
 2026-09-02 的 0004/0005 前滚、迁移 CLI 和事务审计 outbox 证据另见[升级验收记录](staging-upgrade-acceptance.md)。
 同日 `0006` 和配套 Worker/Web 已发布到 staging，真实 R2/B2 测试见[上传重试验收](staging-upload-retry-acceptance.md)。
 
@@ -65,8 +66,9 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 
 ## 4. 本地控制面流程
 
-- [x] 用 fake transport 创建并验证 R2、B2、Generic S3 Storage Account；验证成功才进入 `ACTIVE`，
-  列表不返回 credential 或 envelope。
+- [x] 用 fake transport 创建并验证 R2、B2，以及当时的 Generic S3 预览 Storage Account；验证成功
+  才进入 `ACTIVE`，列表不返回 credential 或 envelope。该历史本地覆盖不构成 `v0.1.0` Generic S3
+  支持声明。
 - [x] `VERIFYING` Storage Account 可纠正 Provider 配置、按需替换加密 credential，并以
   `updatedAt` 条件写入后重新验证；已激活账号不可使用该纠错路径，响应与 audit 不泄露敏感值。
 - [x] 创建 logical Bucket；为其创建 `STANDBY` shard 并激活；确认账号状态、健康、能力和容量门槛
@@ -123,8 +125,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   complete、签名 GET 字节比对及 DELETE smoke；删除后 OpenPool 账号容量归零（2026-09-01）。B2 bucket
   使用 `Keep all versions`，因此 S3 DELETE 隐藏当前对象但保留历史版本；这是 Provider 生命周期策略，
   不能把控制台仍显示历史字节误判为 OpenPool 删除失败。
-- [ ] Generic S3：提供 HTTPS endpoint、region、validation bucket、addressing style 和受限凭证；
-  记录兼容性差异及错误分类。
+- [ ] Generic S3 后续预览验收：提供 HTTPS endpoint、region、validation bucket、addressing style
+  和受限凭证，记录兼容性差异及错误分类；不阻塞 `v0.1.0`。
 - [x] R2 bucket 使用最小化 CORS，只允许 staging 控制台 origin，以及 signed URL 所需的
   `PUT`、`GET`、`HEAD`、`DELETE`、`Content-Type` 和 `ETag`；已通过浏览器实际上传、下载和删除
   验收（2026-09-01）。
@@ -132,7 +134,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   所需的 `Content-Type`、`Authorization` 和 `Range`；真实浏览器预检、上传和下载均通过
   （2026-09-01）。Backblaze Web Console 的标准“共享所有内容”预设只包含 S3 `GET`/`HEAD`，不能
   用于 OpenPool 浏览器直传。
-- [ ] Generic S3 bucket 仍需配置并实测最小化 CORS，不得开放不必要 origin/method/header。
+- [ ] Generic S3 若未来进入支持范围，配置并实测最小化 CORS，不得开放不必要
+  origin/method/header；不阻塞 `v0.1.0`。
 
 ## 7. 远端升级与部署（必须由所有者明确授权）
 
@@ -175,7 +178,7 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   signed URL 或响应正文。标准客户端网络/地理 metadata 仍要求受限访问和保留策略（2026-09-01）。
 - [x] B2 真实联调完成：验证、ACTIVE shard、浏览器直传/直取、删除、Cron 过期清理和精确 CORS
   均取得 staging 证据；临时 CORS 管理 key 用后立即撤销（2026-09-01）。
-- [ ] Generic S3 真实联调仍待完成。
+- [ ] Generic S3 真实联调留作未来兼容性工作，不属于 `v0.1.0` 发布门槛。
 - [x] 2026-09-04 发布认证限流/readiness preflight 与 Web i18n bundle 到 staging；health 为 200，
   错误登录在 Cloudflare 最终一致计数收敛后返回 429，完整窗口后恢复，已初始化实例没有
   `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`，管理员 login/session/logout 通过。证据见
@@ -205,6 +208,7 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前剩余外部事项是 Generic S3 资源及其 CORS、自动部署所需 Cloudflare token、production/自定义域名决策，以及
-未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。2026-09-02 所有者明确要求本次
+当前发布后外部事项是可选的 Generic S3 资源及其 CORS、自动部署所需 Cloudflare token、
+production/自定义域名决策，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
+2026-09-02 所有者明确要求本次
 staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。
