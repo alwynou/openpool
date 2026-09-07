@@ -42,6 +42,10 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 bootstrap 必须按下文顺序执行。production 不复用 staging 数据、Secret、限流 namespace 或
 Provider bucket。
 
+同日经所有者授权完成首次 production 前滚与部署：`0001`→`0006` 无待办，Worker/Web、
+bootstrap 删除前后 readiness 与管理员 session 均通过；当前活动 version 与未覆盖边界见
+[production 首次部署验收](../development/production-deployment-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留

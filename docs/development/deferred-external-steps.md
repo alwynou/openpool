@@ -41,9 +41,11 @@
   修改线上数据（2026-09-04）。
 - [ ] 在下一次包含已有数据的远端 schema 升级前，项目所有者指定仓库外、受限且持久的 D1 export
   保存位置，并确认 Time Travel/恢复负责人；恢复演练会改写数据，必须另行授权。
-- [ ] 为 production 配置独立 Secret、执行首次 migration/deploy、初始化管理员并完成 readiness
-  验收；Provider 资源和自定义域名可在空控制面上线后独立配置，不得复用 staging database、
-  credential 或 bucket。
+- [x] production 已配置独立 Secret，按顺序应用 `0001`→`0006`，部署 `v0.1.0` 控制面并初始化
+  `admin`；bootstrap Secret 已从 Worker 删除，health、静态页面、migration history 和真实
+  login/session/logout 通过，见[首次部署验收](production-deployment-acceptance.md)（2026-09-07）。
+- [ ] 为 production 配置独立 R2/B2 Provider 资源与最小 CORS，并决定是否绑定自定义域名；不得复用
+  staging credential 或 bucket。执行真实文件 smoke 前需要单独确认测试资源和清理范围。
 - [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，运行 `npm ci`
   与 `npm run verify`；branch push 不重复运行，工作流只有仓库只读权限且 checkout 不持久化
   credential，不部署或执行 migration（2026-09-05）。
