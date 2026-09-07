@@ -68,5 +68,33 @@
         },
       ],
     },
+    "production": {
+      "workers_dev": true,
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.1.0",
+        "CREDENTIAL_MASTER_KEY_ID": "primary-v1",
+      },
+      "ratelimits": [
+        {
+          "name": "AUTH_GLOBAL_RATE_LIMITER",
+          "namespace_id": "9102001",
+          "simple": { "limit": 30, "period": 60 },
+        },
+        {
+          "name": "AUTH_IDENTITY_RATE_LIMITER",
+          "namespace_id": "9102002",
+          "simple": { "limit": 5, "period": 60 },
+        },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "openpool-production",
+          "database_id": "319305c3-6c10-4fcc-a704-4cec8192bfb1",
+          "migrations_dir": "../../database/migrations",
+        },
+      ],
+    },
   },
 }

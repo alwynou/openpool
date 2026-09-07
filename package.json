@@ -13,10 +13,13 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker && npm run build --workspace=@openpool/migrator && npm run build --workspace=@openpool/cli",
+    "build": "npm run build --workspace=@openpool/web && npm run build --workspace=@openpool/worker && npm run build:production --workspace=@openpool/worker && npm run build --workspace=@openpool/migrator && npm run build --workspace=@openpool/cli",
     "cf:typegen": "npm run cf:typegen --workspace=@openpool/worker",
     "db:migrate:local": "npm run db:migrate:local --workspace=@openpool/worker",
+    "db:migrate:production": "npm run db:migrate:production --workspace=@openpool/worker",
     "db:migrate:staging": "npm run db:migrate:staging --workspace=@openpool/worker",
+    "deploy:production": "npm run build --workspace=@openpool/web && npm run deploy:production --workspace=@openpool/worker",
+    "deploy:production:with-migrations": "npm run db:migrate:production && npm run deploy:production",
     "deploy:staging": "npm run build --workspace=@openpool/web && npm run deploy:staging --workspace=@openpool/worker",
     "deploy:staging:with-migrations": "npm run db:migrate:staging && npm run deploy:staging",
     "dev": "concurrently -k -n worker,web -c yellow,cyan \"npm:dev:worker\" \"npm:dev:web\"",

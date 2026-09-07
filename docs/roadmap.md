@@ -40,7 +40,7 @@
    安全升级发布到 staging，登录页与已登录概览页的双向切换、`document.documentElement.lang`、
    本地偏好和刷新恢复已通过真实浏览器验收；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
-   和浏览器 R2/B2 直传均已验收，production 尚未创建）。
+   和浏览器 R2/B2 直传均已验收；production 独立 D1 与仓库配置已创建，首次部署验收进行中）。
 
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
 “staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 production。Generic S3
@@ -51,7 +51,8 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，只运行仓库 `verify` 且没有 Cloudflare
 权限；branch push 不重复运行 CI，受保护的 `main` 强制通过已同步且 `Verify` 成功的 pull request 集成。
 `v0.1.0` 的 Provider 兼容性声明明确限定为已经真实验收的 R2 与 B2，Generic S3 不阻塞正式发布。
-production、自动部署所需 token、受保护备份位置和恢复演练继续由项目所有者决定，不复用 staging 资源。
+production Provider 资源/自定义域名、自动部署所需 token、受保护备份位置和恢复演练继续由项目所有者
+决定，不复用 staging 资源。
 
 ## Phase 2
 

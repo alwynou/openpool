@@ -1,8 +1,8 @@
 # Cloudflare 部署
 
 OpenPool 由一个 Worker 同时提供 API 和构建后的 SPA，D1 保存 metadata，Secret 保存加密密钥。
-本地默认 binding 保留占位数据库 ID；已创建的 staging D1 只配置在 `env.staging`。production 尚未
-创建，正式部署前必须新增独立 production environment 和数据库，不能复用 staging ID。
+本地默认 binding 保留占位数据库 ID；staging 与 production 分别使用 `env.staging` 和
+`env.production`，绑定独立 Worker、D1、Secret 与认证限流 namespace，不能跨环境复用。
 本页命令是可执行的发布 runbook。2026-09-01 已完成 Wrangler OAuth 登录、账号核对、APAC staging
 D1 创建、0001→0003 migration、首次部署所需的三个 staging Secrets 和 `workers.dev` 部署；健康接口、
 静态控制台、`admin` 初始化及登录/session/audit/logout 已通过远端检查。初始化后已从 Worker 删除一次性
@@ -36,6 +36,11 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 [认证限流与 readiness 验收](../development/staging-auth-readiness-acceptance.md)。同日补齐 staging
 真实浏览器 i18n 验收：登录页和已登录概览页中英文切换、`document.documentElement.lang`、本地偏好
 及刷新恢复均通过，没有修改 Provider 或对象数据。
+
+2026-09-07 已在当前账号 APAC 创建独立 `openpool-production` D1，并把其 UUID 绑定到
+`env.production`；生产 Worker 名称为 `openpool-production`，首次 migration、Secret、部署与
+bootstrap 必须按下文顺序执行。production 不复用 staging 数据、Secret、限流 namespace 或
+Provider bucket。
 
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
@@ -80,17 +85,24 @@ security find-generic-password -a admin \
   -s "OpenPool Staging Administrator Password" -w | pbcopy
 ```
 
+production 使用完全独立的值，钥匙串 account 为 `openpool-production`，service 分别为
+`OpenPool Production CREDENTIAL_MASTER_KEY`、`OpenPool Production API_KEY_PEPPER` 与
+`OpenPool Production ADMIN_BOOTSTRAP_TOKEN`；管理员密码使用 account `admin`、service
+`OpenPool Production Administrator Password`。首次部署可以通过仓库外、权限受限的临时
+`--secrets-file` 将三项 Secret 与 Worker version 原子上传，成功后必须立即删除临时文件；不得把
+Secret 文件写入仓库或 CI artifact。
+
 初始化成功后必须删除 Worker 的 `ADMIN_BOOTSTRAP_TOKEN` 以缩小暴露面；可用
 `wrangler secret list --env staging` 确认它已不存在。系统已经初始化时不再接受 bootstrap 请求。
 只有重建一个全新的 D1/实例并重新执行初始化时，才需要为该实例生成新的 token。
 
 ## 认证限流与 readiness preflight
 
-`wrangler.jsonc` 为 staging 显式重复声明 `AUTH_GLOBAL_RATE_LIMITER` 和
+`wrangler.jsonc` 为 staging 和 production 分别显式声明 `AUTH_GLOBAL_RATE_LIMITER` 和
 `AUTH_IDENTITY_RATE_LIMITER`，因为 Rate Limit bindings 不会自动继承到 named environment。前者对
 setup/login 各限制为每 Cloudflare location 30 次/分钟，后者对每个规范化用户名指纹限制为
-5 次/分钟。namespace ID 在同一 Cloudflare account 中必须唯一；未来 production 必须使用与 staging
-不同的新 ID，避免两个环境共享计数器。计数键不含密码、bootstrap token 或原始用户名。
+5 次/分钟。两个环境使用不同 namespace ID，避免共享计数器。计数键不含密码、bootstrap token 或
+原始用户名。
 
 Cloudflare 不允许回读 Secret 明文，因此 `wrangler secret list` 只能核对名称，不能证明长度、编码或
 两项 Secret 是否复用。Worker 在处理请求时执行权威 readiness preflight：
@@ -138,6 +150,18 @@ npx wrangler d1 migrations list DB --remote --env staging --config apps/worker/w
 npx wrangler d1 export DB --remote --env staging --output <secure-path>/openpool-staging-before-upgrade.sql --config apps/worker/wrangler.jsonc
 ```
 
+`production` 使用相同核对顺序，但目标必须明确为 `env.production` 和
+`openpool-production`：
+
+```bash
+npx wrangler d1 info DB --env production --config apps/worker/wrangler.jsonc
+npx wrangler d1 migrations list DB --remote --env production --config apps/worker/wrangler.jsonc
+npx wrangler d1 export DB --remote --env production --output <secure-path>/openpool-production-before-upgrade.sql --config apps/worker/wrangler.jsonc
+```
+
+全新空 production 数据库首次安装不需要导出空库；一旦写入管理员或业务数据，后续 migration 不得
+沿用这个例外。
+
 `<secure-path>` 必须是仓库外、访问受限且有保留策略的位置；不要把导出文件提交或粘贴到聊天。需要
 升级 migration history 时，先逐项核对将执行的文件，再明确授权：
 
@@ -147,6 +171,12 @@ npm run verify
 npm run db:migrate:staging
 ```
 
+production migration 使用独立命令，不能把环境名省略或退回默认占位 binding：
+
+```bash
+npm run db:migrate:production
+```
+
 迁移命令只应用尚未应用的 migration；若任一 migration 失败，按 Wrangler 语义该次迁移会回滚，
 之前成功的 migration 保持不变。远端迁移和部署是独立的破坏面：先确认目标 Cloudflare 账号和 D1
 数据库，再进行 Worker 部署。生产 `APP_ENV` 应使用 Wrangler environment 或 CI 配置覆盖，不能保留
@@ -154,19 +184,20 @@ npm run db:migrate:staging
 
 ### 发布命令
 
-仓库根目录的 `npm run deploy:staging` 只构建 Web 并部署 `openpool-staging` Worker，不会隐式修改
-D1。它不是 dry-run，仍有远端发布副作用；只有在完成登录、账号/D1/Secrets 核对并得到明确授权后
-才能执行。staging migration 始终使用独立的 `npm run db:migrate:staging`，以便先完成备份和
-migration history 核对。仓库目前不提供 production migration/deploy 命令。
+仓库根目录的 `npm run deploy:staging` 和 `npm run deploy:production` 都先构建 Web，再部署对应
+Worker，不会隐式修改 D1。两者都不是 dry-run，只有在完成登录、账号/D1/Secrets 核对并得到明确
+授权后才能执行。migration 始终使用独立的 `db:migrate:staging` 或 `db:migrate:production`，
+以便先完成备份和 migration history 核对。production deploy 使用 Wrangler strict mode，远端配置
+发生冲突时拒绝覆盖。
 
 GitHub Actions 的 `CI` 工作流只运行 `npm ci` 和 `npm run verify`，权限限定为 `contents: read`；它不
 持有 Cloudflare Secret，不调用本节中的 migration 或 deploy 命令。未来若增加自动部署，必须使用独立
 最小权限 token、environment protection 和明确的 production 配置，不能把验证 job 隐式升级为发布 job。
 
-`npm run deploy:staging:with-migrations` 是明确选择“先 staging migration、再部署”的便利命令，
-同时具有两类远端副作用；只允许在首次安装或升级维护窗口中，经项目所有者确认目标账号、D1、备份
-和授权后使用。只构建或只发布 staging Worker 时，分别使用 `npm run build` 或
-`npm run deploy:staging --workspace=@openpool/worker`。
+`npm run deploy:staging:with-migrations` 与 `npm run deploy:production:with-migrations` 是明确
+选择“先 migration、再部署”的便利命令，同时具有两类远端副作用；只允许在首次安装或升级维护窗口
+中，经项目所有者确认目标账号、D1、备份和授权后使用。普通 `npm run build` 会同时 dry-run 默认
+Worker 与 production 配置，不访问远端。
 
 仓库已经公开，但尚未提供 Cloudflare Deploy Button，也不应声称“一键部署”可用。按
 [Cloudflare Deploy Buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/) 接入前，

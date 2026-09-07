@@ -142,7 +142,8 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ### 升级前
 
 - [x] `npx wrangler login` 成功并确认唯一可见 account；staging 使用 APAC 的独立 D1 与
-  `env.staging`（2026-09-01）。production 尚未创建，不能复用 staging database ID。
+  `env.staging`（2026-09-01）。production 已创建独立 APAC D1 并绑定 `env.production`，未复用
+  staging database ID 或限流 namespace（2026-09-07）。
 - [x] staging 首次部署已配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER`、
   `ADMIN_BOOTSTRAP_TOKEN`，并在 macOS 登录钥匙串备份；`CREDENTIAL_MASTER_KEY_ID=primary-v1`
   （2026-09-01）。管理员初始化后已从 Worker 删除一次性 bootstrap secret，当前远端 secret list

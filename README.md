@@ -124,7 +124,7 @@ Security vulnerabilities must be reported privately according to [SECURITY.md](S
 
 OpenPool runs as a Cloudflare Worker with Static Assets and D1. Provider credentials and application secrets must be configured separately for each environment.
 
-Remote D1 migrations and deployments are intentionally explicit operations. The repository does not currently include a production environment or a one-click deployment path. Follow the [Cloudflare operations runbook](docs/operations/cloudflare.md) for environment setup, migration ordering, backups, readiness checks, deployment, and rollback guidance.
+The repository includes isolated `staging` and `production` Wrangler environments. Remote D1 migrations and deployments remain explicit operations: use `npm run db:migrate:production` and `npm run deploy:production` only after checking the Cloudflare account, database, secrets, backup requirements, and maintenance window. Follow the [Cloudflare operations runbook](docs/operations/cloudflare.md) for the complete procedure and rollback guidance.
 
 ## Security
 
