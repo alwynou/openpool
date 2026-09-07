@@ -40,8 +40,8 @@
    安全升级发布到 staging，登录页与已登录概览页的双向切换、`document.documentElement.lang`、
    本地偏好和刷新恢复已通过真实浏览器验收；
 8. Cloudflare 部署和升级说明（文档完成；独立 staging 账号目标、D1、Secret、迁移、deploy、Cron
-   和浏览器 R2/B2 直传均已验收；production 独立 D1、Secret、migration、Worker、bootstrap 与
-   readiness 已[验收](development/production-deployment-acceptance.md)，Provider 资源尚未接入）。
+   和浏览器 R2/B2 直传均已验收；production 独立 D1、Secret、migration、Worker、bootstrap、
+   readiness、Provider 资源与公开访问也已验收）。
 
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
 “staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 production。Generic S3
@@ -52,8 +52,8 @@ R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单]
 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，只运行仓库 `verify` 且没有 Cloudflare
 权限；branch push 不重复运行 CI，受保护的 `main` 强制通过已同步且 `Verify` 成功的 pull request 集成。
 `v0.1.0` 的 Provider 兼容性声明明确限定为已经真实验收的 R2 与 B2，Generic S3 不阻塞正式发布。
-production 已完成独立 Provider 与自定义域名基础验收；公开链接 0007/部署/规范域名验收、自动部署
-所需 token、受保护备份位置和恢复演练继续由项目所有者决定，不复用 staging 资源或授权。
+production 已完成独立 Provider、自定义域名及公开链接 0007/部署/规范域名验收；自动部署所需 token、
+受保护备份位置和恢复演练继续由项目所有者决定，不复用 staging 资源或授权。
 
 ## Phase 2
 
@@ -65,13 +65,13 @@ production 已完成独立 Provider 与自定义域名基础验收；公开链�
   已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
   Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy、投递前后可见性、
   稳定 event id 与去重已验证。
-- 稳定公开对象链接（本地实现及 staging 验收完成）：Bucket 默认公开、单文件
+- 稳定公开对象链接（本地实现及 staging/production 验收完成）：Bucket 默认公开、单文件
   `INHERIT/PUBLIC/PRIVATE` 覆盖、可选到期时间、管理员控制台与最长 60 秒 Provider signed GET
-  重定向；公开流量不代理对象字节且不写 D1 audit。`0007` 与配套 Worker/Web 已发布到 staging，
-  真实 R2/B2、过期、既有/新对象继承、显式覆盖、撤销窗口、审计及清理均通过；production 的 0007、
-  部署与自定义域名验收仍需单独授权。见
+  重定向；公开流量不代理对象字节且不写 D1 audit。`0007` 与配套 Worker/Web 已发布到 staging 和
+  production，真实 R2/B2、过期、继承、显式覆盖、撤销窗口、审计及清理均通过。见
   [ADR 0006](architecture/decisions/0006-stable-public-object-links.md)和
-  [staging 验收](development/staging-public-access-acceptance.md)。
+  [staging 验收](development/staging-public-access-acceptance.md)、
+  [production 验收](development/production-public-access-acceptance.md)。
 - Generic S3 compatibility：现有 adapter 只作为实验预览；进入正式支持前完成外部服务、CORS、
   addressing style 与错误分类验收；
 - GitHub/static tier；

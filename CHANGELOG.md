@@ -21,7 +21,7 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 
 ### Validation
 
-- Migration `0007`, the Worker/Web build, and stable public links passed real staging R2/B2 acceptance, including expiration, bucket inheritance, object overrides, the 60-second revocation window, direct-provider hashes, auditing, and cleanup.
+- Migration `0007`, the Worker/Web build, and stable public links passed real staging and production R2/B2 acceptance, including expiration, bucket inheritance, object overrides, the 60-second revocation window, direct-provider hashes, auditing, and cleanup.
 
 ## [0.1.0] - 2026-09-07
 

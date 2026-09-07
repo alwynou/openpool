@@ -64,6 +64,13 @@ R2/B2 bucket、bucket-scoped credential 和最小 CORS，并从规范入口完�
 对象清理完成后，所有者另行授权精确删除两个 production smoke 逻辑命名空间及关联 D1 metadata；
 正式命名空间、Storage Account 和 Provider bucket 均保留。
 
+同日所有者明确要求 production 本次不备份并直接继续，已先应用 `0007_public_access.sql`，再从
+受保护 `main` 部署公开链接 Worker/Web，活动 version 为
+`0404cc4d-ebf0-45c4-90fe-efb38afdb005`。规范域名与回退入口 health 均为 200；真实 R2/B2 公开、
+到期、Bucket 继承、对象覆盖、60 秒撤销窗口、无读取审计写放大和隔离清理均通过。已有 R2 图片保持
+私有且未改策略，完整证据见
+[production 公开对象访问验收](../development/production-public-access-acceptance.md)。
+
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object
 tombstone，并重试 Provider 残留清理；成功后 upload session 变为 `ABORTED`，Provider 失败则保留
@@ -207,9 +214,9 @@ npm run db:migrate:production
 
 `0007` 是配套 Worker 的前置条件：新 Worker 的对象与 Bucket 查询会读取新增列，所以必须先迁移
 目标 D1，再部署 Worker/Web。迁移本身使用私有默认值，不会把既有对象意外公开；旧 Worker 会忽略
-新增列，因此需要回滚应用版本时无需回滚 schema。`0007` 已经所有者授权应用到 staging，并在真实
-R2/B2 验收通过；production 尚未应用。production 仍需重新核对 history、备份决策和明确授权，不能
-继承 staging 的免备份或测试写入授权。
+新增列，因此需要回滚应用版本时无需回滚 schema。`0007` 已经所有者分别授权应用到 staging 与
+production，并在两套环境通过真实 R2/B2 验收；两次免备份决定均只记录各自已完成的操作，不构成
+未来 migration 的持续授权。
 
 ### 发布命令
 

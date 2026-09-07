@@ -18,11 +18,11 @@
 旧 Worker 不能读取重试产生的多个 session，启用后应前滚修复，不直接回滚旧版。后续 migration
 和部署仍需单独授权；此处免备份仅记录本次操作。
 
-`0007` 已于 2026-09-07 经项目所有者明确授权应用到 staging，所有者明确要求本次不备份；新增列、
-trigger、私有默认值和 migration history 均通过远端只读核对，随后部署配套 Worker/Web 并完成真实
-R2/B2 公开访问验收。0007 现已在 staging 发布，不得再编辑；production 尚未应用，必须在部署读取
-新列的 Worker 前先单独迁移。证据见
-[staging 公开访问验收](../docs/development/staging-public-access-acceptance.md)。
+`0007` 已于 2026-09-07 经项目所有者分别明确授权应用到 staging 与 production；两次均由所有者明确
+要求不备份。新增列、trigger、私有默认值和 migration history 均通过远端只读核对，随后部署配套
+Worker/Web 并完成真实 R2/B2 公开访问验收。0007 现已在两套远端环境发布，不得再编辑。证据见
+[staging 公开访问验收](../docs/development/staging-public-access-acceptance.md)和
+[production 公开访问验收](../docs/development/production-public-access-acceptance.md)。
 
 ```bash
 npm run db:migrate:local
