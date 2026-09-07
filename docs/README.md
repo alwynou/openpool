@@ -30,6 +30,7 @@
 - [Staging Web 创建验收](development/staging-web-creation-acceptance.md)：账号创建模拟、真实 API Key 发放/复制/撤销与发布证据。
 - [Staging 认证限流与 readiness 验收](development/staging-auth-readiness-acceptance.md)：关键 Secret 预检、真实 429/恢复窗口和管理员 session 证据。
 - [Production 首次部署验收](development/production-deployment-acceptance.md)：独立 D1、migration、Secret、bootstrap 与 readiness 证据。
+- [Production Provider 验收](development/production-provider-acceptance.md)：自定义域名、独立 R2/B2、最小 CORS、浏览器直传/直取与清理证据。
 - [Deferred 外部步骤](development/deferred-external-steps.md)：需要账号、凭证或远端授权的待办。
 - [路线图](roadmap.md)：V1 范围与后续阶段。
 
