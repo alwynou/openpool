@@ -214,6 +214,12 @@ Worker 与 production 配置，不访问远端。
 `oss.example.com`。API 与后台共用该域名，`/api/*` 先进入 Worker，其余路径优先由 Static Assets
 处理并支持 SPA fallback。
 
+当前 production 的规范入口为 `https://openpool.alwynou.com`，通过 `env.production.routes` 的
+`custom_domain` 声明绑定；`workers_dev` 保持启用，使
+`https://openpool-production.alwynou2806.workers.dev` 可作为回退和运维入口。Provider bucket 的
+CORS 必须同时允许规范入口与仍支持直接访问的 `workers.dev` 入口，不能用通配 origin，也不能把
+staging origin 加入 production bucket。
+
 ## 回滚与前滚
 
 - Worker 代码使用 Cloudflare deployment versions 回滚；回滚前确认它仍能读取当前 D1 schema 和

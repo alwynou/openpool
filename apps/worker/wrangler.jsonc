@@ -70,6 +70,12 @@
     },
     "production": {
       "workers_dev": true,
+      "routes": [
+        {
+          "pattern": "openpool.alwynou.com",
+          "custom_domain": true,
+        },
+      ],
       "vars": {
         "APP_ENV": "production",
         "APP_VERSION": "0.1.0",
