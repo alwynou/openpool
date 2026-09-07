@@ -15,6 +15,14 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 
 - Public-link policy changes are administrator-only and transactionally audited; anonymous reads fail closed without per-request D1 audit writes.
 
+### Fixed
+
+- Public-download validation now measures the Provider expiry after signing, so a valid 60-second R2 or B2 URL is not rejected because credential lookup and signing elapsed time occurred after the policy check.
+
+### Validation
+
+- Migration `0007`, the Worker/Web build, and stable public links passed real staging R2/B2 acceptance, including expiration, bucket inheritance, object overrides, the 60-second revocation window, direct-provider hashes, auditing, and cleanup.
+
 ## [0.1.0] - 2026-09-07
 
 ### Added

@@ -37,6 +37,13 @@ Worker/Web，version 为 `a512e61f-7c6f-4b33-a0f2-16ce86c3977a`。真实 R2/B2 �
 真实浏览器 i18n 验收：登录页和已登录概览页中英文切换、`document.documentElement.lang`、本地偏好
 及刷新恢复均通过，没有修改 Provider 或对象数据。
 
+2026-09-07 经所有者明确授权并要求不备份，staging 已前滚应用 `0007_public_access.sql`，随后发布
+稳定公开链接 Worker/Web。真实 B2 首测发现合法 60 秒签名因调用前时钟校验被误判为 503；修复经
+[PR #15](https://github.com/alwynou/openpool/pull/15) 的完整 CI 合并后重新发布，当前验收 version 为
+`2dbbf053-b02b-460f-91dd-19dcc4a4c7ad`。R2/B2 公开、到期、Bucket 继承、对象覆盖、60 秒撤销窗口、
+无读取审计写放大和清理均已验证，见
+[staging 公开对象访问验收](../development/staging-public-access-acceptance.md)。
+
 2026-09-07 已在当前账号 APAC 创建独立 `openpool-production` D1，并把其 UUID 绑定到
 `env.production`；生产 Worker 名称为 `openpool-production`，首次 migration、Secret、部署与
 bootstrap 必须按下文顺序执行。production 不复用 staging 数据、Secret、限流 namespace 或
@@ -200,8 +207,9 @@ npm run db:migrate:production
 
 `0007` 是配套 Worker 的前置条件：新 Worker 的对象与 Bucket 查询会读取新增列，所以必须先迁移
 目标 D1，再部署 Worker/Web。迁移本身使用私有默认值，不会把既有对象意外公开；旧 Worker 会忽略
-新增列，因此需要回滚应用版本时无需回滚 schema。`0007` 当前只在临时测试 D1 验证，尚未应用到
-staging 或 production；两套环境需要分别核对 history、备份决策和明确授权。
+新增列，因此需要回滚应用版本时无需回滚 schema。`0007` 已经所有者授权应用到 staging，并在真实
+R2/B2 验收通过；production 尚未应用。production 仍需重新核对 history、备份决策和明确授权，不能
+继承 staging 的免备份或测试写入授权。
 
 ### 发布命令
 

@@ -1,7 +1,11 @@
 # ADR 0006：稳定公开对象链接通过短期签名重定向交付
 
-- 状态：Accepted（本地实现完成，远端验收待办）
+- 状态：Accepted（本地实现及 staging R2/B2 验收完成；production 待发布）
 - 日期：2026-09-07
+
+`0007` 与配套 Worker/Web 已在 staging 前滚；实际 R2/B2 策略、到期和撤销窗口证据见
+[staging 公开访问验收](../../development/staging-public-access-acceptance.md)。production 仍需单独
+授权后按 migration → deploy 顺序发布。
 
 ## 背景
 

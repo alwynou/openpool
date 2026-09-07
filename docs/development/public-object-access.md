@@ -20,19 +20,16 @@
 上述 D1 测试通过 `cloudflare:test` 在隔离临时数据库依次应用全部 migration，不修改 Wrangler 本地
 持久化 D1。
 
-## 远端验收待办
+## 远端验收状态
 
-以下步骤均有远端副作用，必须由项目所有者分别确认目标环境、备份决策并明确授权：
+staging 的 0007、部署、真实 R2/B2 策略矩阵、到期、撤销窗口、审计与 OpenPool 侧清理已于
+2026-09-07 经明确授权完成，证据见
+[staging 公开访问验收](staging-public-access-acceptance.md)。以下 production 步骤仍有远端副作用，
+必须由项目所有者重新确认目标环境、备份决策并明确授权：
 
-1. 核对 staging D1 history，应用 `0007`，再部署同一提交的 Worker/Web；
-2. 分别用真实 R2 与 B2 READY 图片验证单文件永久公开、定时公开、到期 404 和关闭后的最长 60 秒
-   撤销窗口；
-3. 验证 Bucket 开启后既有/新上传 INHERIT 文件公开、显式 PRIVATE 仍不可访问、关闭后显式 PUBLIC
-   不受影响；
-4. 从 staging origin 检查 Location 指向当前 Provider 且图片字节不经过 Worker；
-5. staging 通过后，对 production 重复 migration history/备份核对、`0007`、部署，并从规范域名
+1. 对 production 重复 migration history/备份核对、`0007`、部署，并从规范域名
    `https://openpool.alwynou.com/public/objects/:objectId` 验证；
-6. 精确清理专用测试对象；不删除正式 Bucket、Storage Account 或 credential。
+2. 精确清理 production 专用测试对象；不删除正式 Bucket、Storage Account 或 credential。
 
 部署顺序不能反转：新 Worker 会读取 `0007` 新列。migration 使用私有默认值，不会自动公开现有
 对象；旧 Worker 会忽略新列，因此应用回滚无需回滚 schema。

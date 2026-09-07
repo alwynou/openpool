@@ -28,6 +28,7 @@
 - [Web 账号创建交互回归](development/web-account-creation.md)：新增账号的凭据清理、显式重试与重复提交保护。
 - [Web API Key 创建交互回归](development/web-api-key-creation.md)：一次性 token 缓存隔离、重复发放保护和复制结果。
 - [公开对象访问本地验收](development/public-object-access.md)：Bucket/文件策略、短期重定向、到期与安全边界。
+- [Staging 公开对象访问验收](development/staging-public-access-acceptance.md)：0007、R2/B2、到期、继承/覆盖、撤销窗口、审计与清理证据。
 - [Staging Web 恢复验收](development/staging-web-recovery-acceptance.md)：两轮 Web 修复的发布、R2 真实交互及清理证据。
 - [Staging Web 创建验收](development/staging-web-creation-acceptance.md)：账号创建模拟、真实 API Key 发放/复制/撤销与发布证据。
 - [Staging 认证限流与 readiness 验收](development/staging-auth-readiness-acceptance.md)：关键 Secret 预检、真实 429/恢复窗口和管理员 session 证据。
