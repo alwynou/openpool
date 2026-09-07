@@ -1,7 +1,8 @@
 # 对象与签名传输 API
 
-OpenPool 只处理认证、放置和元数据；对象字节始终由客户端直接传给 R2、B2 或 S3-compatible
-Provider。对象 API 接受管理员 session 或具备对应 scope、Bucket/path 限制的 API Key；所有响应使用
+OpenPool 只处理认证、放置和元数据；对象字节始终由客户端直接传给 `v0.1.0` 正式支持的 R2 或 B2
+Provider。实验性的 Generic S3 adapter 不属于当前支持范围。对象 API 接受管理员 session 或具备对应
+scope、Bucket/path 限制的 API Key；所有响应使用
 `Cache-Control: no-store`。公开对象元数据不会暴露 Storage Account、shard、物理 Bucket、物理 key、
 credential 或 credential envelope。API Key 的创建和权限规则见 [API Key API](api-keys.md)。
 

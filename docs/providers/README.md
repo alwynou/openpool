@@ -1,7 +1,8 @@
 # Provider 开发指南
 
-Provider 适配器实现 application 定义的端口。V1 顺序是 R2、Backblaze B2、Generic S3；R2 和 B2
-都优先复用 S3-compatible 基础实现，只把 endpoint、认证和 capability 差异留在薄适配层。
+Provider 适配器实现 application 定义的端口。`v0.1.0` 正式支持 Cloudflare R2 和 Backblaze B2；
+二者复用 S3-compatible 基础实现，只把 endpoint、认证和 capability 差异留在薄适配层。仓库保留
+Generic S3 adapter 预览代码，但它不属于当前支持范围，也不在 Web 新建账号表单中开放。
 
 ## 最小能力
 
@@ -47,6 +48,8 @@ region 必须与 B2 账号区域一致。B2 S3 API 同样不提供 OpenPool 可�
 
 参考 Backblaze 官方文档：[调用 S3-compatible API](https://www.backblaze.com/docs/en/cloud-storage-call-the-s3-compatible-api)。
 
-Generic S3 配置显式包含 `endpoint`、`region`、`validationBucket` 和可选 `addressingStyle`。endpoint
-必须为没有 userinfo、query 或 fragment 的 HTTPS URL；自签证书、明文 HTTP、运行时 ambient
-credential chain 和任意 endpoint override 都不属于 V1 安全默认值。
+实验性的 Generic S3 配置显式包含 `endpoint`、`region`、`validationBucket` 和可选
+`addressingStyle`。endpoint 必须为没有 userinfo、query 或 fragment 的 HTTPS URL；自签证书、明文
+HTTP、运行时 ambient credential chain 和任意 endpoint override 都不属于安全默认值。该适配器目前
+只保留本地测试覆盖，不承诺外部服务兼容性；若未来进入正式支持范围，必须先完成 opt-in 真实服务、
+CORS 和错误分类验收。

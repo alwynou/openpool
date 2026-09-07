@@ -69,14 +69,16 @@
   application key；使用 `us-east-005` 完成账号验证、逻辑 Bucket/ACTIVE shard、浏览器签名 PUT、
   complete、签名 GET 字节比对和 DELETE smoke，OpenPool 容量回到 0（2026-09-01）。B2 的
   `Keep all versions` 会在 S3 DELETE 后保留历史版本；本次 smoke 的遗留版本已按下方记录手工清理。
-- [ ] 为 Generic S3 提供测试 endpoint、region、bucket、访问凭证和 path-style/TLS 等兼容性要求。
+- [ ] 若未来要把 Generic S3 从实验预览提升为正式支持，提供测试 endpoint、region、bucket、访问凭证
+  和 path-style/TLS 等兼容性要求；项目所有者已确认它不属于 `v0.1.0` 支持范围或发布门槛
+  （2026-09-07）。
 - [x] 已从 staging 控制台浏览器实际完成 R2 文件上传、下载和删除，确认 signed PUT/GET 与最小化
   CORS policy 生效（2026-09-01）。
 - [x] B2 已写入只允许 staging `workers.dev` origin 的自定义 S3 CORS，覆盖 `PUT`/`GET`/`HEAD` 和
   `Content-Type`/`Authorization`/`Range`；真实 `OPTIONS` 预检、浏览器上传和下载通过。用于写 CORS
   的临时全账户 application key 已立即撤销（2026-09-01）。
-- [ ] Generic S3 bucket 仍需配置并实测最小化 CORS：仅允许管理后台实际 origin 和直传/直取所需
-  method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
+- [ ] Generic S3 若未来进入正式支持范围，仍需配置并实测最小化 CORS：仅允许管理后台实际 origin
+  和直传/直取所需 method/header，不开放不必要权限。否则 signed URL 会被浏览器拦截。
 - [x] 经所有者授权，独立测试账号/shard 的 R2 ↔ B2 drain → migration 已完成：每方向 45 B 文本与
   64 KiB 二进制文件，CLI 流式传输、目标 HEAD、SHA-256 对比、primary 切换、源删除、容量计数和源
   shard retirement 均通过；一次中断任务在租约到期后由 CLI 成功恢复（2026-09-02）。
@@ -93,6 +95,8 @@
 
 ## 待项目所有者决定的产品与架构边界
 
+- [x] `v0.1.0` Provider 支持范围限定为 Cloudflare R2 与 Backblaze B2；Generic S3 预览不在 Web
+  提供新建入口，不需要真实 smoke 即可发布首个稳定版本（2026-09-07）。
 - [ ] GitHub/static tier：决定其作为只读 source 还是 publish target、repo/ref/path 映射、版本/删除语义，
   以及是否允许进入普通写 placement；在此之前不能把 GitHub 伪装成 Generic S3。
 - [ ] replication/repair：决定副本数、Provider/故障域分散、checksum 缺失行为、删除传播、容量计费、

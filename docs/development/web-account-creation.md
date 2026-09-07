@@ -6,7 +6,7 @@
 
 ## 交互与安全约定
 
-- R2、B2、Generic S3 使用现有表单校验和 Provider 配置映射；不自动调用验证。
+- `v0.1.0` 新建表单只提供 R2 与 B2，并使用对应的表单校验和 Provider 配置映射；不自动调用验证。
 - 创建凭据只留在当前表单与正在发送的 API 请求，不作为 React Query mutation variables，
   不进入 query/mutation state。关闭后不保留旧表单或错误。
 - 创建请求不自动重试，即使外层 QueryClient 配置了默认重试。创建不是幂等命令；若结果不确定，
@@ -51,3 +51,8 @@ Worker 构建仅执行本地 dry-run，没有部署或执行 migration。Markdow
 
 2026-09-03 后续经所有者重新授权，本修复已发布到 staging。浏览器故障/成功响应模拟与清理通过，
 没有提供新的有效 Provider 凭据，因此未创建真实账号；范围见[Web 创建验收](staging-web-creation-acceptance.md)。
+
+2026-09-07 正式发布收口时，项目所有者决定 `v0.1.0` 只支持 R2 与 B2。Web 因此移除 Generic S3
+新建入口并增加回归测试；已有 Generic S3 预览记录仍可显示和纠错，Worker/contract/数据库没有破坏性
+删除或 migration。上方 2026-09-03 的“三种 Provider/10 个测试”是当时的历史证据，不代表当前
+正式支持范围。

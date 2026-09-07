@@ -57,10 +57,9 @@ import {
 function createAccountSchema(t: Translate) {
   return z.object({
   name: z.string().trim().min(1, t('Enter a display name.')).max(100, t('Display name must be 100 characters or fewer.')),
-  provider: z.enum(['r2', 'b2', 's3']),
+  provider: z.enum(['r2', 'b2']),
   accountId: z.string(),
   region: z.string(),
-  endpoint: z.string(),
   jurisdiction: z.string(),
   validationBucket: z.string().trim().min(1, t('Enter the existing physical bucket name.')),
   accessKeyId: z.string().trim().min(1, t('Enter the access key ID.')),
@@ -75,14 +74,6 @@ function createAccountSchema(t: Translate) {
   if (value.provider !== 'r2' && !value.region.trim()) {
     context.addIssue({ code: 'custom', path: ['region'], message: t('Enter the provider region.') });
   }
-  if (value.provider === 's3') {
-    try {
-      const endpoint = new URL(value.endpoint);
-      if (endpoint.protocol !== 'https:') throw new Error('not HTTPS');
-    } catch {
-      context.addIssue({ code: 'custom', path: ['endpoint'], message: t('Enter a valid HTTPS endpoint.') });
-    }
-  }
   if (value.provider === 'r2' && !value.capacityBytes) {
     context.addIssue({ code: 'custom', path: ['capacityBytes'], message: t('R2 requires a configured capacity.') });
   }
@@ -96,7 +87,6 @@ const defaultAccountValues: AccountFormValues = {
   provider: 'r2',
   accountId: '',
   region: '',
-  endpoint: '',
   jurisdiction: '',
   validationBucket: '',
   accessKeyId: '',
@@ -239,7 +229,7 @@ export function AccountsPage() {
           <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
           <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search accounts by name or provider…')} />
         </label>
-        <FilterSelect label={t('Provider')} value={provider} onChange={setProvider} options={[['all', t('All providers')], ['r2', 'Cloudflare R2'], ['b2', 'Backblaze B2'], ['s3', t('S3 Compatible')]]} />
+        <FilterSelect label={t('Provider')} value={provider} onChange={setProvider} options={[['all', t('All providers')], ['r2', 'Cloudflare R2'], ['b2', 'Backblaze B2'], ['s3', t('S3 Compatible (experimental)')]]} />
         <FilterSelect label={t('Status')} value={status} onChange={setStatus} options={[['all', t('All statuses')], ['VERIFYING', t('Verifying')], ['ACTIVE', t('Active')], ['DRAINING', t('Draining')], ['READ_ONLY', t('Read only')], ['REMOVED', t('Removed')]]} />
         <FilterSelect label={t('Health')} value={health} onChange={setHealth} options={[['all', t('All health')], ['UNKNOWN', t('Unknown')], ['HEALTHY', t('Healthy')], ['DEGRADED', t('Degraded')], ['UNHEALTHY', t('Unhealthy')]]} />
         <Button type="button" variant="secondary" onClick={() => void accountsQuery.refetch()} busy={accountsQuery.isFetching}>{t('Refresh')}</Button>
@@ -248,7 +238,7 @@ export function AccountsPage() {
       {accountsQuery.error ? <ErrorNotice error={errorText(accountsQuery.error)} requestId={errorRequestId(accountsQuery.error)} onRetry={() => void accountsQuery.refetch()} /> : null}
       {accountsQuery.isLoading ? <LoadingState rows={3} /> : null}
       {!accountsQuery.isLoading && accounts.length === 0 ? (
-        <EmptyState title={t('No storage accounts yet')} detail={t('Connect an R2, Backblaze B2, or S3-compatible provider to start building the pool.')} action={<Button type="button" onClick={() => setCreateOpen(true)}>{t('Add account')}</Button>} />
+        <EmptyState title={t('No storage accounts yet')} detail={t('Connect Cloudflare R2 or Backblaze B2 to start building the pool.')} action={<Button type="button" onClick={() => setCreateOpen(true)}>{t('Add account')}</Button>} />
       ) : null}
       {!accountsQuery.isLoading && accounts.length > 0 ? (
         <AccountsTable
@@ -515,10 +505,6 @@ function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open:
           if (values.jurisdiction) providerConfig.jurisdiction = values.jurisdiction;
         }
         if (values.provider === 'b2') providerConfig.region = values.region.trim();
-        if (values.provider === 's3') {
-          providerConfig.endpoint = values.endpoint.trim();
-          providerConfig.region = values.region.trim();
-        }
         pendingInput.current = {
           name: values.name.trim(),
           provider: values.provider,
@@ -546,11 +532,10 @@ function CreateAccountDialog({ open, onOpenChange, onCreated }: { readonly open:
         <fieldset className="grid min-w-0 gap-4 sm:grid-cols-2" disabled={isBusy}>
           <Field label={t('Display name')} error={form.formState.errors.name?.message}><Input placeholder="Archive B2" {...form.register('name')} /></Field>
           <Field label={t('Provider')} error={form.formState.errors.provider?.message}>
-            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option><option value="s3">{t('Generic S3-compatible')}</option></select>
+            <select className={selectClassName} {...form.register('provider')}><option value="r2">Cloudflare R2</option><option value="b2">Backblaze B2</option></select>
           </Field>
           {provider === 'r2' ? <Field label={t('Cloudflare account ID')} error={form.formState.errors.accountId?.message}><Input autoComplete="off" {...form.register('accountId')} /></Field> : null}
-          {provider === 's3' ? <Field label={t('HTTPS endpoint')} error={form.formState.errors.endpoint?.message}><Input type="url" placeholder="https://s3.example.com" {...form.register('endpoint')} /></Field> : null}
-          {provider !== 'r2' ? <Field label={t('Region')} error={form.formState.errors.region?.message}><Input placeholder={provider === 'b2' ? 'us-west-004' : 'auto'} {...form.register('region')} /></Field> : (
+          {provider === 'b2' ? <Field label={t('Region')} error={form.formState.errors.region?.message}><Input placeholder="us-west-004" {...form.register('region')} /></Field> : (
             <Field label={t('Jurisdiction')}><select className={selectClassName} {...form.register('jurisdiction')}><option value="">{t('Default')}</option><option value="eu">EU</option><option value="fedramp">FedRAMP</option></select></Field>
           )}
           <Field label={t('Validation bucket')} hint={t('An existing physical bucket this key can access.')} error={form.formState.errors.validationBucket?.message}><Input placeholder="openpool-smoke" {...form.register('validationBucket')} /></Field>

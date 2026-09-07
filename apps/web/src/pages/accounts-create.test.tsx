@@ -107,7 +107,17 @@ function expectNoCachedCredentials() {
 }
 
 describe('Storage account creation', () => {
-  it.each(['r2', 'b2', 's3'] as const)('maps %s fields and does not automatically verify', async (provider) => {
+  it('offers only the supported R2 and B2 providers', async () => {
+    const user = await setup();
+    await openCreate(user);
+    const providerSelect = within(dialog()).getByRole('combobox', { name: /^Provider/u });
+    expect(within(providerSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Cloudflare R2',
+      'Backblaze B2',
+    ]);
+  });
+
+  it.each(['r2', 'b2'] as const)('maps %s fields and does not automatically verify', async (provider) => {
     const user = await setup();
     await openCreate(user);
     if (provider !== 'r2') await user.selectOptions(field('Provider'), provider);
@@ -119,14 +129,6 @@ describe('Storage account creation', () => {
       await user.type(field('Key ID'), credentials.accessKeyId);
       await user.type(field('Application key'), credentials.secretAccessKey);
     }
-    if (provider === 's3') {
-      await user.type(field('Display name'), 'S3 account');
-      await user.type(field('HTTPS endpoint'), 'https://s3.example.test');
-      await user.type(field('Region'), 'us-east-1');
-      await user.type(field('Validation bucket'), 'fake-bucket');
-      await user.type(field('Access key ID'), credentials.accessKeyId);
-      await user.type(field('Secret access key'), credentials.secretAccessKey);
-    }
     await user.click(create());
     await waitFor(() => expect(mock.createAccount).toHaveBeenCalledTimes(1));
     const input = mock.createAccount.mock.calls[0]?.[0];
@@ -137,7 +139,6 @@ describe('Storage account creation', () => {
     expect(mock.verifyAccount).not.toHaveBeenCalled();
     if (provider === 'r2') expect(input).toEqual({ name: 'New account', provider: 'r2', providerConfig: { accountId: 'fake-cloudflare-account', jurisdiction: 'eu', validationBucket: 'fake-bucket' }, credentials, priority: 7, capacityBytes: 1000 });
     if (provider === 'b2') expect(input).toEqual({ name: 'B2 account', provider: 'b2', providerConfig: { region: 'us-west-004', validationBucket: 'fake-bucket' }, credentials: { accessKeyId: credentials.accessKeyId, secretAccessKey: credentials.secretAccessKey }, priority: 100 });
-    if (provider === 's3') expect(input).toEqual({ name: 'S3 account', provider: 's3', providerConfig: { endpoint: 'https://s3.example.test', region: 'us-east-1', validationBucket: 'fake-bucket' }, credentials: { accessKeyId: credentials.accessKeyId, secretAccessKey: credentials.secretAccessKey }, priority: 100 });
   });
 
   it('rejects missing required credentials without sending a request', async () => {

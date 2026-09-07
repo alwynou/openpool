@@ -242,4 +242,4 @@ Shard Migration、自动重试或 READY/DELETED 路径覆盖。
 随机文件、实际传输开始后的 SIGINT、下载半成品清理、显式完整重传和内存观察。
 [可重复 smoke 脚本](../development/cli-smoke.md) 需要每轮明确授权与受限 Key，不在普通 verify 中
 执行；历史 session/Cron、版本化 Provider 的清理与临时 Key 撤销不能只看 `PASSED`。
-这不代表更大文件、并发/压力、物理断网、Generic S3 或 production 验收。
+这不代表更大文件、并发/压力、物理断网或 production 验收；Generic S3 不属于 `v0.1.0` 正式支持范围。

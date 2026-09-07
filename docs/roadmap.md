@@ -29,7 +29,8 @@
    后续[新增账号表单加固](development/web-account-creation.md)已补齐凭据清理、取消重置和重复提交保护，
    2026-09-03 已发布到 staging，浏览器客户端模拟通过；未用新 Provider 凭据重验真实账号创建，见
    [Web 创建验收](development/staging-web-creation-acceptance.md)；
-6. Generic S3 与 B2（本地完成；真实 B2 smoke 已完成，Generic S3 仍待项目所有者提供隔离资源和凭证）；
+6. Backblaze B2（本地与真实 staging smoke 完成）；Generic S3 adapter 仅保留实验预览，不属于
+   `v0.1.0` 正式支持范围或发布门槛；
 7. API Key、文件管理 API、审计日志查询 API 与管理界面（本地及 staging 验收完成）；
    后续[API Key 创建交互加固](development/web-api-key-creation.md)补齐一次性 token 缓存隔离、
    重复发放保护与复制失败处理；2026-09-03 已发布，真实临时 Key 创建/复制/撤销及客户端故障
@@ -42,13 +43,14 @@
    和浏览器 R2/B2 直传均已验收，production 尚未创建）。
 
 这里的“本地完成”表示仓库中的 domain/application/adapter/contract、测试路径和操作文档已具备；
-“staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 Generic S3 或 production。
+“staging 验收完成”覆盖当前隔离 Cloudflare staging、R2 与 B2，不代表 production。Generic S3
+预览代码已有本地测试，但没有外部兼容性承诺。
 
 核心 V1 控制面退出条件已经达到：本地 `npm run verify` 通过；本地流程、独立 staging 部署、
 R2/B2 Provider、浏览器直传、API Key、审计和 Cron 均按[验收清单](development/v1-acceptance.md)取得证据。
 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，只运行仓库 `verify` 且没有 Cloudflare
 权限；branch push 不重复运行 CI，受保护的 `main` 强制通过已同步且 `Verify` 成功的 pull request 集成。
-完整的 V1 Provider 兼容性声明仍需 Generic S3 的 opt-in smoke。
+`v0.1.0` 的 Provider 兼容性声明明确限定为已经真实验收的 R2 与 B2，Generic S3 不阻塞正式发布。
 production、自动部署所需 token、受保护备份位置和恢复演练继续由项目所有者决定，不复用 staging 资源。
 
 ## Phase 2
@@ -61,6 +63,8 @@ production、自动部署所需 token、受保护备份位置和恢复演练继�
   已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
   Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy、投递前后可见性、
   稳定 event id 与去重已验证。
+- Generic S3 compatibility：现有 adapter 只作为实验预览；进入正式支持前完成外部服务、CORS、
+  addressing style 与错误分类验收；
 - GitHub/static tier；
 - replication 与校验修复；
 - SDK、CLI 与有限 S3 compatibility gateway（对象及现有管理 API 的 TypeScript SDK 私有预览已本地
@@ -76,6 +80,8 @@ production、自动部署所需 token、受保护备份位置和恢复演练继�
 
 ## V1 明确限制
 
+- 正式 Provider 支持范围只有 Cloudflare R2 与 Backblaze B2。Web 不提供 Generic S3 新建入口；
+  contract/adapter 中保留的 Generic S3 是不承诺兼容性的实验预览。
 - Worker 每 5 分钟扫描超过签名 expiry 5 分钟 grace 的 direct-upload session。`0006` 支持显式替换
   PENDING object 的当前尝试，新 session/物理位置与旧尝试隔离，旧预留只释放一次；旧残留清理失败
   保持 EXPIRED、成功变 ABORTED。staging 已升级至 0006，支持显式重试。

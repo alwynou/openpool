@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" />
 </p>
 
-OpenPool combines storage accounts that you already own into one logical object pool. It provides a unified namespace, placement decisions, credential management, an administration console, and an API across Cloudflare R2, Backblaze B2, and S3-compatible storage.
+OpenPool combines Cloudflare R2 and Backblaze B2 storage accounts that you already own into one logical object pool. It provides a unified namespace, placement decisions, credential management, an administration console, and an API.
 
 OpenPool is a control plane, not an object proxy. Clients upload and download bytes directly from the selected provider through short-lived signed URLs, so object payloads never pass through the Worker.
 
@@ -23,7 +23,7 @@ OpenPool is a control plane, not an object proxy. Clients upload and download by
 
 - Cloudflare Worker API and React administration console, served as one deployment
 - Cloudflare D1 metadata store with append-only schema migrations
-- R2, Backblaze B2, and generic S3-compatible provider adapters
+- Cloudflare R2 and Backblaze B2 provider adapters built on a shared SigV4 foundation
 - Logical buckets, storage shards, capacity-aware placement, and provider health checks
 - Direct signed uploads and downloads with explicit reservation, completion, retry, and cleanup states
 - AES-256-GCM encryption for provider credentials at rest
@@ -38,7 +38,7 @@ OpenPool is a control plane, not an object proxy. Clients upload and download by
 ```text
 Browser / SDK / CLI ── control API ──> Cloudflare Worker ──> D1
          │                                  │
-         └────── object bytes ──────────────┴────> R2 / B2 / S3
+         └────── object bytes ──────────────┴────> R2 / B2
 ```
 
 The codebase follows ports and adapters. Dependencies point inward:
@@ -51,13 +51,13 @@ The domain package has no framework, platform, database, or provider SDK depende
 
 ## Project status
 
-OpenPool is currently available as the [`v0.1.0-rc.1`](https://github.com/alwynou/openpool/releases/tag/v0.1.0-rc.1) release candidate.
+OpenPool `v0.1.0` is the first stable project release. See the [release notes](docs/releases/v0.1.0.md) and [GitHub Release](https://github.com/alwynou/openpool/releases/tag/v0.1.0).
 
-The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. Generic S3 support is implemented and covered locally, but still needs an opt-in compatibility smoke test against an external service. Production infrastructure and automated deployment are not configured.
+The core V1 control plane has passed local verification and staging acceptance against real R2 and B2 resources, including browser-direct transfers, API keys, auditing, scheduled cleanup, upload recovery, and cross-provider shard migration. Production infrastructure and automated deployment are not configured.
 
 For the exact completion state and remaining work, see the [roadmap](docs/roadmap.md) and [V1 acceptance checklist](docs/development/v1-acceptance.md).
 
-Notable project changes are recorded in the [changelog](CHANGELOG.md). The proposed stable release scope and remaining release gates are tracked in the [`v0.1.0` release draft](docs/releases/v0.1.0.md).
+Notable project changes are recorded in the [changelog](CHANGELOG.md).
 
 ## Quick start
 
@@ -140,13 +140,13 @@ Please report security issues privately to the maintainer instead of opening a p
 
 ## Current limitations
 
-OpenPool does not yet provide a full S3-compatible gateway, multipart resumable uploads, automatic replication or repair, multi-user tenancy, billing, or fine-grained RBAC. The TypeScript SDK and object CLI are workspace-private previews and are not published npm packages.
+Generic S3 adapter code remains an experimental preview and is not part of the `v0.1.0` supported provider set or Web account creation flow. OpenPool also does not yet provide a full S3-compatible gateway, multipart resumable uploads, automatic replication or repair, multi-user tenancy, billing, or fine-grained RBAC. The TypeScript SDK and object CLI are workspace-private previews and are not published npm packages.
 
 ## Documentation
 
 - [Documentation index](docs/README.md)
 - [Changelog](CHANGELOG.md)
-- [`v0.1.0` release draft](docs/releases/v0.1.0.md)
+- [`v0.1.0` release notes](docs/releases/v0.1.0.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Local development](docs/development/getting-started.md)
 - [Provider integration](docs/providers/README.md)

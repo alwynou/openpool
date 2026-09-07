@@ -21,7 +21,8 @@ npm run verify
 
 ## 交互与安全约定
 
-- R2、B2、Generic S3 验证失败都能在原账号上 `Edit & retry`，Provider 类型不可更改。
+- R2、B2 验证失败都能在原账号上 `Edit & retry`，Provider 类型不可更改。历史上创建的
+  Generic S3 实验账号也保留同样的纠错能力，但它不属于 `v0.1.0` 正式支持范围。
 - 配置预填，但三个 credential 字段始终从空值开始；全部留空表示保留已保存凭据。
 - 替换 credential 必须同时提供 key ID 和 secret，session token 可选；只填部分字段不发请求。
   未修改的 Provider 配置（如 addressing style）继续保留。

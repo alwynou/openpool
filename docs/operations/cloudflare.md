@@ -168,11 +168,10 @@ GitHub Actions 的 `CI` 工作流只运行 `npm ci` 和 `npm run verify`，权�
 和授权后使用。只构建或只发布 staging Worker 时，分别使用 `npm run build` 或
 `npm run deploy:staging --workspace=@openpool/worker`。
 
-当前仓库没有可用于 Cloudflare Deploy Button 的公开 git remote URL，因此按钮尚未发布，也不应在
-这里声称“一键按钮”可用。未来若发布公开仓库，可按
-[Cloudflare Deploy Buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/) 添加
-按钮；该能力对 monorepo/非根目录 Worker 有额外限制，仍需把 Worker 目录、配置、D1 和 Secrets
-输入方式明确化，按钮不会替代真实 Provider smoke 或人工安全核对。
+仓库已经公开，但尚未提供 Cloudflare Deploy Button，也不应声称“一键部署”可用。按
+[Cloudflare Deploy Buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/) 接入前，
+仍需明确 monorepo Worker 目录、production D1 自动创建/绑定、Secrets 输入和首次 migration 流程；
+按钮不能复用 staging 资源，也不会替代真实 Provider smoke 或人工安全核对。
 
 ## 自定义域名
 

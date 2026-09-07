@@ -15,11 +15,12 @@ flowchart LR
   Placement --> Registry[Provider Registry]
   Registry --> R2[R2 accounts]
   Registry --> B2[B2 accounts]
-  Registry --> S3[S3-compatible accounts]
   Client ==>|Presigned PUT / GET| R2
   Client ==>|Presigned PUT / GET| B2
-  Client ==>|Presigned PUT / GET| S3
 ```
+
+`v0.1.0` 正式支持 R2 与 B2。仓库中的 Generic S3 adapter 是未对外承诺兼容性的实验预览，不进入
+当前 Web 账号创建流程或正式 Provider 支持图。
 
 ## 上传时序
 
