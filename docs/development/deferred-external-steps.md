@@ -23,6 +23,10 @@
 - [x] 上传重试 `0006_upload_retries.sql` 与配套 Worker/Web 已经所有者重新授权并发布到 staging
   （2026-09-02），迁移列表无待办。所有者再次明确要求本次不备份；未操作本地持久化 D1 或
   production，不继承为后续免备份授权。真实 R2/B2 证据见[上传重试验收](staging-upload-retry-acceptance.md)。
+- [x] 稳定公开链接 `0007_public_access.sql` 与配套 Worker/Web 已经所有者明确授权并发布到 staging
+  （2026-09-07）；所有者明确要求本次不备份并授权 R2/B2 测试图片创建/清理。migration history、
+  schema 默认值/trigger、health、真实策略矩阵及 OpenPool 清理均通过，production 未操作且仍需单独
+  授权。证据见[公开访问验收](staging-public-access-acceptance.md)。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration
@@ -98,6 +102,10 @@
   shard 已退休，B2 六个物理 key 的 13 个 upload/hide versions（67,788 字节）已永久清理；原有记录
   不变。该轮额外浏览器重试因扩展未连接跳过，见[上传重试验收](staging-upload-retry-acceptance.md)；
   随后已完成限定 R2 的[Web 恢复交互验收](staging-web-recovery-acceptance.md)，不将其扩大为 B2 全分支回归。
+- [x] `0007` 公开链接通过真实 R2/B2 图片验收：默认私有、永久/定时公开、到期 404、Bucket 对既有与
+  新对象的继承、对象显式覆盖、60 秒撤销窗口、Provider host/字节哈希及匿名读取无 audit 写入均符合
+  设计；三个 OpenPool 对象已删除、两只测试 shard 用量归零、Bucket 恢复私有，B2 的测试 upload
+  version 与 hide marker 也已在控制台永久删除（2026-09-07）。
 
 ## 待项目所有者决定的产品与架构边界
 
@@ -136,8 +144,9 @@
   的客户端故障与成功响应模拟通过，无真实新增账号。详细范围见[Web 创建验收](staging-web-creation-acceptance.md)。
 - [ ] 如果要进一步重验账号创建加固后的真实 Provider 成功路径，所有者需提供新的隔离凭据；
   VERIFYING 不能直接移除，不使用假凭据创建无法正常清理的远端账号，也不直接删除 D1 来完成此验收。
-- [ ] 后续 schema 升级前解决 Wrangler 的 D1 query 授权：2026-09-03 只读 migration history 查询
-  返回 Cloudflare `7403`；D1 info、现有应用 API 与 Web-only 发布正常，本轮未绕过该限制或执行 migration。
+- [x] 先前 Wrangler D1 query 的 `7403` 授权问题已不再复现：2026-09-07 使用当前 OAuth 成功读取
+  staging/production migration history，并获所有者授权将 staging 0007 前滚；未扩大为 production
+  migration 授权。
 - [ ] SDK/CLI 后续：公开包名和版本承诺、Node 管理员 Cookie 策略、自动重试及 migration 最小权限
   授权仍待决定。通用对象 CLI 超过 50 MB 的文件、物理断网、并发及压力/长时间验收需另行确认范围；不自动
   复用此前 staging 测试或部署授权。

@@ -5,6 +5,8 @@ staging 远端操作记录在第 7 节。`v0.1.0` 正式支持的 R2/B2 真实 s
 项目所有者明确移出当前支持范围和发布门槛，仅保留实验预览。
 2026-09-02 的 0004/0005 前滚、迁移 CLI 和事务审计 outbox 证据另见[升级验收记录](staging-upgrade-acceptance.md)。
 同日 `0006` 和配套 Worker/Web 已发布到 staging，真实 R2/B2 测试见[上传重试验收](staging-upload-retry-acceptance.md)。
+2026-09-07 `0007` 与稳定公开链接已发布到 staging，真实策略、到期和清理证据见
+[公开访问验收](staging-public-access-acceptance.md)。
 
 ## 1. 本地前置条件
 
@@ -82,6 +84,10 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   设置长度，不手工设置受限的 `Content-Length` header。
 - [x] `READY` 对象可生成短期 signed `GET` URL；删除经历 `DELETING → DELETED` 并只释放一次容量；
   Provider 404 删除可安全重试。
+- [x] 稳定公开地址 `/public/objects/:id` 只返回短期 Provider 302；Bucket 默认值与对象
+  `INHERIT/PUBLIC/PRIVATE` 覆盖、可选到期、空 404、安全 header、管理员 mutation 和无匿名读取
+  audit 写放大均已通过本地测试。staging 0007、真实 R2/B2 与撤销窗口另见
+  [公开访问验收](staging-public-access-acceptance.md)。
 - [x] 列表支持 `status`、`prefix`、`afterKey`、`limit`（1–1000）并按 logical key 稳定排序；
   公开响应不包含 account、shard、physical bucket/key、credential 或签名 URL。
 - [x] 过期 upload session 释放一次容量但保留 `PENDING` tombstone；普通同路径 reservation 仍冲突。
@@ -185,10 +191,15 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
   `ADMIN_BOOTSTRAP_TOKEN_UNEXPECTED`，管理员 login/session/logout 通过。证据见
   [staging 认证限流与 readiness 验收](staging-auth-readiness-acceptance.md)。随后已在真实浏览器补齐
   登录页与已登录概览页的中英文切换、`document.documentElement.lang`、本地偏好和刷新恢复验收。
+- [x] 2026-09-07 经所有者授权并明确免备份，staging 应用 0007 后部署公开链接版本；真实 B2 首测的
+  签名时钟误判经 PR #15 修复、完整 CI 合并并重新部署。R2/B2 永久/定时公开、到期、Bucket
+  继承、对象覆盖、60 秒撤销窗口、直接 Provider 哈希、审计和 OpenPool 清理通过，见
+  [staging 公开访问验收](staging-public-access-acceptance.md)。production 仍需单独授权。
 - [x] production 使用独立 APAC D1、Secret 和限流 namespace；`0001`→`0006`、Worker/静态资源、
   bootstrap 删除前后 readiness、管理员 login/session/logout 均通过，见
-  [production 首次部署验收](production-deployment-acceptance.md)（2026-09-07）。未配置 Provider
-  或执行对象 smoke。
+  [production 首次部署验收](production-deployment-acceptance.md)（2026-09-07）。随后已配置独立
+  R2/B2 与规范域名并完成真实直传/直取/删除，见
+  [production Provider 验收](production-provider-acceptance.md)；公开链接 0007 尚未发布。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
@@ -213,7 +224,7 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前发布后外部事项是可选的 Generic S3 资源及其 CORS、production R2/B2 资源与自定义域名、
-自动部署所需 Cloudflare token，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
+当前发布后外部事项是可选的 Generic S3 资源及其 CORS、production 公开链接 0007/部署/规范域名
+验收、自动部署所需 Cloudflare token，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
 2026-09-02 所有者明确要求本次
 staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。

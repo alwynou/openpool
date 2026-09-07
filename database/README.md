@@ -16,9 +16,13 @@
 `0006` 已于 2026-09-02 经项目所有者新授权应用到 staging，随后部署配套 Worker/Web；所有者明确
 要求本次不备份。本地持久化 D1 未改动。0006 现已发布，不得再编辑；后续修复必须新增 migration。
 旧 Worker 不能读取重试产生的多个 session，启用后应前滚修复，不直接回滚旧版。后续 migration
-和部署仍需单独授权；此处免备份仅记录本次操作。`0007` 尚未应用到 staging 或 production；在配套
-Worker 部署前必须先分别完成目标环境 migration。真实环境证据见
-[上传重试验收](../docs/development/staging-upload-retry-acceptance.md)。
+和部署仍需单独授权；此处免备份仅记录本次操作。
+
+`0007` 已于 2026-09-07 经项目所有者明确授权应用到 staging，所有者明确要求本次不备份；新增列、
+trigger、私有默认值和 migration history 均通过远端只读核对，随后部署配套 Worker/Web 并完成真实
+R2/B2 公开访问验收。0007 现已在 staging 发布，不得再编辑；production 尚未应用，必须在部署读取
+新列的 Worker 前先单独迁移。证据见
+[staging 公开访问验收](../docs/development/staging-public-access-acceptance.md)。
 
 ```bash
 npm run db:migrate:local
