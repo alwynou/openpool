@@ -47,7 +47,9 @@
 - [x] production 已绑定规范入口 `https://openpool.alwynou.com`，配置独立 R2/B2 bucket、bucket-scoped
   凭据与最小 CORS，并从该入口完成真实浏览器 signed PUT/GET/DELETE smoke；两个账号和 shard 用量
   回到 0，R2 物理 key 不存在，B2 upload version 与 hide marker 已精确永久删除。没有复用 staging
-  credential 或 bucket，见 [Production Provider 验收](production-provider-acceptance.md)（2026-09-07）。
+  credential 或 bucket。经所有者后续授权，两个 production smoke 逻辑命名空间及其关联 D1 metadata
+  也已精确删除，正式命名空间与 Provider 资源未动，见
+  [Production Provider 验收](production-provider-acceptance.md)（2026-09-07）。
 - [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，运行 `npm ci`
   与 `npm run verify`；branch push 不重复运行，工作流只有仓库只读权限且 checkout 不持久化
   credential，不部署或执行 migration（2026-09-05）。
