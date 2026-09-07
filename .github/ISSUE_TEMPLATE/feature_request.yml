@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a focused improvement to OpenPool.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user problem before proposing implementation details. For major provider, schema, API, or architecture work, discussion and an ADR may be required before code is accepted.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap for related work.
+          required: true
+        - label: This request preserves direct provider transfers and does not proxy object bytes through the Worker.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operational problem should OpenPool solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Describe the desired behavior without assuming a specific implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or narrower options have you considered?
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Expected impact
+      options:
+        - label: Public API or contracts
+        - label: D1 schema or migrations
+        - label: Provider integration
+        - label: Web user interface
+        - label: SDK or CLI
+        - label: Deployment or operations
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Would you like to contribute an implementation?
+      options:
+        - Yes
+        - Maybe, with guidance
+        - No
+    validations:
+      required: true
+

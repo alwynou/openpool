@@ -112,6 +112,12 @@ Run `npm run verify` before handing off a change. The GitHub Actions workflow ru
 
 Changes reach the protected `main` branch through pull requests with an up-to-date, successful `CI / Verify` check. See the [development workflow](docs/development/workflow.md) before contributing.
 
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture boundaries, testing expectations, commit conventions, and the pull request process. Please use the repository's issue forms for reproducible bugs and focused feature proposals.
+
+Security vulnerabilities must be reported privately according to [SECURITY.md](SECURITY.md), never through a public issue.
+
 ## Deployment
 
 OpenPool runs as a Cloudflare Worker with Static Assets and D1. Provider credentials and application secrets must be configured separately for each environment.
