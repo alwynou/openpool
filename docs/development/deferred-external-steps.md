@@ -25,8 +25,8 @@
   production，不继承为后续免备份授权。真实 R2/B2 证据见[上传重试验收](staging-upload-retry-acceptance.md)。
 - [x] 稳定公开链接 `0007_public_access.sql` 与配套 Worker/Web 已经所有者明确授权并发布到 staging
   （2026-09-07）；所有者明确要求本次不备份并授权 R2/B2 测试图片创建/清理。migration history、
-  schema 默认值/trigger、health、真实策略矩阵及 OpenPool 清理均通过，production 未操作且仍需单独
-  授权。证据见[公开访问验收](staging-public-access-acceptance.md)。
+  schema 默认值/trigger、health、真实策略矩阵及清理均通过。证据见
+  [staging 公开访问验收](staging-public-access-acceptance.md)。
 - [x] 已获授权并运行 `npm run deploy:staging`，独立 Worker 已发布到 staging `workers.dev`，健康
   接口、静态控制台、`admin` 初始化、登录/session/audit/logout 及 bootstrap 删除后的再次登录均
   验证通过（2026-09-01）。管理员密码只保存在 macOS 登录钥匙串。只有同时授权 staging migration
@@ -54,6 +54,9 @@
   credential 或 bucket。经所有者后续授权，两个 production smoke 逻辑命名空间及其关联 D1 metadata
   也已精确删除，正式命名空间与 Provider 资源未动，见
   [Production Provider 验收](production-provider-acceptance.md)（2026-09-07）。
+- [x] 所有者随后明确要求 production 不备份并直接继续；0007 与配套 Worker/Web 已按顺序前滚，
+  规范域名下 R2/B2 公开、到期、继承/覆盖、60 秒撤销窗口、审计及精确清理通过。已有 R2 图片保持
+  私有且未改策略，见[Production 公开访问验收](production-public-access-acceptance.md)（2026-09-07）。
 - [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，运行 `npm ci`
   与 `npm run verify`；branch push 不重复运行，工作流只有仓库只读权限且 checkout 不持久化
   credential，不部署或执行 migration（2026-09-05）。
@@ -106,6 +109,9 @@
   新对象的继承、对象显式覆盖、60 秒撤销窗口、Provider host/字节哈希及匿名读取无 audit 写入均符合
   设计；三个 OpenPool 对象已删除、两只测试 shard 用量归零、Bucket 恢复私有，B2 的测试 upload
   version 与 hide marker 也已在控制台永久删除（2026-09-07）。
+- [x] 同一 0007/公开链接版本已在 production 规范域名通过隔离 R2/B2 smoke；为避免短暂暴露已有
+  R2 图片，Bucket 继承只在空的 `b2-storage` 验证，R2 使用单文件策略。已有图片的状态、策略和容量
+  保持不变，见[production 验收](production-public-access-acceptance.md)（2026-09-07）。
 
 ## 待项目所有者决定的产品与架构边界
 

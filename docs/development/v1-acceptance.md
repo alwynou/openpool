@@ -194,12 +194,14 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 - [x] 2026-09-07 经所有者授权并明确免备份，staging 应用 0007 后部署公开链接版本；真实 B2 首测的
   签名时钟误判经 PR #15 修复、完整 CI 合并并重新部署。R2/B2 永久/定时公开、到期、Bucket
   继承、对象覆盖、60 秒撤销窗口、直接 Provider 哈希、审计和 OpenPool 清理通过，见
-  [staging 公开访问验收](staging-public-access-acceptance.md)。production 仍需单独授权。
+  [staging 公开访问验收](staging-public-access-acceptance.md)。production 的独立授权与结果记录在下一项。
 - [x] production 使用独立 APAC D1、Secret 和限流 namespace；`0001`→`0006`、Worker/静态资源、
   bootstrap 删除前后 readiness、管理员 login/session/logout 均通过，见
   [production 首次部署验收](production-deployment-acceptance.md)（2026-09-07）。随后已配置独立
   R2/B2 与规范域名并完成真实直传/直取/删除，见
-  [production Provider 验收](production-provider-acceptance.md)；公开链接 0007 尚未发布。
+  [production Provider 验收](production-provider-acceptance.md)。随后经所有者明确免备份授权，0007、
+  公开链接 Worker/Web 和规范域名 R2/B2 验收也已完成，见
+  [production 公开访问验收](production-public-access-acceptance.md)。
 - [x] Wrangler `*/5 * * * *` Cron Trigger 已随 Worker 创建；live tail 捕获到 outcome `ok`、无
   exception/应用日志的 scheduled maintenance，随后确认容量为 0 且没有 PENDING/EXPIRED upload 或
   非终态 object（2026-09-01）。失败清理仍按设计留待下一次重试。
@@ -224,7 +226,7 @@ V1 schema 必须按以下顺序前滚，不能跳过或重排：
 ## 8. 外部步骤记录
 
 尚未完成或需要项目所有者参与的事项集中记录在[Deferred 外部步骤](deferred-external-steps.md)。
-当前发布后外部事项是可选的 Generic S3 资源及其 CORS、production 公开链接 0007/部署/规范域名
-验收、自动部署所需 Cloudflare token，以及未来有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
+当前发布后外部事项是可选的 Generic S3 资源及其 CORS、自动部署所需 Cloudflare token，以及未来
+有价值数据的 schema 升级所需受保护备份位置和恢复负责人。
 2026-09-02 所有者明确要求本次
 staging 升级跳过备份，但不视为对后续升级或数据恢复的永久授权。

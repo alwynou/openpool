@@ -22,14 +22,11 @@
 
 ## 远端验收状态
 
-staging 的 0007、部署、真实 R2/B2 策略矩阵、到期、撤销窗口、审计与 OpenPool 侧清理已于
-2026-09-07 经明确授权完成，证据见
-[staging 公开访问验收](staging-public-access-acceptance.md)。以下 production 步骤仍有远端副作用，
-必须由项目所有者重新确认目标环境、备份决策并明确授权：
-
-1. 对 production 重复 migration history/备份核对、`0007`、部署，并从规范域名
-   `https://openpool.alwynou.com/public/objects/:objectId` 验证；
-2. 精确清理 production 专用测试对象；不删除正式 Bucket、Storage Account 或 credential。
+staging 与 production 的 0007、部署、真实 R2/B2 策略、到期、撤销窗口、审计和精确清理均于
+2026-09-07 经各自明确授权完成。证据见[staging 验收](staging-public-access-acceptance.md)和
+[production 验收](production-public-access-acceptance.md)。production 从规范域名
+`https://openpool.alwynou.com/public/objects/:objectId` 验证，未修改已有对象策略或删除正式 Bucket、
+Storage Account、shard、credential。
 
 部署顺序不能反转：新 Worker 会读取 `0007` 新列。migration 使用私有默认值，不会自动公开现有
 对象；旧 Worker 会忽略新列，因此应用回滚无需回滚 schema。
