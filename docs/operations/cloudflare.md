@@ -52,6 +52,8 @@ bootstrap 删除前后 readiness 与管理员 session 均通过；当前活动 v
 R2/B2 bucket、bucket-scoped credential 和最小 CORS，并从规范入口完成真实浏览器直传、签名下载
 哈希比对和删除；完整范围与清理证据见
 [production Provider 验收](../development/production-provider-acceptance.md)。
+所有者随后决定 R2 与 B2 分别使用，正式逻辑命名空间为 `r2-storage` 与 `b2-storage`，各自映射到
+对应 production Provider 的 ACTIVE shard；两者不构成主备、复制或自动故障切换关系。
 
 Worker 的 `*/5 * * * *` cron 扫描超过签名 expiry 5 分钟 grace 的 direct-upload session、恢复已切换
 shard migration 的源清理，并投递审计 outbox。上传清理会原子释放预留、保留 `PENDING` object

@@ -36,13 +36,18 @@ B2 自定义 CORS 同样只允许上述两个 production origin，操作为 `s3_
 允许 `Authorization`、`Content-Type`、`Range`，暴露 `ETag`，max age 为 3600 秒。没有加入 staging
 origin 或通配 origin。
 
-为避免替代产品侧正式命名决策，本轮只建立两个明确标注为验收用途的稳定命名空间：
+传输验收首先建立两个明确标注为验收用途的稳定命名空间：
 
 - `production-r2-smoke` → `openpool-production-r2`，ACTIVE，100 GiB；
 - `production-b2-smoke` → `openpool-b2-production-5649cdbfcc`，ACTIVE，100 GiB。
 
-逻辑 Bucket 与 shard 保留为可审计的 production 验收配置；后续正式业务命名与主备/迁移拓扑仍由
-所有者按实际用途决定。
+验收完成后，所有者决定 R2 与 B2 分别使用，并授权由维护者命名。正式生产逻辑命名空间为：
+
+- `r2-storage` → `openpool-production-r2`，ACTIVE，100 GiB；
+- `b2-storage` → `openpool-b2-production-5649cdbfcc`，ACTIVE，100 GiB。
+
+客户端按逻辑 Bucket 显式选择 Provider；两者之间不做自动放置、复制或故障切换。验收用逻辑 Bucket
+与 shard 继续保留为可审计记录，不直接改写或删除 D1 状态。
 
 ## 真实浏览器直传与下载
 
