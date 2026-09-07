@@ -7,16 +7,15 @@
 
 - [x] 使用 `wrangler login` 完成交互式 Cloudflare 登录，并通过 `wrangler whoami --json` 确认唯一
   可见的 Cloudflare account（2026-09-01；账号 ID 与登录邮箱不写入仓库）。
-- [x] staging 使用当前 Cloudflare account 的独立 Worker、D1、Secrets 和 Provider 资源；production
-  暂不创建，正式上线前再决定是否使用独立 account（2026-09-01）。
+- [x] 所有者要求为正式版本建立对应 production 部署，确认先使用当前 Cloudflare account，但必须与
+  staging 隔离；已创建 APAC `openpool-production` D1 并绑定 `env.production`（2026-09-07）。
 - [x] 在 APAC 创建独立的 `openpool-staging` D1，并绑定到 `env.staging`（2026-09-01；database ID
   只保存在 Wrangler 配置所需位置）。
 - [x] 已为 staging 安全生成并配置独立的 `CREDENTIAL_MASTER_KEY`、`API_KEY_PEPPER` 和管理员
   bootstrap secret，并备份到 macOS 登录钥匙串；`CREDENTIAL_MASTER_KEY_ID` 固定为 `primary-v1`
   （2026-09-01）。`admin` 初始化后已从 Worker 删除一次性 bootstrap secret，远端只保留 master
   key 和 pepper；不要在 V1 期间更换已有 vault key。
-- [x] 已获授权并执行 V1 `npm run db:migrate:staging`；0001→0003 均已应用（2026-09-01）。仓库目前
-  没有 production migration 命令。
+- [x] 已获授权并执行 V1 `npm run db:migrate:staging`；0001→0003 均已应用（2026-09-01）。
 - [x] Phase 2 `0004_shard_migrations.sql` 与 `0005_transactional_audit_outbox.sql` 已经所有者明确授权，
   按顺序应用到独立 staging D1，相关 Worker/Web 已部署，migration history 无待办（2026-09-02）。
   所有者因数据不重要而明确要求本次跳过备份；本地持久化 D1 和 production 未改动，未来升级不能
@@ -42,8 +41,9 @@
   修改线上数据（2026-09-04）。
 - [ ] 在下一次包含已有数据的远端 schema 升级前，项目所有者指定仓库外、受限且持久的 D1 export
   保存位置，并确认 Time Travel/恢复负责人；恢复演练会改写数据，必须另行授权。
-- [ ] 正式上线前决定 production 使用当前还是独立 Cloudflare account，创建独立 D1、Secrets 和
-  Provider 资源，并决定是否绑定自定义域名；不得复用 staging database、credential 或 bucket。
+- [ ] 为 production 配置独立 Secret、执行首次 migration/deploy、初始化管理员并完成 readiness
+  验收；Provider 资源和自定义域名可在空控制面上线后独立配置，不得复用 staging database、
+  credential 或 bucket。
 - [x] 无 Cloudflare 凭据的 GitHub Actions 验证工作流已覆盖 pull request 和手动触发，运行 `npm ci`
   与 `npm run verify`；branch push 不重复运行，工作流只有仓库只读权限且 checkout 不持久化
   credential，不部署或执行 migration（2026-09-05）。

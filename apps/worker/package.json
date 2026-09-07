@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "wrangler deploy --dry-run --env=\"\" --outdir ../../dist/worker",
+    "build:production": "wrangler deploy --dry-run --env production --outdir ../../dist/worker-production",
     "cf:typegen": "wrangler types src/generated/worker-configuration.d.ts --include-runtime false",
     "db:migrate:local": "wrangler d1 migrations apply openpool --local",
+    "db:migrate:production": "wrangler d1 migrations apply DB --remote --env production",
     "db:migrate:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "deploy:production": "wrangler deploy --env production --strict",
     "deploy:staging": "wrangler deploy --env staging",
     "dev": "wrangler dev --port 8787",
     "dev:scheduled": "wrangler dev --port 8787 --test-scheduled",

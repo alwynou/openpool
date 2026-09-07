@@ -6,6 +6,10 @@ The project follows [Semantic Versioning](https://semver.org/). Until `1.0.0`, m
 
 ## [Unreleased]
 
+### Added
+
+- An isolated Cloudflare production environment with explicit D1 migration, Worker deployment, and production dry-run commands.
+
 ## [0.1.0] - 2026-09-07
 
 ### Added
