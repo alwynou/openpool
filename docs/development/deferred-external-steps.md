@@ -50,6 +50,9 @@
 - [x] 仓库已按所有者要求改为 Public；`main` branch protection 对管理员同样生效，要求通过 pull
   request、分支跟上最新 `main` 且 GitHub Actions `Verify` 成功，禁止 force-push 和删除
   （2026-09-05）。
+- [x] 经所有者继续授权，已启用 GitHub private vulnerability reporting、Dependabot alerts/security
+  updates、Secret Scanning 与 Push Protection，并用只读 API 复核状态（2026-09-07）。GitHub 当前未为
+  此仓库启用 non-provider pattern 与 validity checks，不把这两项记录为已完成。
 - [ ] 如启用自动部署/CD，创建最小权限 Cloudflare API token 并通过 CI secret 注入；验证 CI 不需要
   也不得提前持有该 token。
 
