@@ -14,7 +14,7 @@ OpenPool is currently an early release candidate. Security fixes are applied to 
 
 Do not open a public issue for a suspected vulnerability. Do not publish provider credentials, OpenPool API keys, session cookies, signed URLs, Cloudflare account IDs, private object names, database exports, or logs containing real object metadata.
 
-If GitHub shows a **Report a vulnerability** button on the repository's Security page, use it to submit a private report. If that option is unavailable, use the contact information on the [maintainer's GitHub profile](https://github.com/alwynou) to request a private reporting channel without including sensitive details in the initial message.
+Use the repository's [private vulnerability reporting form](https://github.com/alwynou/openpool/security/advisories/new) to submit a report. If GitHub does not make that form available to you, open a minimal public issue requesting a private contact channel without including vulnerability details, credentials, or other sensitive information.
 
 Once a private channel is established, include:
 

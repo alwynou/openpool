@@ -57,6 +57,8 @@ The core V1 control plane has passed local verification and staging acceptance a
 
 For the exact completion state and remaining work, see the [roadmap](docs/roadmap.md) and [V1 acceptance checklist](docs/development/v1-acceptance.md).
 
+Notable project changes are recorded in the [changelog](CHANGELOG.md). The proposed stable release scope and remaining release gates are tracked in the [`v0.1.0` release draft](docs/releases/v0.1.0.md).
+
 ## Quick start
 
 ### Prerequisites
@@ -143,6 +145,8 @@ OpenPool does not yet provide a full S3-compatible gateway, multipart resumable 
 ## Documentation
 
 - [Documentation index](docs/README.md)
+- [Changelog](CHANGELOG.md)
+- [`v0.1.0` release draft](docs/releases/v0.1.0.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Local development](docs/development/getting-started.md)
 - [Provider integration](docs/providers/README.md)

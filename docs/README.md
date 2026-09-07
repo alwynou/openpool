@@ -2,6 +2,11 @@
 
 先读 [架构总览](architecture/overview.md)。之后按任务进入对应文档，不需要一次性读取全部内容。
 
+## 发布
+
+- [Changelog](../CHANGELOG.md)：版本间的重要变化。
+- [`v0.1.0` 发布说明草案](releases/v0.1.0.md)：正式发布范围、已知限制和发布门槛。
+
 ## 架构
 
 - [架构总览](architecture/overview.md)：系统、请求流与代码层次。
