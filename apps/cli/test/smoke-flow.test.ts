@@ -36,6 +36,8 @@ function metadata(id: string, key: string, sizeBytes: number, status: ObjectMeta
   return {
     id, logicalBucketId: options.bucketId, logicalKey: key, sizeBytes,
     contentType: 'application/octet-stream', checksum: null, status,
+    publicAccessMode: 'INHERIT', publicAccessExpiresAt: null,
+    publicUrl: `https://staging.example/public/objects/${id}`,
     createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z',
   };
 }

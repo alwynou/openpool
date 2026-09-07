@@ -153,6 +153,7 @@ Cloudflare 保存的 Secret 实际格式。
 4. `0004_shard_migrations.sql`：持久化迁移任务、对象租约与目标容量预留；
 5. `0005_transactional_audit_outbox.sql`：同事务审计 outbox、幂等投递与重试。
 6. `0006_upload_retries.sql`：每对象一个 current session、历史上传 location 绑定与重试约束。
+7. `0007_public_access.sql`：Bucket 公开默认值、对象公开覆盖策略及到期约束。
 
 不要单独跳过或手工重排迁移，也不要编辑已经在共享/远端环境执行过的 SQL。迁移前由所有者确认账号、
 D1 database ID、当前版本和维护窗口，保存受保护的 D1 export（导出含 schema、metadata、audit 和
@@ -197,6 +198,11 @@ npm run db:migrate:production
 数据库，再进行 Worker 部署。生产 `APP_ENV` 应使用 Wrangler environment 或 CI 配置覆盖，不能保留
 `development`。
 
+`0007` 是配套 Worker 的前置条件：新 Worker 的对象与 Bucket 查询会读取新增列，所以必须先迁移
+目标 D1，再部署 Worker/Web。迁移本身使用私有默认值，不会把既有对象意外公开；旧 Worker 会忽略
+新增列，因此需要回滚应用版本时无需回滚 schema。`0007` 当前只在临时测试 D1 验证，尚未应用到
+staging 或 production；两套环境需要分别核对 history、备份决策和明确授权。
+
 ### 发布命令
 
 仓库根目录的 `npm run deploy:staging` 和 `npm run deploy:production` 都先构建 Web，再部署对应
@@ -222,8 +228,9 @@ Worker 与 production 配置，不访问远端。
 ## 自定义域名
 
 首个部署成功后，在 Cloudflare Dashboard 的 Worker Routes/Custom Domains 为 Worker 绑定例如
-`oss.example.com`。API 与后台共用该域名，`/api/*` 先进入 Worker，其余路径优先由 Static Assets
-处理并支持 SPA fallback。
+`oss.example.com`。API 与后台共用该域名，`/api/*` 和 `/public/*` 必须先进入 Worker，其余路径优先
+由 Static Assets 处理并支持 SPA fallback。若 `/public/*` 未配置 `run_worker_first`，不存在的静态资源
+可能被 SPA fallback 吞掉，公开链接将无法签名或返回正确的 404。
 
 当前 production 的规范入口为 `https://openpool.alwynou.com`，通过 `env.production.routes` 的
 `custom_domain` 声明绑定；`workers_dev` 保持启用，使

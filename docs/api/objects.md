@@ -104,3 +104,47 @@ logical key 保持不变。新 session ID 和 physical key 独立；旧 session 
 
 删除可安全重试：Provider 返回 404 表示目标状态已经达到；D1 只在第一次
 `DELETING → DELETED` 时释放容量。签名 URL 不写入 D1、audit metadata 或日志。
+
+## 稳定公开链接（需要 `0007` migration 与配套 Worker）
+
+每个对象元数据响应额外返回以下字段：
+
+```json
+{
+  "publicAccessMode": "INHERIT",
+  "publicAccessExpiresAt": null,
+  "publicUrl": "https://openpool.example/public/objects/object-id"
+}
+```
+
+`publicUrl` 是当前 OpenPool origin 下的稳定地址，不包含 logical key、Provider、物理 Bucket 或签名。
+它即使在对象当前私有时也会返回，便于管理员预先复制；是否允许访问在每次请求时重新判断。
+
+管理员通过 `PATCH /api/v1/objects/:id/public-access` 设置单文件策略：
+
+```json
+{
+  "mode": "PUBLIC",
+  "expiresAt": "2026-09-08T00:00:00.000Z",
+  "expectedUpdatedAt": "2026-09-07T12:00:00.000Z"
+}
+```
+
+- `INHERIT` 跟随 Logical Bucket 的默认设置；
+- `PUBLIC` 显式公开，可把 `expiresAt` 设为未来的 canonical UTC 时间，或用 `null` 表示不过期；
+- `PRIVATE` 显式私有，即使 Bucket 已公开也不允许匿名读取。
+
+只有 `READY` 对象可更新，`expiresAt` 仅能与 `PUBLIC` 同时使用。`expectedUpdatedAt` 执行乐观并发
+控制，过时值返回 `409 OBJECT_CONFLICT`。该接口只接受管理员 session；API Key 即使拥有对象读写
+scope 也返回 `403 FORBIDDEN`。
+
+匿名客户端请求 `GET /public/objects/:id`。若策略允许，Worker 根据当前 primary location 生成最长
+60 秒的 Provider signed GET，并返回空 body 的 `302`；浏览器随后直接从 R2/B2 读取字节。响应包含
+`Cache-Control: no-store`、`Referrer-Policy: no-referrer` 与 `X-Content-Type-Options: nosniff`。
+不存在、非 READY、私有或已过期对象统一返回空 body `404`，避免泄漏对象是否存在；query string
+同样被拒绝。Provider 限流可返回 `429`，临时 Provider/vault 故障返回 `503`。
+
+关闭公开访问会立即阻止新的重定向，但已经签发的 Provider URL 最多在其剩余 60 秒内继续有效。
+公开读取不写 audit outbox，避免匿名流量造成 D1 写放大；策略变更仍与对应审计事件同事务提交。
+Bucket 公开不提供匿名列表。设计依据见
+[ADR 0006](../architecture/decisions/0006-stable-public-object-links.md)。

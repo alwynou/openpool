@@ -65,6 +65,12 @@ production Provider 资源/自定义域名、自动部署所需 token、受保�
   已原子覆盖认证 session、API Key create/revoke、Storage Account、Logical Bucket、Storage Shard、
   Object 与 Shard Migration 的全部现有 mutation；staging `0005` migration/deploy、投递前后可见性、
   稳定 event id 与去重已验证。
+- 稳定公开对象链接（本地实现完成）：Bucket 默认公开、单文件 `INHERIT/PUBLIC/PRIVATE` 覆盖、可选
+  到期时间、管理员控制台与最长 60 秒 Provider signed GET 重定向；公开流量不代理对象字节且不写
+  D1 audit。`0007` 尚未应用到 staging/production，配套 Worker/Web 也尚未部署；真实 R2/B2、自定义
+  域名、过期和撤销窗口验收待单独远端授权。见
+  [ADR 0006](architecture/decisions/0006-stable-public-object-links.md)和
+  [本地验收](development/public-object-access.md)。
 - Generic S3 compatibility：现有 adapter 只作为实验预览；进入正式支持前完成外部服务、CORS、
   addressing style 与错误分类验收；
 - GitHub/static tier；
@@ -90,5 +96,7 @@ production Provider 资源/自定义域名、自动部署所需 token、受保�
   不支持覆盖 READY、删除后复用路径、版本历史浏览或 multipart 断点续传。
 - 没有无人值守的自动 migration、自动 replication、自动修复或完整 S3 gateway；发布命令可串联
   迁移但仍需用户明确授权。对象内容始终由客户端通过短期签名 URL 直传/直取 Provider。
+- 公开链接只提供按 object ID 的读取，不提供匿名 Bucket 列表、自定义公开路径或自定义响应 header；
+  关闭策略后，已签发的 Provider URL 最长仍可使用 60 秒。
 - V1 audit log 用于运维追踪。全部现有 business mutation 已使用同事务 outbox；没有对应业务写入的
   签名下载和 API Key 授权事件直接 append 到 outbox。outbox Cron 使用 lease、event id 幂等和退避。

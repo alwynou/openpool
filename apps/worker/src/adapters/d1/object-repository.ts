@@ -13,11 +13,13 @@ import type {
 } from '@openpool/application';
 import {
   objectStatuses,
+  publicAccessModes,
   uploadSessionStatuses,
   validateObjectInput,
   validatePhysicalBucketName,
   type ObjectLocation,
   type ObjectStatus,
+  type PublicAccessMode,
   type StoredObject,
   type UploadSession,
   type UploadSessionStatus,
@@ -28,6 +30,7 @@ type DatabaseRow = Record<string, unknown>;
 
 const objectStatusSet = new Set<ObjectStatus>(objectStatuses);
 const uploadStatusSet = new Set<UploadSessionStatus>(uploadSessionStatuses);
+const publicAccessModeSet = new Set<PublicAccessMode>(publicAccessModes);
 
 const objectColumns = `
   object.id,
@@ -37,6 +40,8 @@ const objectColumns = `
   object.content_type,
   object.checksum,
   object.status,
+  object.public_access_mode,
+  object.public_access_expires_at,
   object.created_at,
   object.updated_at`;
 
@@ -83,6 +88,10 @@ function nullableText(value: unknown, field: string): string | null {
   return value;
 }
 
+function nullableTimestamp(value: unknown, field: string): string | null {
+  return value === null ? null : timestamp(value, field);
+}
+
 function nonNegativeInteger(value: unknown, field: string): number {
   if (
     typeof value !== 'number' ||
@@ -117,6 +126,15 @@ function mapObject(row: DatabaseRow): StoredObject {
     contentType: text(row.content_type, 'object.content_type'),
     checksum: nullableText(row.checksum, 'object.checksum'),
     status: oneOf(row.status, objectStatusSet, 'object.status'),
+    publicAccessMode: oneOf(
+      row.public_access_mode,
+      publicAccessModeSet,
+      'object.public_access_mode',
+    ),
+    publicAccessExpiresAt: nullableTimestamp(
+      row.public_access_expires_at,
+      'object.public_access_expires_at',
+    ),
     createdAt: text(row.created_at, 'object.created_at'),
     updatedAt: text(row.updated_at, 'object.updated_at'),
   };
@@ -129,6 +147,12 @@ function mapObject(row: DatabaseRow): StoredObject {
     );
   } catch {
     failClosed('object.state');
+  }
+  if (
+    object.publicAccessMode !== 'PUBLIC' &&
+    object.publicAccessExpiresAt !== null
+  ) {
+    failClosed('object.public_access.state');
   }
   return object;
 }
@@ -236,6 +260,8 @@ function validateReservation(
     content_type: object.contentType,
     checksum: object.checksum,
     status: object.status,
+    public_access_mode: object.publicAccessMode,
+    public_access_expires_at: object.publicAccessExpiresAt,
     created_at: object.createdAt,
     updated_at: object.updatedAt,
   });
@@ -362,8 +388,9 @@ export class D1ObjectRepository implements ObjectRepository {
           .prepare(
             `INSERT INTO objects
              (id, logical_bucket_id, logical_key, size_bytes, content_type,
-              checksum, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              checksum, status, public_access_mode, public_access_expires_at,
+              created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             object.id,
@@ -373,12 +400,22 @@ export class D1ObjectRepository implements ObjectRepository {
             object.contentType,
             object.checksum,
             object.status,
+            object.publicAccessMode,
+            object.publicAccessExpiresAt,
             object.createdAt,
             object.updatedAt,
           ) : this.db.prepare(
             `UPDATE objects SET size_bytes = ?, content_type = ?, checksum = NULL,
+               public_access_mode = ?, public_access_expires_at = ?,
                updated_at = ? WHERE id = ? AND status = 'PENDING'`,
-          ).bind(object.sizeBytes, object.contentType, object.updatedAt, object.id),
+          ).bind(
+            object.sizeBytes,
+            object.contentType,
+            object.publicAccessMode,
+            object.publicAccessExpiresAt,
+            object.updatedAt,
+            object.id,
+          ),
         this.mutationAssertion(),
         this.db
           .prepare(
@@ -486,6 +523,61 @@ export class D1ObjectRepository implements ObjectRepository {
       .bind(...bindings)
       .all<DatabaseRow>();
     return result.results.map(mapObject);
+  }
+
+  async updatePublicAccess(
+    object: StoredObject,
+    expectedUpdatedAt: string,
+    audit: AuditLogEntry,
+  ): Promise<boolean> {
+    // Reuse the persisted-row mapper as the canonical validation for the
+    // policy fields, including the non-PUBLIC/NULL expiry invariant.
+    mapObject({
+      id: object.id,
+      logical_bucket_id: object.logicalBucketId,
+      logical_key: object.logicalKey,
+      size_bytes: object.sizeBytes,
+      content_type: object.contentType,
+      checksum: object.checksum,
+      status: object.status,
+      public_access_mode: object.publicAccessMode,
+      public_access_expires_at: object.publicAccessExpiresAt,
+      created_at: object.createdAt,
+      updated_at: object.updatedAt,
+    });
+    text(expectedUpdatedAt, 'public_access.expected_updated_at');
+    try {
+      const results = await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE objects
+             SET public_access_mode = ?, public_access_expires_at = ?,
+                 updated_at = ?
+             WHERE id = ? AND status = 'READY' AND updated_at = ?`,
+          )
+          .bind(
+            object.publicAccessMode,
+            object.publicAccessExpiresAt,
+            object.updatedAt,
+            object.id,
+            expectedUpdatedAt,
+          ),
+        this.mutationAssertion(),
+        this.auditStatement(audit),
+      ]);
+      return results[0]?.meta.changes === 1;
+    } catch (error) {
+      // A zero-row conditional update is converted into an assertion failure
+      // by the same batch. Only that expected stale/not-found signal becomes
+      // false; audit insertion failures remain hard errors (fail closed).
+      if (
+        error instanceof Error &&
+        error.message.includes('openpool_object_repository_conflict')
+      ) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async listExpiredPendingUploads(

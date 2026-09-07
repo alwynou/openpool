@@ -166,6 +166,8 @@ export class CreateUpload {
       contentType,
       checksum: null,
       status: 'PENDING',
+      publicAccessMode: 'INHERIT',
+      publicAccessExpiresAt: null,
       createdAt: previous?.object.createdAt ?? now,
       updatedAt: now,
     };

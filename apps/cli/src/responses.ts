@@ -18,14 +18,18 @@ function string(value: unknown): string {
 export function metadata(value: unknown): ObjectMetadataResponse {
   const object = record(value);
   const status = object.status;
+  const publicAccessMode = object.publicAccessMode;
   if (status !== 'PENDING' && status !== 'READY' && status !== 'DELETING' && status !== 'DELETED') protocol();
+  if (publicAccessMode !== 'INHERIT' && publicAccessMode !== 'PUBLIC' && publicAccessMode !== 'PRIVATE') protocol();
   if (typeof object.sizeBytes !== 'number' || !Number.isSafeInteger(object.sizeBytes) || object.sizeBytes < 0) protocol();
   if (object.checksum !== null && typeof object.checksum !== 'string') protocol();
+  if (object.publicAccessExpiresAt !== null && typeof object.publicAccessExpiresAt !== 'string') protocol();
   // Select public fields rather than printing an unchecked SDK response.
   return {
     id: string(object.id), logicalBucketId: string(object.logicalBucketId), logicalKey: string(object.logicalKey),
     sizeBytes: object.sizeBytes, contentType: string(object.contentType), checksum: object.checksum,
-    status, createdAt: string(object.createdAt), updatedAt: string(object.updatedAt),
+    status, publicAccessMode, publicAccessExpiresAt: object.publicAccessExpiresAt,
+    publicUrl: string(object.publicUrl), createdAt: string(object.createdAt), updatedAt: string(object.updatedAt),
   };
 }
 

@@ -87,10 +87,29 @@ export function createHttpApp(
     context.header('x-request-id', requestId);
   });
 
+  app.use('/public/*', async (context, next) => {
+    const requestId = requestIdFor(context.req.raw);
+    context.set('requestId', requestId);
+    await next();
+    context.header('x-request-id', requestId);
+  });
+
   app.use('/api/*', async (context, next) => {
     if (context.req.path === '/api/v1/health') return next();
     const issues = dependencies.inspectDeploymentConfiguration(context.env);
     if (issues.length > 0) {
+      return context.json(
+        deploymentNotReady(context.get('requestId'), issues),
+        503,
+      );
+    }
+    return next();
+  });
+
+  app.use('/public/*', async (context, next) => {
+    const issues = dependencies.inspectDeploymentConfiguration(context.env);
+    if (issues.length > 0) {
+      context.header('cache-control', 'no-store');
       return context.json(
         deploymentNotReady(context.get('requestId'), issues),
         503,

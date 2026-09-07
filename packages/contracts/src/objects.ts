@@ -1,4 +1,6 @@
 export type ObjectStatus = 'PENDING' | 'READY' | 'DELETING' | 'DELETED';
+export type PublicAccessMode = 'INHERIT' | 'PUBLIC' | 'PRIVATE';
+export type ObjectPublicAccessMode = PublicAccessMode;
 
 export interface CreateUploadRequest {
   readonly bucketId: string;
@@ -37,8 +39,17 @@ export interface ObjectMetadataResponse {
   readonly contentType: string;
   readonly checksum: string | null;
   readonly status: ObjectStatus;
+  readonly publicAccessMode: PublicAccessMode;
+  readonly publicAccessExpiresAt: string | null;
+  readonly publicUrl: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface UpdateObjectPublicAccessRequest {
+  readonly mode: PublicAccessMode;
+  readonly expiresAt: string | null;
+  readonly expectedUpdatedAt: string;
 }
 
 export interface CompleteUploadResponse {

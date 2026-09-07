@@ -24,11 +24,12 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const mock = vi.mocked(api);
 const now = '2026-09-03T00:00:00.000Z';
 const buckets: LogicalBucketResponse[] = ['documents', 'photos'].map((name, index) => ({
-  id: `bucket-${index + 1}`, name, description: null, createdAt: now, updatedAt: now,
+  id: `bucket-${index + 1}`, name, description: null, publicAccessEnabled: false, createdAt: now, updatedAt: now,
 }));
 const pendingObject = (id = 'pending-1', key = 'reports/pending.txt'): ObjectMetadataResponse => ({
   id, logicalBucketId: 'bucket-1', logicalKey: key, sizeBytes: 5, contentType: 'text/plain',
-  checksum: null, status: 'PENDING', createdAt: now, updatedAt: now,
+  checksum: null, status: 'PENDING', publicAccessMode: 'INHERIT', publicAccessExpiresAt: null,
+  publicUrl: `https://control.example/public/objects/${id}`, createdAt: now, updatedAt: now,
 });
 const file = (name = 'source.txt') => new File(['hello'], name, { type: 'text/plain' });
 const fileInput = () => screen.getByLabelText<HTMLInputElement>('File', { exact: true });
@@ -117,6 +118,67 @@ async function failConfirmation(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('Files page upload recovery interactions', () => {
+  it('updates a ready file public policy and exposes its stable link', async () => {
+    objects = [{ ...pendingObject('image-1', 'images/example.png'), status: 'READY' }];
+    mock.updateObjectPublicAccess.mockImplementation(async (id, input) => {
+      const found = objects.find((object) => object.id === id);
+      if (!found) throw new Error('Unknown fake object');
+      const updated = {
+        ...found,
+        publicAccessMode: input.mode,
+        publicAccessExpiresAt: input.expiresAt,
+      };
+      objects = objects.map((object) => (object.id === id ? updated : object));
+      return updated;
+    });
+    const user = await setup();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Manage public access for images/example.png',
+      }),
+    );
+    expect(screen.getByDisplayValue(objects[0]?.publicUrl ?? '')).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText(/^Access policy/u), 'PUBLIC');
+    fireEvent.change(screen.getByLabelText(/^Public until/u), {
+      target: { value: '2099-01-02T03:04' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Save public access' }));
+
+    await waitFor(() =>
+      expect(mock.updateObjectPublicAccess).toHaveBeenCalledWith('image-1', {
+        mode: 'PUBLIC',
+        expiresAt: new Date('2099-01-02T03:04').toISOString(),
+        expectedUpdatedAt: now,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Save public access' }),
+      ).toBeNull(),
+    );
+  });
+
+  it('rejects an expired file public policy before calling the API', async () => {
+    objects = [{ ...pendingObject('image-1', 'images/example.png'), status: 'READY' }];
+    const user = await setup();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Manage public access for images/example.png',
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText(/^Access policy/u), 'PUBLIC');
+    fireEvent.change(screen.getByLabelText(/^Public until/u), {
+      target: { value: '2000-01-01T00:00' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Save public access' }));
+
+    expect(
+      screen.getByText('The public expiry must be a future date and time.'),
+    ).toBeTruthy();
+    expect(mock.updateObjectPublicAccess).not.toHaveBeenCalled();
+  });
+
   it('uploads directly, refreshes READY metadata and resets the complete form', async () => {
     const user = await setup();
     const source = file();

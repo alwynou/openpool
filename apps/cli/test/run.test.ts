@@ -12,6 +12,8 @@ const env = { OPENPOOL_BASE_URL: 'https://control.example', OPENPOOL_API_KEY: ap
   OPENPOOL_SESSION_COOKIE: 'openpool_session=must-never-be-sent' };
 const object = { id: 'object-1', logicalBucketId: 'bucket-1', logicalKey: 'folder/file.bin ', sizeBytes: 3,
   contentType: 'application/octet-stream', checksum: null, status: 'READY',
+  publicAccessMode: 'INHERIT', publicAccessExpiresAt: null,
+  publicUrl: 'https://control.example/public/objects/object-1',
   createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z' };
 const reserved = { objectId: object.id, uploadSessionId: 'new-session',
   uploadUrl: 'https://provider.example/upload?signature=never-print-this', expiresAt: '2026-09-03T00:15:00.000Z' };

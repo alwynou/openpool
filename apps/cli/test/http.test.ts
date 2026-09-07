@@ -56,14 +56,17 @@ describe('CLI with real loopback HTTP and native file-backed Fetch', () => {
   let providerHeadersSafe: boolean;
   let contentLengthCorrect: boolean;
   let metadata: { id: string; logicalBucketId: string; logicalKey: string; sizeBytes: number; contentType: string;
-    status: string; checksum: null; createdAt: string; updatedAt: string };
+    status: string; checksum: null; publicAccessMode: 'INHERIT'; publicAccessExpiresAt: null;
+    publicUrl: string; createdAt: string; updatedAt: string };
 
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'openpool-cli-http-'));
     attempt = 0; session = ''; stored = undefined; failPut = false; loseCompletion = false; uploadOnly = false;
     controlBodySizes = []; puts = 0; providerHeadersSafe = true; contentLengthCorrect = true;
     metadata = { id: 'object-1', logicalBucketId: 'bucket-1', logicalKey: '', sizeBytes: 0, contentType: '',
-      status: 'PENDING', checksum: null, createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z' };
+      status: 'PENDING', checksum: null, publicAccessMode: 'INHERIT', publicAccessExpiresAt: null,
+      publicUrl: 'https://control.example/public/objects/object-1',
+      createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z' };
     control = createServer((request, response) => {
       void (async () => {
         if (request.headers.authorization !== 'Bearer opk_local-test' || request.headers.cookie !== undefined) {

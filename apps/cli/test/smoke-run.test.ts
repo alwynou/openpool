@@ -10,7 +10,9 @@ import type { CommandResult } from '../src/smoke/child.js';
 const options = { baseUrl: 'https://control.example', apiKey: 'opk_fake-smoke-secret', bucketId: 'bucket-1', prefix: 'cli-smoke/', sizeBytes: 1_000_000 };
 const object = (key: string, status: ObjectMetadataResponse['status'] = 'READY'): ObjectMetadataResponse => ({
   id: 'object-1', logicalBucketId: 'bucket-1', logicalKey: key, sizeBytes: 100, contentType: 'application/octet-stream', checksum: null,
-  status, createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z',
+  status, publicAccessMode: 'INHERIT', publicAccessExpiresAt: null,
+  publicUrl: 'https://control.example/public/objects/object-1',
+  createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z',
 });
 const report = (): SmokeReport => ({ runId: 'unique-run', prefix: 'cli-smoke/unique-run/', sizeBytes: 1_000_000,
   startedAt: '2026-09-03T00:00:00.000Z', status: 'RUNNING', checks: [], objects: [], commands: [], pendingCleanup: [], failures: [], localDataRemoved: false });

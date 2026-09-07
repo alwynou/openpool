@@ -85,6 +85,17 @@ describe('health endpoint', () => {
     expect(await gated.json()).toMatchObject({
       error: { code: 'DEPLOYMENT_NOT_READY' },
     });
+
+    const publicGated = await dispatch(
+      invalidEnv,
+      '/public/objects/object-1',
+    );
+    expect(publicGated.status).toBe(503);
+    expect(publicGated.headers.get('cache-control')).toBe('no-store');
+    expect(publicGated.headers.get('x-request-id')).toBeTruthy();
+    expect(await publicGated.json()).toMatchObject({
+      error: { code: 'DEPLOYMENT_NOT_READY' },
+    });
   });
 
   it('requires bootstrap only before initialization and rejects it afterward outside development', async () => {

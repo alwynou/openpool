@@ -11,9 +11,11 @@ import type {
   SwitchShardMigrationPrimaryResult,
 } from '@openpool/application';
 import type { D1AuditOutboxRepository } from './audit-outbox-repository';
+import { publicAccessModes } from '@openpool/domain';
 import type {
   ObjectLocation,
   ObjectStatus,
+  PublicAccessMode,
   ShardMigration,
   ShardMigrationObject,
   ShardMigrationObjectStatus,
@@ -38,6 +40,7 @@ const objectStatuses = new Set<ObjectStatus>([
   'DELETING',
   'DELETED',
 ]);
+const publicAccessModeSet = new Set<PublicAccessMode>(publicAccessModes);
 
 interface MigrationRow {
   readonly id: unknown;
@@ -69,6 +72,8 @@ interface TransferRow extends MigrationRow {
   readonly content_type: unknown;
   readonly checksum: unknown;
   readonly object_status: unknown;
+  readonly public_access_mode: unknown;
+  readonly public_access_expires_at: unknown;
   readonly object_created_at: unknown;
   readonly object_updated_at: unknown;
   readonly source_storage_account_id: unknown;
@@ -100,6 +105,19 @@ function text(value: unknown, field: string): string {
 
 function nullableText(value: unknown, field: string): string | null {
   if (value !== null && typeof value !== 'string') failClosed(field);
+  return value;
+}
+
+function nullableTimestamp(value: unknown, field: string): string | null {
+  if (value === null) return null;
+  const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN;
+  if (
+    typeof value !== 'string' ||
+    !Number.isFinite(parsed) ||
+    new Date(parsed).toISOString() !== value
+  ) {
+    failClosed(field);
+  }
   return value;
 }
 
@@ -200,9 +218,24 @@ function mapTransfer(row: TransferRow): ShardMigrationTransferAggregate {
     contentType: text(row.content_type, 'object.content_type'),
     checksum: nullableText(row.checksum, 'object.checksum'),
     status: oneOf(row.object_status, objectStatuses, 'object.status'),
+    publicAccessMode: oneOf(
+      row.public_access_mode,
+      publicAccessModeSet,
+      'object.public_access_mode',
+    ),
+    publicAccessExpiresAt: nullableTimestamp(
+      row.public_access_expires_at,
+      'object.public_access_expires_at',
+    ),
     createdAt: text(row.object_created_at, 'object.created_at'),
     updatedAt: text(row.object_updated_at, 'object.updated_at'),
   };
+  if (
+    object.publicAccessMode !== 'PUBLIC' &&
+    object.publicAccessExpiresAt !== null
+  ) {
+    failClosed('object.public_access.state');
+  }
   const task: ShardMigrationObject = {
     id: text(row.task_id, 'task.id'),
     migrationId: text(row.id, 'task.migration_id'),
@@ -264,6 +297,7 @@ const transferColumns = `
   task.completed_at AS task_completed_at,
   object.logical_bucket_id, object.logical_key, object.size_bytes,
   object.content_type, object.checksum, object.status AS object_status,
+  object.public_access_mode, object.public_access_expires_at,
   object.created_at AS object_created_at,
   object.updated_at AS object_updated_at,
   source.storage_account_id AS source_storage_account_id,

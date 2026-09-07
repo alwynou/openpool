@@ -76,6 +76,7 @@ const bucket: LogicalBucket = {
   id: 'bucket-1',
   name: 'documents',
   description: null,
+  publicAccessEnabled: false,
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
@@ -245,6 +246,8 @@ async function setupReadyObject(): Promise<{
     contentType: 'text/plain',
     checksum: null,
     status: 'PENDING',
+    publicAccessMode: 'INHERIT',
+    publicAccessExpiresAt: null,
     createdAt: '2026-09-01T00:01:00.000Z',
     updatedAt: '2026-09-01T00:01:00.000Z',
   };
@@ -526,6 +529,8 @@ describe('shard migration D1 repository', () => {
       contentType: 'text/plain',
       checksum: null,
       status: 'PENDING',
+      publicAccessMode: 'INHERIT',
+      publicAccessExpiresAt: null,
       createdAt: '2026-09-01T00:08:00.000Z',
       updatedAt: '2026-09-01T00:08:00.000Z',
     };

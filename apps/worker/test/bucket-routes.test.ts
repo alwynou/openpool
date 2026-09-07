@@ -31,6 +31,7 @@ const bucket: LogicalBucket = {
   id: 'bucket-1',
   name: 'Documents',
   description: 'Logical documents',
+  publicAccessEnabled: false,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -67,6 +68,11 @@ function createTestApp(overrides: TestOverrides = {}) {
     { ...bucket, providerCredentials: 'must-not-leak' },
   ]);
   const getBucket = vi.fn(async () => ({ ...bucket, secret: 'must-not-leak' }));
+  const updateBucketPublicAccess = vi.fn(async () => ({
+    ...bucket,
+    publicAccessEnabled: true,
+    updatedAt: '2026-01-01T00:02:00.000Z',
+  }));
   const createShard = vi.fn(async () => ({
     ...shard,
     credentialEnvelope: 'must-not-leak',
@@ -83,6 +89,7 @@ function createTestApp(overrides: TestOverrides = {}) {
     createBucket: { execute: createBucket },
     listBuckets: { execute: listBuckets },
     getBucket: { execute: getBucket },
+    updateBucketPublicAccess: { execute: updateBucketPublicAccess },
     createShard: { execute: createShard },
     listShards: { execute: listShards },
     transitionShard: { execute: transitionShard },
@@ -111,6 +118,7 @@ function createTestApp(overrides: TestOverrides = {}) {
     createBucket,
     listBuckets,
     getBucket,
+    updateBucketPublicAccess,
     createShard,
     listShards,
     transitionShard,
@@ -150,6 +158,7 @@ describe('logical bucket and storage shard HTTP adapter', () => {
       ['/api/v1/buckets', 'GET'],
       ['/api/v1/buckets', 'POST'],
       ['/api/v1/buckets/bucket-1', 'GET'],
+      ['/api/v1/buckets/bucket-1/public-access', 'PATCH'],
       ['/api/v1/buckets/bucket-1/shards', 'GET'],
       ['/api/v1/buckets/bucket-1/shards', 'POST'],
       ['/api/v1/shards/shard-1/status', 'PATCH'],
@@ -167,6 +176,42 @@ describe('logical bucket and storage shard HTTP adapter', () => {
       });
     }
     expect(dependencies.createUseCases).not.toHaveBeenCalled();
+  });
+
+  it('updates bucket public access with optimistic concurrency', async () => {
+    const { app, updateBucketPublicAccess } = createTestApp();
+    const response = await request(
+      app,
+      `/api/v1/buckets/${bucket.id}/public-access`,
+      jsonInit('PATCH', {
+        enabled: true,
+        expectedUpdatedAt: bucket.updatedAt,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: {
+        ...bucket,
+        publicAccessEnabled: true,
+        updatedAt: '2026-01-01T00:02:00.000Z',
+      },
+      requestId: 'request-1',
+    });
+    expect(updateBucketPublicAccess).toHaveBeenCalledWith({
+      actorId: administrator.id,
+      bucketId: bucket.id,
+      enabled: true,
+      expectedUpdatedAt: bucket.updatedAt,
+    });
+
+    const malformed = await request(
+      app,
+      `/api/v1/buckets/${bucket.id}/public-access`,
+      jsonInit('PATCH', { enabled: true, expectedUpdatedAt: bucket.updatedAt, extra: true }),
+    );
+    expect(malformed.status).toBe(400);
+    expect(updateBucketPublicAccess).toHaveBeenCalledOnce();
   });
 
   it('creates, lists, and gets logical buckets with safe responses', async () => {

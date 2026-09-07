@@ -2,6 +2,8 @@ import {
   ArrowRightIcon,
   CaretDownIcon,
   FolderSimpleIcon,
+  GlobeIcon,
+  LockIcon,
   PlusIcon,
   SquaresFourIcon,
 } from '@phosphor-icons/react';
@@ -17,7 +19,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
-import { Dialog } from '../components/dialogs';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
 import {
   Button,
   EmptyState,
@@ -176,6 +178,9 @@ function BucketPanel({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingPublicAccess, setPendingPublicAccess] = useState<boolean | null>(
+    null,
+  );
   const [migrationSelection, setMigrationSelection] =
     useState<MigrationSelection | null>(null);
   const shardsQuery = useQuery({
@@ -247,6 +252,18 @@ function BucketPanel({
       toast.success(t('Shard migration started'));
     },
   });
+  const publicAccessMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.updateBucketPublicAccess(bucket.id, {
+        enabled,
+        expectedUpdatedAt: bucket.updatedAt,
+      }),
+    onSuccess: async () => {
+      setPendingPublicAccess(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.buckets });
+      toast.success(t('Bucket public access updated'));
+    },
+  });
   const shards = shardsQuery.data ?? [];
   const migrations = migrationsQuery.data ?? [];
   const completedMigrations = migrations.filter(
@@ -282,9 +299,24 @@ function BucketPanel({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <StatusBadge value={bucket.publicAccessEnabled ? 'PUBLIC' : 'PRIVATE'} />
           <span className="text-xs text-zinc-500">
             {t('{{count}} shards', { count: shards.length })}
           </span>
+          <Button
+            type="button"
+            size="compact"
+            variant="secondary"
+            disabled={publicAccessMutation.isPending}
+            onClick={() => setPendingPublicAccess(!bucket.publicAccessEnabled)}
+          >
+            {bucket.publicAccessEnabled ? (
+              <LockIcon className="size-3.5" aria-hidden />
+            ) : (
+              <GlobeIcon className="size-3.5" aria-hidden />
+            )}
+            {t(bucket.publicAccessEnabled ? 'Make private' : 'Make public')}
+          </Button>
           <Button
             type="button"
             size="compact"
@@ -319,6 +351,14 @@ function BucketPanel({
           <ErrorNotice
             error={errorText(transitionMutation.error)}
             requestId={errorRequestId(transitionMutation.error)}
+          />
+        </div>
+      ) : null}
+      {publicAccessMutation.error ? (
+        <div className="p-4">
+          <ErrorNotice
+            error={errorText(publicAccessMutation.error)}
+            requestId={errorRequestId(publicAccessMutation.error)}
           />
         </div>
       ) : null}
@@ -567,6 +607,29 @@ function BucketPanel({
           </form>
         ) : null}
       </Dialog>
+
+      <ConfirmDialog
+        open={pendingPublicAccess !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingPublicAccess(null);
+        }}
+        title={t(
+          pendingPublicAccess ? 'Make this bucket public?' : 'Make this bucket private?',
+        )}
+        description={t(
+          pendingPublicAccess
+            ? 'All current and future ready files that inherit the bucket policy will become accessible through their public links.'
+            : 'New public-link requests for files that inherit the bucket policy will return not found. Explicit file overrides are unchanged.',
+        )}
+        confirmLabel={t(pendingPublicAccess ? 'Make public' : 'Make private')}
+        busy={publicAccessMutation.isPending}
+        danger={Boolean(pendingPublicAccess)}
+        onConfirm={() => {
+          if (pendingPublicAccess !== null) {
+            publicAccessMutation.mutate(pendingPublicAccess);
+          }
+        }}
+      />
     </section>
   );
 }

@@ -2,11 +2,13 @@ import {
   ObjectApplicationError,
   type CompleteUpload,
   type CreateDownload,
+  type CreatePublicDownload,
   type CreateUpload,
   type DeleteObject,
   type GetObjectMetadata,
   type GetUploadSession,
   type ListObjectMetadata,
+  type UpdateObjectPublicAccess,
 } from '@openpool/application';
 import type {
   ApiEnvelope,
@@ -19,7 +21,9 @@ import type {
   ListObjectsQuery,
   ObjectErrorCode,
   ObjectMetadataResponse,
+  ObjectPublicAccessMode,
   ObjectStatus,
+  UpdateObjectPublicAccessRequest,
   UploadSessionResponse,
 } from '@openpool/contracts';
 import {
@@ -44,6 +48,11 @@ const OBJECT_STATUSES = new Set<ObjectStatus>([
   'DELETED',
 ]);
 const LIST_QUERY_KEYS = new Set(['status', 'prefix', 'afterKey', 'limit']);
+const PUBLIC_ACCESS_MODES = new Set<ObjectPublicAccessMode>([
+  'INHERIT',
+  'PUBLIC',
+  'PRIVATE',
+]);
 
 export interface ObjectUseCases {
   readonly createUpload: Pick<CreateUpload, 'execute'>;
@@ -52,6 +61,8 @@ export interface ObjectUseCases {
   readonly getObject: Pick<GetObjectMetadata, 'execute'>;
   readonly getUpload: Pick<GetUploadSession, 'execute'>;
   readonly createDownload: Pick<CreateDownload, 'execute'>;
+  readonly createPublicDownload: Pick<CreatePublicDownload, 'execute'>;
+  readonly updateObjectPublicAccess: Pick<UpdateObjectPublicAccess, 'execute'>;
   readonly deleteObject: Pick<DeleteObject, 'execute'>;
 }
 
@@ -153,6 +164,27 @@ function parseCompleteUploadRequest(
   return { uploadSessionId: value.uploadSessionId };
 }
 
+function parseObjectPublicAccessRequest(
+  value: unknown,
+): UpdateObjectPublicAccessRequest | undefined {
+  if (
+    !isPlainObject(value) ||
+    !hasExactKeys(value, ['mode', 'expiresAt', 'expectedUpdatedAt']) ||
+    typeof value.mode !== 'string' ||
+    !PUBLIC_ACCESS_MODES.has(value.mode as ObjectPublicAccessMode) ||
+    (value.expiresAt !== null && typeof value.expiresAt !== 'string') ||
+    typeof value.expectedUpdatedAt !== 'string' ||
+    value.expectedUpdatedAt.length === 0
+  ) {
+    return undefined;
+  }
+  return {
+    mode: value.mode as ObjectPublicAccessMode,
+    expiresAt: value.expiresAt,
+    expectedUpdatedAt: value.expectedUpdatedAt,
+  };
+}
+
 function parseListQuery(request: Request): ListObjectsQuery | undefined {
   const searchParams = new URL(request.url).searchParams;
   const seen = new Set<string>();
@@ -186,7 +218,10 @@ function hasNoQuery(request: Request): boolean {
   return new URL(request.url).search.length === 0;
 }
 
-function objectMetadataResponse(object: StoredObject): ObjectMetadataResponse {
+function objectMetadataResponse(
+  object: StoredObject,
+  requestUrl: string,
+): ObjectMetadataResponse {
   return {
     id: object.id,
     logicalBucketId: object.logicalBucketId,
@@ -195,6 +230,12 @@ function objectMetadataResponse(object: StoredObject): ObjectMetadataResponse {
     contentType: object.contentType,
     checksum: object.checksum,
     status: object.status,
+    publicAccessMode: object.publicAccessMode,
+    publicAccessExpiresAt: object.publicAccessExpiresAt,
+    publicUrl: new URL(
+      `/public/objects/${encodeURIComponent(object.id)}`,
+      requestUrl,
+    ).toString(),
     createdAt: object.createdAt,
     updatedAt: object.updatedAt,
   };
@@ -521,6 +562,33 @@ function addNoStoreMiddleware(app: Hono<AppEnvironment>): void {
   app.use('/api/v1/uploads/*', noStore);
   app.use('/api/v1/objects/*', noStore);
   app.use('/api/v1/buckets/*', noStore);
+  app.use('/public/*', noStore);
+}
+
+function publicResponse(
+  status: 302 | 404 | 429 | 503,
+  location?: string,
+): Response {
+  const headers = new Headers({
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  });
+  if (location !== undefined) headers.set('location', location);
+  return new Response(null, { status, headers });
+}
+
+function publicFailureStatus(error: unknown): 404 | 429 | 503 {
+  if (error instanceof ObjectApplicationError) {
+    return error.code === 'OBJECT_NOT_FOUND' ? 404 : 503;
+  }
+  if (error instanceof CredentialVaultError) return 503;
+  if (error instanceof ProviderError) {
+    if (error.code === 'NOT_FOUND') return 404;
+    if (error.code === 'RATE_LIMITED') return 429;
+    return 503;
+  }
+  throw error;
 }
 
 export function registerObjectRoutes(
@@ -528,6 +596,20 @@ export function registerObjectRoutes(
   dependencies: ObjectRouteDependencies,
 ): void {
   addNoStoreMiddleware(app);
+
+  app.get('/public/objects/:id', async (context) => {
+    if (!hasNoQuery(context.req.raw)) return publicResponse(404);
+    try {
+      const result = await dependencies
+        .createObjectUseCases(context.env, context.get('requestId'))
+        .createPublicDownload.execute({
+          objectId: context.req.param('id') ?? '',
+        });
+      return publicResponse(302, result.downloadUrl);
+    } catch (error) {
+      return publicResponse(publicFailureStatus(error));
+    }
+  });
 
   app.post('/api/v1/uploads', async (context) => {
     const requestId = context.get('requestId');
@@ -647,7 +729,7 @@ export function registerObjectRoutes(
         }),
       (result) => {
         const data: CompleteUploadResponse = {
-          object: objectMetadataResponse(result.object),
+          object: objectMetadataResponse(result.object, context.req.url),
           uploadSessionId: result.session.id,
           alreadyCompleted: result.alreadyCompleted,
         };
@@ -700,7 +782,9 @@ export function registerObjectRoutes(
         }),
       (objects) => {
         const response: ApiEnvelope<readonly ObjectMetadataResponse[]> = {
-          data: objects.map(objectMetadataResponse),
+          data: objects.map((object) =>
+            objectMetadataResponse(object, context.req.url),
+          ),
           requestId,
         };
         return context.json(response);
@@ -738,7 +822,7 @@ export function registerObjectRoutes(
     );
     if (forbidden) return forbidden;
     const response: ApiEnvelope<ObjectMetadataResponse> = {
-      data: objectMetadataResponse(object),
+      data: objectMetadataResponse(object, context.req.url),
       requestId,
     };
     return context.json(response);
@@ -798,6 +882,50 @@ export function registerObjectRoutes(
     );
   });
 
+  app.patch('/api/v1/objects/:id/public-access', async (context) => {
+    const requestId = context.get('requestId');
+    const principal = await requirePrincipal(
+      context,
+      dependencies,
+      requestId,
+    );
+    if (principal instanceof Response) return principal;
+    if (principal.actorType !== 'ADMIN') {
+      return jsonError(
+        context,
+        requestId,
+        'FORBIDDEN',
+        'Administrator authentication is required to change public access.',
+        403,
+      );
+    }
+    if (!hasNoQuery(context.req.raw)) return invalidRequest(context, requestId);
+    const input = parseObjectPublicAccessRequest(
+      await readJsonBody(context.req.raw),
+    );
+    if (!input) return invalidRequest(context, requestId);
+
+    return runObjectOperation(
+      context,
+      requestId,
+      () =>
+        dependencies
+          .createObjectUseCases(context.env, requestId)
+          .updateObjectPublicAccess.execute({
+            actorId: principal.actorId,
+            objectId: context.req.param('id') ?? '',
+            ...input,
+          }),
+      (object) => {
+        const response: ApiEnvelope<ObjectMetadataResponse> = {
+          data: objectMetadataResponse(object, context.req.url),
+          requestId,
+        };
+        return context.json(response);
+      },
+    );
+  });
+
   app.delete('/api/v1/objects/:id', async (context) => {
     const requestId = context.get('requestId');
     const principal = await requirePrincipal(
@@ -839,7 +967,7 @@ export function registerObjectRoutes(
         }),
       (object) => {
         const response: ApiEnvelope<ObjectMetadataResponse> = {
-          data: objectMetadataResponse(object),
+          data: objectMetadataResponse(object, context.req.url),
           requestId,
         };
         return context.json(response);

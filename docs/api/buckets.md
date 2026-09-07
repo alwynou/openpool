@@ -10,8 +10,15 @@ Logical Bucket 映射到已验证 Storage Account 上的物理 Bucket。管理 A
   `{ "name": "documents", "description": "optional" }`。
 - `GET /api/v1/buckets`：按创建时间和 ID 稳定排序返回列表。
 - `GET /api/v1/buckets/:id`：读取单个逻辑 Bucket。
+- `PATCH /api/v1/buckets/:id/public-access`：设置继承对象的公开访问默认值，请求体为
+  `{ "enabled": true, "expectedUpdatedAt": "2026-09-07T12:00:00.000Z" }`。
 
 同名 Bucket 的并发创建只允许一个成功；重复返回 `409 LOGICAL_BUCKET_ALREADY_EXISTS`。
+公开访问更新使用 `expectedUpdatedAt` 乐观并发控制，过时值返回 `409 LOGICAL_BUCKET_CONFLICT`。
+响应的 `publicAccessEnabled` 表示 Bucket 默认策略。开启后，当前及未来所有 `READY` 且
+`publicAccessMode = INHERIT` 的对象可通过各自的稳定公开链接访问；显式 `PUBLIC`/`PRIVATE` 文件不受
+Bucket 切换影响。关闭时也不会改写单个对象记录，不提供匿名对象列表。只有管理员 session 可以
+更改该设置；完整链接与重定向语义见[对象 API](objects.md)。
 
 ## Storage Shard
 

@@ -61,6 +61,7 @@ class FakeBuckets implements LogicalBucketRepository {
     id: 'bucket-1',
     name: 'documents',
     description: null,
+    publicAccessEnabled: false,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   };

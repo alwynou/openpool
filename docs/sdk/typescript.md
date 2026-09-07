@@ -38,6 +38,10 @@ const admin = new OpenPoolClient({
 
 const accounts = await admin.listAccounts();
 const bucket = await admin.createBucket({ name: 'documents' });
+await admin.updateBucketPublicAccess(bucket.id, {
+  enabled: true,
+  expectedUpdatedAt: bucket.updatedAt,
+});
 const auditPage = await admin.listAuditLogs({ limit: 50, actorType: 'ADMIN' });
 ```
 
@@ -76,6 +80,12 @@ const response = await client.downloadObject(completed.object.id);
 `completeUpload`。传给 `uploadDirect` 的 body、`sizeBytes` 与 `contentType` 必须一致；不要手工设置
 浏览器受限的 `Content-Length`。
 
+对象元数据包含稳定 `publicUrl`、`publicAccessMode` 和 `publicAccessExpiresAt`。管理员 session 客户端
+可调用 `updateObjectPublicAccess(objectId, input)` 或 `updateBucketPublicAccess(bucketId, input)`；
+两者都要求当前 `updatedAt` 作为 `expectedUpdatedAt`，SDK 不隐藏并发冲突。公开 URL 本身由浏览器
+或普通 Fetch 直接 GET 并跟随 302，不需要 SDK，也不得附带管理 Cookie/API Key 到 Provider
+Location。API Key 客户端不能修改公开策略。
+
 ## 错误与重试
 
 - `OpenPoolApiError`：保留 HTTP `status`、稳定 `code` 和 `requestId`；
@@ -106,7 +116,7 @@ await client.completeUpload(retry.objectId, { uploadSessionId: retry.uploadSessi
 相同 expected session 的重试只有一个成功；响应不明时先查询，SDK 不自动创建新尝试。
 
 当前方法覆盖 health/setup 状态、Storage Account、Logical Bucket、Storage Shard、API Key、审计查询，
-以及对象列表/元数据、reserve/complete、签名下载和删除。Web 管理控制台复用同一客户端，登录/初始化
+以及对象列表/元数据、公开策略、reserve/complete、签名下载和删除。Web 管理控制台复用同一客户端，登录/初始化
 和 Shard Migration 暂时保留专用请求路径。[通用对象 CLI](../cli/objects.md) 已复用对象接口，采用
 API Key-only、显式重试和 workspace-private 边界；Node 文件操作只在 CLI 中实现。公开发布、Node
 管理员认证、自动重试和 migration 最小权限授权仍需单独确定兼容和安全策略。

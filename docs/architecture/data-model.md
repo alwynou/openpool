@@ -25,6 +25,9 @@ erDiagram
 ## 关键不变量
 
 - `(logical_bucket_id, logical_key)` 唯一，保持统一命名空间稳定。
+- `0007` 后 Logical Bucket 用 `public_access_enabled` 保存继承对象的公开默认值；object 用
+  `public_access_mode = INHERIT | PUBLIC | PRIVATE` 保存覆盖策略。`public_access_expires_at` 只能在
+  mode 为 `PUBLIC` 时非空，D1 trigger 同时约束直接写入；时间是否已过期由每次公开读取判断。
 - 一个逻辑 Bucket 同时最多一个 `ACTIVE` shard。
 - 一个对象同时最多一个 primary location；未来副本使用 non-primary location。
 - `0006` 后每个 object 最多一个 `is_current = 1` upload session；重试前的 session/location 保留。
@@ -83,6 +86,11 @@ Storage Account、Logical Bucket、Storage Shard、Object 与 Shard Migration �
 上传重试不复活终态 session：PENDING object 保持原 ID/key，旧 current session 经条件事务替换为
 全新的 PENDING session；旧 session 仅沿 EXPIRED → ABORTED 收敛。替换前先以旧 object size/primary
 释放容量，再更新本次元数据并创建新预留。见 [ADR 0005](decisions/0005-upload-attempt-retries.md)。
+
+公开策略不改变 object 生命周期或 physical location。只有 `READY` 对象可能有效公开；单文件
+`PRIVATE` 优先于 Bucket 默认，单文件 `PUBLIC`（及其可选到期时间）也优先于 Bucket 默认。稳定链接
+使用 object ID，在 shard migration 切换 primary 后保持不变。见
+[ADR 0006](decisions/0006-stable-public-object-links.md)。
 
 ## 迁移规则
 

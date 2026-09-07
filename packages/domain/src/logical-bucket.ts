@@ -3,6 +3,8 @@ export interface LogicalBucket {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  /** Whether objects inheriting this bucket's policy are publicly readable. */
+  readonly publicAccessEnabled: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

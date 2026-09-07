@@ -21,6 +21,8 @@ export type {
   SetupStatusResponse,
   StorageAccountResponse,
   StorageShardResponse,
+  UpdateLogicalBucketPublicAccessRequest,
+  UpdateObjectPublicAccessRequest,
   UpdateStorageAccountConfigurationRequest,
   UpdateStorageAccountStatusRequest,
   UpdateStorageShardStatusRequest,

@@ -22,7 +22,7 @@ npm run dev
 健康接口同时是部署就绪检查。D1 尚未迁移、关键 Secret 缺失/格式错误或认证限流 binding 缺失时返回
 `503 DEPLOYMENT_NOT_READY`；响应只列安全 issue code，不包含 Secret 值。
 
-`npm run dev` 同时启动 Vite 与 Wrangler；Web 的 `/api` 会代理到本地 Worker。Wrangler 的本地 D1
+`npm run dev` 同时启动 Vite 与 Wrangler；Web 的 `/api` 和 `/public` 会代理到本地 Worker。Wrangler 的本地 D1
 状态位于被忽略的 `.wrangler` 目录。
 
 ## 常用命令

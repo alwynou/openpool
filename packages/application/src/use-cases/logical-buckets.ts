@@ -13,6 +13,7 @@ import type {
 export type LogicalBucketErrorCode =
   | 'LOGICAL_BUCKET_INVALID_INPUT'
   | 'LOGICAL_BUCKET_ALREADY_EXISTS'
+  | 'LOGICAL_BUCKET_CONFLICT'
   | 'LOGICAL_BUCKET_NOT_FOUND';
 
 export class LogicalBucketApplicationError extends Error {
@@ -69,6 +70,7 @@ export class CreateLogicalBucket {
       id: this.dependencies.ids.next(),
       name: input.name,
       description: input.description,
+      publicAccessEnabled: false,
       createdAt: now,
       updatedAt: now,
     };

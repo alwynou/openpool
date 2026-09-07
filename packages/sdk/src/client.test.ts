@@ -67,6 +67,9 @@ const objectMetadata: ObjectMetadataResponse = {
   contentType: 'text/plain',
   checksum: null,
   status: 'READY',
+  publicAccessMode: 'INHERIT',
+  publicAccessExpiresAt: null,
+  publicUrl: 'https://control.example/public/objects/object-1',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };

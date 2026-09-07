@@ -1,12 +1,12 @@
-import { ArrowClockwiseIcon, DownloadSimpleIcon, FileIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
-import type { ObjectMetadataResponse } from '@openpool/contracts';
+import { ArrowClockwiseIcon, CopyIcon, DownloadSimpleIcon, FileIcon, LinkSimpleIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import type { ObjectMetadataResponse, ObjectPublicAccessMode } from '@openpool/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
-import { ConfirmDialog } from '../components/dialogs';
+import { ConfirmDialog, Dialog } from '../components/dialogs';
 import { useI18n } from '../i18n';
 import { errorRequestId, errorText, formatBytes, formatDate } from '../lib/utils';
 import {
@@ -24,7 +24,28 @@ import {
   type UploadFailureStep,
 } from '../lib/upload-workflow';
 import { queryKeys, useBuckets } from '../queries';
-import { Button, EmptyState, ErrorNotice, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+import { Button, EmptyState, ErrorNotice, Field, Input, LoadingState, PageHeader, selectClassName, StatusBadge } from '../components/ui';
+
+function localDateTimeValue(iso: string | null): string {
+  if (iso === null) return '';
+  const date = new Date(iso);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function isEffectivelyPublic(
+  object: ObjectMetadataResponse,
+  bucketPublic: boolean,
+): boolean {
+  if (object.status !== 'READY' || object.publicAccessMode === 'PRIVATE') {
+    return false;
+  }
+  if (object.publicAccessMode === 'INHERIT') return bucketPublic;
+  return (
+    object.publicAccessExpiresAt === null ||
+    Date.parse(object.publicAccessExpiresAt) > Date.now()
+  );
+}
 
 export function FilesPage() {
   const { locale, t } = useI18n();
@@ -41,6 +62,13 @@ export function FilesPage() {
   const [activeAttempt, setActiveAttempt] = useState<UploadAttempt | null>(null);
   const [uploadError, setUploadError] = useState<{ readonly cause: unknown; readonly step: UploadFailureStep } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ObjectMetadataResponse | null>(null);
+  const [publicAccessTarget, setPublicAccessTarget] =
+    useState<ObjectMetadataResponse | null>(null);
+  const [publicAccessMode, setPublicAccessMode] =
+    useState<ObjectPublicAccessMode>('INHERIT');
+  const [publicAccessExpiry, setPublicAccessExpiry] = useState('');
+  const [publicAccessValidationError, setPublicAccessValidationError] =
+    useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useMutation({
@@ -93,6 +121,27 @@ export function FilesPage() {
       toast.success(t('File deleted'));
     },
   });
+  const publicAccessMutation = useMutation({
+    mutationFn: ({
+      object,
+      mode,
+      expiresAt,
+    }: {
+      readonly object: ObjectMetadataResponse;
+      readonly mode: ObjectPublicAccessMode;
+      readonly expiresAt: string | null;
+    }) =>
+      api.updateObjectPublicAccess(object.id, {
+        mode,
+        expiresAt,
+        expectedUpdatedAt: object.updatedAt,
+      }),
+    onSuccess: async () => {
+      setPublicAccessTarget(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.objects(bucketId) });
+      toast.success(t('File public access updated'));
+    },
+  });
 
   const isBusy = uploadMutation.isPending;
   const confirmationOnly = retryTarget !== null && activeAttempt?.target.objectId === retryTarget.objectId && activeAttempt.step === 'complete';
@@ -116,6 +165,40 @@ export function FilesPage() {
     setLogicalKey('');
     setSelectedFile(null);
     if (fileInput.current) fileInput.current.value = '';
+  };
+  const editPublicAccess = (object: ObjectMetadataResponse) => {
+    setPublicAccessTarget(object);
+    setPublicAccessMode(object.publicAccessMode);
+    setPublicAccessExpiry(localDateTimeValue(object.publicAccessExpiresAt));
+    setPublicAccessValidationError(null);
+  };
+  const submitPublicAccess = () => {
+    if (!publicAccessTarget || publicAccessMutation.isPending) return;
+    let expiresAt: string | null = null;
+    if (publicAccessMode === 'PUBLIC' && publicAccessExpiry) {
+      const parsed = new Date(publicAccessExpiry);
+      if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+        setPublicAccessValidationError(
+          t('The public expiry must be a future date and time.'),
+        );
+        return;
+      }
+      expiresAt = parsed.toISOString();
+    }
+    setPublicAccessValidationError(null);
+    publicAccessMutation.mutate({
+      object: publicAccessTarget,
+      mode: publicAccessMode,
+      expiresAt,
+    });
+  };
+  const copyPublicUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t('Public link copied'));
+    } catch {
+      toast.error(t('Could not copy the public link. Select it and copy it manually.'));
+    }
   };
   const submitUpload = () => {
     if (isBusy || !selectedFile || !bucketId) return;
@@ -175,15 +258,49 @@ export function FilesPage() {
           {!objectsQuery.isLoading && (objectsQuery.data?.length ?? 0) === 0 ? <EmptyState title={t('This bucket is empty')} detail={t('Upload the first object to this logical namespace.')} /> : null}
           {(objectsQuery.data?.length ?? 0) > 0 ? (
             <div className="overflow-x-auto rounded-lg border border-zinc-200">
-              <table className="w-full min-w-[760px] border-collapse text-left">
-                <thead className="bg-zinc-50/70"><tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase"><th className="px-5 py-3.5">{t('File')}</th><th className="px-5 py-3.5">{t('Size')}</th><th className="px-5 py-3.5">{t('Status')}</th><th className="px-5 py-3.5">{t('Updated')}</th><th className="px-5 py-3.5"><span className="sr-only">{t('Actions')}</span></th></tr></thead>
-                <tbody>{objectsQuery.data?.map((object) => <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60" key={object.id}><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md border border-zinc-200"><FileIcon className="size-4" aria-hidden /></span><div className="min-w-0"><p className="max-w-md truncate text-sm font-medium text-zinc-900">{object.logicalKey}</p><p className="mt-1 text-xs text-zinc-500">{object.contentType}</p></div></div></td><td className="px-5 py-4 text-sm text-zinc-700">{formatBytes(object.sizeBytes)}</td><td className="px-5 py-4"><StatusBadge value={object.status} /></td><td className="px-5 py-4 text-sm text-zinc-500">{formatDate(object.updatedAt, locale)}</td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button type="button" size="compact" variant="ghost" disabled={!canRetryObject(object) || isBusy} onClick={() => selectRetryTarget(object)}><ArrowClockwiseIcon className="size-4" aria-hidden />{t('Retry')}</Button><Button type="button" size="icon" variant="ghost" aria-label={t('Download {{key}}', { key: object.logicalKey })} disabled={object.status !== 'READY'} busy={downloadMutation.isPending && downloadMutation.variables?.id === object.id} onClick={() => downloadMutation.mutate(object)}><DownloadSimpleIcon className="size-4" aria-hidden /></Button><Button type="button" size="icon" variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" aria-label={t('Delete {{key}}', { key: object.logicalKey })} disabled={object.status !== 'READY' && object.status !== 'DELETING'} onClick={() => setPendingDelete(object)}><TrashIcon className="size-4" aria-hidden /></Button></div></td></tr>)}</tbody>
+              <table className="w-full min-w-[860px] border-collapse text-left">
+                <thead className="bg-zinc-50/70"><tr className="border-b border-zinc-200 text-[11px] font-semibold tracking-[0.08em] text-zinc-500 uppercase"><th className="px-5 py-3.5">{t('File')}</th><th className="px-5 py-3.5">{t('Size')}</th><th className="px-5 py-3.5">{t('Status')}</th><th className="px-5 py-3.5">{t('Public access')}</th><th className="px-5 py-3.5">{t('Updated')}</th><th className="px-5 py-3.5"><span className="sr-only">{t('Actions')}</span></th></tr></thead>
+                <tbody>{objectsQuery.data?.map((object) => <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/60" key={object.id}><td className="px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-md border border-zinc-200"><FileIcon className="size-4" aria-hidden /></span><div className="min-w-0"><p className="max-w-md truncate text-sm font-medium text-zinc-900">{object.logicalKey}</p><p className="mt-1 text-xs text-zinc-500">{object.contentType}</p></div></div></td><td className="px-5 py-4 text-sm text-zinc-700">{formatBytes(object.sizeBytes)}</td><td className="px-5 py-4"><StatusBadge value={object.status} /></td><td className="px-5 py-4"><StatusBadge value={isEffectivelyPublic(object, buckets.find((bucket) => bucket.id === bucketId)?.publicAccessEnabled ?? false) ? 'PUBLIC' : 'PRIVATE'} /></td><td className="px-5 py-4 text-sm text-zinc-500">{formatDate(object.updatedAt, locale)}</td><td className="px-5 py-4"><div className="flex justify-end gap-1"><Button type="button" size="compact" variant="ghost" disabled={!canRetryObject(object) || isBusy} onClick={() => selectRetryTarget(object)}><ArrowClockwiseIcon className="size-4" aria-hidden />{t('Retry')}</Button><Button type="button" size="icon" variant="ghost" aria-label={t('Manage public access for {{key}}', { key: object.logicalKey })} disabled={object.status !== 'READY'} onClick={() => editPublicAccess(object)}><LinkSimpleIcon className="size-4" aria-hidden /></Button><Button type="button" size="icon" variant="ghost" aria-label={t('Download {{key}}', { key: object.logicalKey })} disabled={object.status !== 'READY'} busy={downloadMutation.isPending && downloadMutation.variables?.id === object.id} onClick={() => downloadMutation.mutate(object)}><DownloadSimpleIcon className="size-4" aria-hidden /></Button><Button type="button" size="icon" variant="ghost" className="text-red-600 hover:bg-red-50 hover:text-red-700" aria-label={t('Delete {{key}}', { key: object.logicalKey })} disabled={object.status !== 'READY' && object.status !== 'DELETING'} onClick={() => setPendingDelete(object)}><TrashIcon className="size-4" aria-hidden /></Button></div></td></tr>)}</tbody>
               </table>
             </div>
           ) : null}
         </>
       ) : null}
       <ConfirmDialog open={pendingDelete !== null} onOpenChange={(open) => { if (!open) setPendingDelete(null); }} title={pendingDelete ? t('Delete {{key}}?', { key: pendingDelete.logicalKey }) : t('Delete file?')} description={t('The object will be deleted from its provider and its reserved capacity released. This action cannot be undone.')} confirmLabel={t('Delete file')} busy={deleteMutation.isPending} onConfirm={() => { if (pendingDelete) deleteMutation.mutate(pendingDelete); }} />
+      <Dialog
+        open={publicAccessTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !publicAccessMutation.isPending) setPublicAccessTarget(null);
+        }}
+        title={publicAccessTarget ? t('Public access for {{key}}', { key: publicAccessTarget.logicalKey }) : t('Public access')}
+        description={t('The stable link redirects to a short-lived provider URL. Object bytes never pass through the Worker.')}
+      >
+        {publicAccessTarget ? (
+          <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); submitPublicAccess(); }}>
+            {publicAccessMutation.error ? <ErrorNotice error={errorText(publicAccessMutation.error)} requestId={errorRequestId(publicAccessMutation.error)} /> : null}
+            <Field label={t('Access policy')} hint={t('Inherit follows the bucket default. A file override takes precedence.') }>
+              <select className={selectClassName} value={publicAccessMode} disabled={publicAccessMutation.isPending} onChange={(event) => { const mode = event.target.value as ObjectPublicAccessMode; setPublicAccessMode(mode); if (mode !== 'PUBLIC') setPublicAccessExpiry(''); setPublicAccessValidationError(null); }}>
+                <option value="INHERIT">{t('Inherit bucket policy')}</option>
+                <option value="PUBLIC">{t('Public')}</option>
+                <option value="PRIVATE">{t('Private')}</option>
+              </select>
+            </Field>
+            <Field label={t('Public until')} hint={t('Optional. Leave blank for no expiry.')} error={publicAccessValidationError ?? undefined}>
+              <Input type="datetime-local" value={publicAccessExpiry} disabled={publicAccessMode !== 'PUBLIC' || publicAccessMutation.isPending} onChange={(event) => { setPublicAccessExpiry(event.target.value); setPublicAccessValidationError(null); }} />
+            </Field>
+            <Field label={t('Stable public link')} hint={t('The link returns 404 while this file is private or expired.')}>
+              <div className="flex gap-2">
+                <Input value={publicAccessTarget.publicUrl} readOnly onFocus={(event) => event.currentTarget.select()} />
+                <Button type="button" variant="secondary" aria-label={t('Copy public link')} onClick={() => void copyPublicUrl(publicAccessTarget.publicUrl)}><CopyIcon className="size-4" aria-hidden />{t('Copy')}</Button>
+              </div>
+            </Field>
+            <div className="flex justify-end gap-2 border-t border-zinc-100 pt-5">
+              <Button type="button" variant="secondary" disabled={publicAccessMutation.isPending} onClick={() => setPublicAccessTarget(null)}>{t('Cancel')}</Button>
+              <Button type="submit" busy={publicAccessMutation.isPending}>{t('Save public access')}</Button>
+            </div>
+          </form>
+        ) : null}
+      </Dialog>
     </div>
   );
 }

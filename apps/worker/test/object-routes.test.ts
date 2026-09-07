@@ -29,11 +29,16 @@ const object: StoredObject = {
   contentType: 'application/pdf',
   checksum: 'sha256:public-metadata',
   status: 'READY',
+  publicAccessMode: 'INHERIT',
+  publicAccessExpiresAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:01:00.000Z',
 };
 
-const publicObject = { ...object };
+const publicObject = {
+  ...object,
+  publicUrl: 'https://openpool.test/public/objects/object-1',
+};
 const expiresAt = '2026-01-01T00:15:00.000Z';
 const env = {
   APP_ENV: 'test',
@@ -86,6 +91,16 @@ function createTestApp(overrides: TestOverrides = {}) {
     expiresAt,
     physicalKey: 'must-not-leak',
   }));
+  const createPublicDownload = vi.fn(async () => ({
+    objectId: object.id,
+    downloadUrl: 'https://provider.invalid/download?signature=short-lived',
+    expiresAt,
+  }));
+  const updateObjectPublicAccess = vi.fn(async () => ({
+    ...object,
+    publicAccessMode: 'PUBLIC' as const,
+    publicAccessExpiresAt: expiresAt,
+  }));
   const deleteObject = vi.fn(async () => ({
     ...object,
     status: 'DELETED' as const,
@@ -109,6 +124,8 @@ function createTestApp(overrides: TestOverrides = {}) {
     getObject: { execute: getObject },
     getUpload: { execute: getUpload },
     createDownload: { execute: createDownload },
+    createPublicDownload: { execute: createPublicDownload },
+    updateObjectPublicAccess: { execute: updateObjectPublicAccess },
     deleteObject: { execute: deleteObject },
     ...overrides.useCases,
   };
@@ -153,6 +170,8 @@ function createTestApp(overrides: TestOverrides = {}) {
     listObjects,
     getObject,
     createDownload,
+    createPublicDownload,
+    updateObjectPublicAccess,
     deleteObject,
     getUpload,
   };
@@ -194,6 +213,7 @@ describe('object HTTP adapter', () => {
       ['/api/v1/buckets/bucket-1/objects', 'GET'],
       ['/api/v1/objects/object-1', 'GET'],
       ['/api/v1/objects/object-1/download', 'POST'],
+      ['/api/v1/objects/object-1/public-access', 'PATCH'],
       ['/api/v1/objects/object-1', 'DELETE'],
     ] as const;
 
@@ -210,6 +230,109 @@ describe('object HTTP adapter', () => {
       });
     }
     expect(dependencies.createObjectUseCases).not.toHaveBeenCalled();
+  });
+
+  it('redirects anonymous public reads without exposing provider details', async () => {
+    const { app, createPublicDownload } = createTestApp();
+    const response = await request(app, `/public/objects/${object.id}`);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(
+      'https://provider.invalid/download?signature=short-lived',
+    );
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(await response.text()).toBe('');
+    expect(createPublicDownload).toHaveBeenCalledWith({ objectId: object.id });
+
+    const queryResponse = await request(
+      app,
+      `/public/objects/${object.id}?download=1`,
+    );
+    expect(queryResponse.status).toBe(404);
+    expect(createPublicDownload).toHaveBeenCalledOnce();
+  });
+
+  it('collapses inaccessible public objects to an empty 404', async () => {
+    const app = createTestApp({
+      useCases: {
+        createPublicDownload: {
+          execute: vi.fn(async () => {
+            throw new ObjectApplicationError(
+              'OBJECT_NOT_FOUND',
+              'private, expired, missing, or not ready',
+            );
+          }),
+        },
+      },
+    }).app;
+    const response = await request(app, `/public/objects/${object.id}`);
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
+  });
+
+  it('returns an empty 503 when public signing infrastructure is unavailable', async () => {
+    const app = createTestApp({
+      useCases: {
+        createPublicDownload: {
+          execute: vi.fn(async () => {
+            throw new ObjectApplicationError(
+              'OBJECT_STORAGE_ACCOUNT_UNAVAILABLE',
+              'internal account state',
+            );
+          }),
+        },
+      },
+    }).app;
+    const response = await request(app, `/public/objects/${object.id}`);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
+  });
+
+  it('lets only administrators update an object public-access policy', async () => {
+    const fixture = createTestApp();
+    const response = await request(
+      fixture.app,
+      `/api/v1/objects/${object.id}/public-access`,
+      jsonInit('PATCH', {
+        mode: 'PUBLIC',
+        expiresAt,
+        expectedUpdatedAt: object.updatedAt,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: { ...publicObject, publicAccessMode: 'PUBLIC', publicAccessExpiresAt: expiresAt },
+      requestId: 'request-1',
+    });
+    expect(fixture.updateObjectPublicAccess).toHaveBeenCalledWith({
+      actorId: administrator.id,
+      objectId: object.id,
+      mode: 'PUBLIC',
+      expiresAt,
+      expectedUpdatedAt: object.updatedAt,
+    });
+
+    const apiKeyApp = createTestApp({
+      authenticateObject: vi.fn(async () => ({
+        actorType: 'API_KEY' as const,
+        actorId: 'api-key-1',
+        pathPrefix: null,
+      })),
+    });
+    const denied = await request(
+      apiKeyApp.app,
+      `/api/v1/objects/${object.id}/public-access`,
+      { method: 'PATCH', headers: { authorization: 'Bearer key' } },
+    );
+    expect(denied.status).toBe(403);
+    expect(apiKeyApp.updateObjectPublicAccess).not.toHaveBeenCalled();
   });
 
   it('creates a direct upload using logicalKey and exposes only transfer fields', async () => {

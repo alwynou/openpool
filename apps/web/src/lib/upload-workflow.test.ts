@@ -19,6 +19,9 @@ const pendingObject: ObjectMetadataResponse = {
   contentType: 'application/pdf',
   checksum: null,
   status: 'PENDING',
+  publicAccessMode: 'INHERIT',
+  publicAccessExpiresAt: null,
+  publicUrl: 'https://control.example/public/objects/object-1',
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
 };
