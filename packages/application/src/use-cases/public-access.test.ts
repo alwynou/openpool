@@ -92,11 +92,15 @@ describe('public access use cases', () => {
     buckets.value = { ...bucket, publicAccessEnabled: true };
     const objects = new FakeObjects();
     const calls: number[] = [];
+    let clockReads = 0;
+    const signingClock: Clock = {
+      now: () => new Date(now.getTime() + (clockReads++ === 0 ? 0 : 250)),
+    };
     const capabilities: ProviderCapabilities = { presignedDownload: true, presignedUpload: true, headObject: true, deleteObject: true, bucketProbe: false, usageProbe: false };
     const provider: StorageProvider = {
       capabilities,
       createUploadUrl: async () => ({ url: 'unused', expiresAt: now.toISOString() }),
-      createDownloadUrl: async (request) => { calls.push(request.expiresInSeconds); return { url: 'https://provider/download', expiresAt: '2026-01-01T00:01:00.000Z' }; },
+      createDownloadUrl: async (request) => { calls.push(request.expiresInSeconds); return { url: 'https://provider/download', expiresAt: '2026-01-01T00:01:00.250Z' }; },
       headObject: async () => ({ sizeBytes: 1, etag: null, checksum: null }),
       deleteObject: async () => {}, validate: async () => ({ capabilities }),
       probe: async () => ({ healthStatus: 'HEALTHY', capacityBytes: null, usedBytes: null, capacityAccuracy: 'UNKNOWN' }),
@@ -113,7 +117,7 @@ describe('public access use cases', () => {
     const accounts = { findById: async () => ({ ...account, credentialEnvelope: envelope }) };
     const providers: ProviderRegistry = { forAccount: () => provider };
     const vault: CredentialVault = { encrypt: async () => envelope, decrypt: async () => ({}) };
-    const result = await new CreatePublicDownload({ buckets, objects, accounts, providers, vault, clock }).execute({ objectId: object.id });
+    const result = await new CreatePublicDownload({ buckets, objects, accounts, providers, vault, clock: signingClock }).execute({ objectId: object.id });
     expect(result.downloadUrl).toContain('provider');
     expect(calls).toEqual([60]);
   });
