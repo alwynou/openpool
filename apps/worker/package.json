@@ -24,6 +24,6 @@
     "@openpool/contracts": "*",
     "@openpool/domain": "*",
     "@smithy/core": "3.33.3",
-    "hono": "^4.13.5"
+    "hono": "^4.13.11"
   }
 }
